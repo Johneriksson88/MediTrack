@@ -121,49 +121,49 @@ Updated during roadmap creation. Each v1 requirement maps to exactly one phase.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | TBD | Pending |
-| AUTH-02 | TBD | Pending |
-| AUTH-03 | TBD | Pending |
-| AUTH-04 | TBD | Pending |
-| AUTH-05 | TBD | Pending |
-| AUTH-06 | TBD | Pending |
-| AUTH-07 | TBD | Pending |
-| CAT-01 | TBD | Pending |
-| CAT-02 | TBD | Pending |
-| CAT-03 | TBD | Pending |
-| CAT-04 | TBD | Pending |
-| CAT-05 | TBD | Pending |
-| CAT-06 | TBD | Pending |
-| CAT-07 | TBD | Pending |
-| ORD-01 | TBD | Pending |
-| ORD-02 | TBD | Pending |
-| ORD-03 | TBD | Pending |
-| ORD-04 | TBD | Pending |
-| ORD-05 | TBD | Pending |
-| ORD-06 | TBD | Pending |
-| ORD-07 | TBD | Pending |
-| STK-01 | TBD | Pending |
-| STK-02 | TBD | Pending |
-| STK-03 | TBD | Pending |
-| STK-04 | TBD | Pending |
-| AI-01 | TBD | Pending |
-| AI-02 | TBD | Pending |
-| AI-03 | TBD | Pending |
-| AUD-01 | TBD | Pending |
-| AUD-02 | TBD | Pending |
-| AUD-03 | TBD | Pending |
-| NTF-01 | TBD | Pending |
-| NTF-02 | TBD | Pending |
-| UX-01 | TBD | Pending |
-| OPS-01 | TBD | Pending |
-| OPS-02 | TBD | Pending |
-| OPS-03 | TBD | Pending |
-| OPS-04 | TBD | Pending |
+| AUTH-01 | Phase 1 | Pending |
+| AUTH-02 | Phase 1 | Pending |
+| AUTH-03 | Phase 1 | Pending |
+| AUTH-04 | Phase 1 | Pending |
+| AUTH-05 | Phase 1 | Pending |
+| AUTH-06 | Phase 1 | Pending |
+| AUTH-07 | Phase 1 | Pending |
+| UX-01 | Phase 1 | Pending |
+| CAT-01 | Phase 2 | Pending |
+| CAT-02 | Phase 2 | Pending |
+| CAT-03 | Phase 2 | Pending |
+| CAT-04 | Phase 2 | Pending |
+| CAT-05 | Phase 2 | Pending |
+| CAT-06 | Phase 2 | Pending |
+| CAT-07 | Phase 2 | Pending |
+| STK-03 | Phase 2 | Pending |
+| STK-04 | Phase 2 | Pending |
+| ORD-01 | Phase 3 | Pending |
+| ORD-02 | Phase 3 | Pending |
+| ORD-03 | Phase 3 | Pending |
+| ORD-04 | Phase 4 | Pending |
+| ORD-05 | Phase 4 | Pending |
+| ORD-06 | Phase 4 | Pending |
+| ORD-07 | Phase 4 | Pending |
+| STK-01 | Phase 4 | Pending |
+| STK-02 | Phase 4 | Pending |
+| OPS-03 | Phase 4 | Pending |
+| AUD-01 | Phase 5 | Pending |
+| AUD-02 | Phase 5 | Pending |
+| AUD-03 | Phase 5 | Pending |
+| AI-01 | Phase 6 | Pending |
+| AI-02 | Phase 6 | Pending |
+| AI-03 | Phase 6 | Pending |
+| NTF-01 | Phase 6 | Pending |
+| NTF-02 | Phase 6 | Pending |
+| OPS-01 | Phase 7 | Pending |
+| OPS-02 | Phase 7 | Pending |
+| OPS-04 | Phase 7 | Pending |
 
 **Coverage:**
 - v1 requirements: 38 total
-- Mapped to phases: 0 (filled during roadmap creation)
-- Unmapped: 38 ⚠️ (expected — roadmap not yet generated)
+- Mapped to phases: 38
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-05-19*
