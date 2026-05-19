@@ -258,7 +258,7 @@ Phase 1 nav items (in display order):
 Height: `h-14` (56px). Full viewport width. Background: `#F1F5F9` (secondary surface). Border bottom: `border-b border-[#E2E8F0]`.
 
 Contents:
-- Left: Logo placeholder — `MediTrack` in `text-lg font-semibold text-[#0F172A]` + lucide `Stethoscope` icon at `h-5 w-5`.
+- Left: Logo placeholder — `MediTrack` in `text-sm font-semibold text-[#0F172A]` + lucide `Stethoscope` icon at `h-5 w-5`.
 - Right (desktop md+): User pill (`{name} · {role-badge} · {careUnit.name}`) as a popover trigger. See User Pill spec below.
 - Right (mobile): Nothing — user info is on the Konto tab.
 
@@ -357,7 +357,7 @@ CardContent
 **Components used:** `<header>` (top bar), `<nav>` (sidebar), React Router `<Outlet>` for main content.
 
 **Top bar contents:**
-- Logo: `Stethoscope` icon (`h-5 w-5 text-[#2563EB]`) + text `MediTrack` (`text-lg font-semibold`)
+- Logo: `Stethoscope` icon (`h-5 w-5 text-[#2563EB]`) + text `MediTrack` (`text-sm font-semibold`)
 - Right: User pill (see §5)
 
 **Sidebar nav item — icon only (md, 64px width):**
