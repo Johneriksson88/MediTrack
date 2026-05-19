@@ -33,6 +33,11 @@
 **Mode:** mvp
 **UI hint:** yes
 **Requirements:** AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05, AUTH-06, AUTH-07, UX-01
+**Plans:** 4 plans (1 Walking Skeleton + 3 follow-on slices)
+  - [ ] 01-02-PLAN.md — Walking Skeleton: monorepo + DB + login + /me + docker-compose end-to-end
+  - [ ] 01-03-PLAN.md — RBAC primitives: PERMISSIONS map + requirePermission + admin:ping + useAuth/useCan/Can
+  - [ ] 01-04-PLAN.md — Responsive app shell + 4 nav destinations + AuthSkeleton + logout (UX-01)
+  - [ ] 01-05-PLAN.md — 3-role seeds + integration smoke test + FE reconciliation + README seeds
 **Success Criteria:**
 1. Seeded user logs in at `/login`, lands on a dashboard scoped to their `vårdenhet`, and session survives refresh.
 2. A backend endpoint exists that enforces role check (e.g. `GET /me/permissions`) — calling it without a session returns 401, with wrong role returns 403, both as JSON.
