@@ -41,12 +41,15 @@ Base unit: 4px (Tailwind default). All layout values must be multiples of 4.
 |-------|----|----------------|--------------------------|
 | 1 | 4px | `p-1` / `gap-1` | Icon-label gap in sidebar nav items |
 | 2 | 8px | `p-2` / `gap-2` | Compact element spacing, badge inner padding |
-| 3 | 12px | `p-3` | Sidebar icon button padding (icon-only at md) |
+| 3 | 12px | `p-3` | Sidebar icon button padding (icon-only at md) — project extension, see note |
 | 4 | 16px | `p-4` / `gap-4` | Default card padding, form field gaps, login form internals |
-| 5 | 20px | `p-5` | — |
+| 5 | 20px | `p-5` | Login card vertical internal padding step — project extension, see note |
 | 6 | 24px | `p-6` / `gap-6` | Login card padding (`p-8` used — see exception), section spacing |
 | 8 | 32px | `p-8` | Login card padding at ≥480px viewport |
 | 12 | 48px | `py-12` | Vertical centering breathing room on login page |
+
+**Standard set:** 4, 8, 16, 24, 32, 48, 64 (Tailwind base scale subset).
+**Project extensions:** 12px (`p-3`) — used for icon-button padding at md breakpoint where 8px crowds the icon and 16px breaks visual rhythm with adjacent components. 20px (`p-5`) — used as the login card internal vertical padding step between `p-4` (cramped on mobile) and `p-6` (too generous at 360px). Both extensions are intentional, scoped, and used only at the noted surfaces.
 
 **Exceptions:**
 - Login card: `p-6` at ≤479px, `p-8` at ≥480px (keeps card content reachable on narrow phones without cramping on larger screens).
@@ -59,12 +62,14 @@ Base unit: 4px (Tailwind default). All layout values must be multiples of 4.
 
 Font family: `font-sans` (Tailwind default system stack — see Design System above).
 
+**Weights (2):** `font-semibold` (600) — headings, badges, captions, nav labels, interactive labels. `font-normal` (400) — body text, form content, descriptive text. No third weight is permitted in Phase 1.
+
 | Role | Tailwind size token | px equiv | Weight | Tailwind weight | Line height | Usage |
 |------|---------------------|----------|--------|-----------------|-------------|-------|
 | Display / Page heading | `text-2xl` | 24px | Semibold | `font-semibold` (600) | `leading-tight` (1.25) | Login page title (`Logga in`), stub page headings |
 | Section heading | `text-xl` | 20px | Semibold | `font-semibold` (600) | `leading-snug` (1.375) | Empty state card heading (e.g. `Läkemedel`), `Konto` page heading |
 | Body / default | `text-sm` | 14px | Regular | `font-normal` (400) | `leading-relaxed` (1.625) | Form labels, input values, nav item labels, descriptive text |
-| Small / caption | `text-xs` | 12px | Medium | `font-medium` (500) | `leading-normal` (1.5) | Role badges, status chips, helper text, muted captions |
+| Small / caption | `text-xs` | 12px | Semibold | `font-semibold` (600) | `leading-normal` (1.5) | Role badges, status chips, helper text, muted captions |
 
 **Rule: use exactly these four size levels in Phase 1. Do not introduce `text-base` (16px) or `text-lg` (18px) in Phase 1 surfaces — they will appear in later phases for data-dense tables.**
 
@@ -108,7 +113,7 @@ All values locked by user (2026-05-20). CSS custom properties use the shadcn sla
 | Sjuksköterska | `#CCFBF1` | `#0F766E` | `bg-teal-100 text-teal-700` |
 | Admin | `#FEF3C7` | `#92400E` | `bg-amber-100 text-amber-800` |
 
-All badges: `rounded-full px-2.5 py-0.5 text-xs font-medium`. Border-less. Inline-flex.
+All badges: `rounded-full px-2 py-1 text-xs font-semibold`. Border-less. Inline-flex.
 
 **Contrast check (WCAG AA 4.5:1 minimum):**
 - Apotekare: `#1E40AF` on `#DBEAFE` — ratio ~7.2:1. PASS.
@@ -288,7 +293,7 @@ Nav item (icon + label at lg+):
 - Items: distribute equally with `flex-1` each
 - Each item: `flex flex-col items-center justify-center min-h-[44px] gap-1`
 - Icon: `h-6 w-6`
-- Label: `text-xs font-medium`
+- Label: `text-xs font-semibold`
 - Active: icon + label `text-[#2563EB]`
 - Inactive: icon + label `text-[#64748B]`
 - `aria-current="page"` on active tab
@@ -361,7 +366,7 @@ CardContent
 - Entire item is the touch target (`min-h-[44px] flex items-center justify-center`)
 
 **Sidebar nav item — icon + label (lg+, 240px width):**
-- `<NavLink>` flex row: icon `h-5 w-5` + label `text-sm font-medium`
+- `<NavLink>` flex row: icon `h-5 w-5` + label `text-sm font-semibold`
 - Active: left accent border + blue text/icon (see sidebar spec)
 
 ### 3. App Shell — Mobile (< 768px)
@@ -382,7 +387,7 @@ Each `<NavLink>`: icon + label stacked vertically. Current tab: `aria-current="p
 ### 4. User Pill (desktop top bar)
 
 **Trigger element:** `{user.name} · {role-badge} · {careUnit.name}`
-- Name: `text-sm font-medium text-[#0F172A]`
+- Name: `text-sm font-semibold text-[#0F172A]`
 - Dot separator: `text-[#64748B]`
 - Role badge: chip (see Role Badge spec)
 - Care unit name: `text-sm text-[#64748B]`
@@ -392,7 +397,7 @@ Each `<NavLink>`: icon + label stacked vertically. Current tab: `aria-current="p
 **Popover (shadcn `Popover`):**
 - Width: `w-48`
 - Shadow: `shadow-md`
-- Content: `Logga ut` as a `<button>` with `text-sm text-[#DC2626] font-medium` — uses destructive text color, not a full destructive button, to keep the popover lightweight.
+- Content: `Logga ut` as a `<button>` with `text-sm text-[#DC2626] font-semibold` — uses destructive text color, not a full destructive button, to keep the popover lightweight.
 - Popover closes on: `Escape`, click outside, or clicking `Logga ut`.
 - No confirmation for logout. Logout = `DELETE /api/auth/session` + clear TanStack Query cache + `navigate('/login')`.
 
@@ -401,7 +406,7 @@ Each `<NavLink>`: icon + label stacked vertically. Current tab: `aria-current="p
 Reusable primitive: `<RoleBadge role={user.role} />` (generic enough for status chips later).
 
 ```
-<span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium {colorClass}">
+<span className="inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold {colorClass}">
   {label}
 </span>
 ```
