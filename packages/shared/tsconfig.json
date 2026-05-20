@@ -4,7 +4,18 @@
     "outDir": "dist",
     "rootDir": "src",
     "lib": ["ES2022"],
-    "types": ["node"]
+    // `@meditrack/shared` contains no node-specific code — purely Zod schemas
+    // + literal-union constants consumed by both browser (apps/web) and
+    // server (apps/api). Pulling in `@types/node` here previously broke
+    // `pnpm --filter @meditrack/shared build` (the package doesn't depend
+    // on @types/node and shouldn't need to). Plan 03 deferred-items #1.
+    "types": [],
+    // Emit `.d.ts` files so consumers (apps/api, apps/web) get the inferred
+    // Zod types via the package.json `types: ./dist/index.d.ts` field. The
+    // base config defaults `declaration: false`; shared overrides because
+    // it is the single source of truth for cross-package types (D-08).
+    "declaration": true,
+    "declarationMap": true
   },
   "include": ["src"]
 }

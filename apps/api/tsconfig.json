@@ -2,12 +2,21 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
+    "rootDir": "src",
     "lib": ["ES2022"],
-    "types": ["node"],
-    "baseUrl": ".",
-    "paths": {
-      "@meditrack/shared": ["../../packages/shared/src/index.ts"]
-    }
+    "types": ["node"]
   },
-  "include": ["src", "prisma/seed.ts", "test"]
+  // `prisma/seed.ts` and `test/**` are NOT emitted by the production build:
+  //   - seed.ts is invoked at runtime by `tsx` (declared in package.json
+  //     under "prisma.seed") so it doesn't need a .js artifact.
+  //   - test/** is type-checked via vitest's own config, never emitted.
+  // Without these in `include`, TS doesn't widen the implicit rootDir to
+  // include `prisma/` or `test/`, so `tsc -p .` emits `dist/server.js`
+  // at the expected path (used by the runtime CMD in Dockerfile).
+  //
+  // No `paths` for `@meditrack/shared` — Plan 05 switched the shared
+  // package to a real `exports` field pointing at `dist/index.js`, so
+  // both `tsc` and Node resolve it via package.json the standard way.
+  // `apps/web` keeps the path alias (Vite needs it for HMR).
+  "include": ["src"]
 }

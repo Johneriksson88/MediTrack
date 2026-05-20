@@ -7,19 +7,30 @@
 # Stage 1 `builder` — install all deps, generate Prisma client, compile TS
 # Stage 2 `runtime` — copy only dist + production deps; entrypoint runs
 #                     `prisma migrate deploy` + `prisma db seed` + `node`
+#
+# Base image choice (Plan 05): `node:20-bookworm-slim` (Debian/glibc) instead
+# of `node:20-alpine` (musl). Prisma 5's bundled query engine binaries map
+# cleanly to `debian-openssl-3.0.x` on bookworm; the Alpine `linux-musl-openssl-3.0.x`
+# binary inconsistently fails to load when copied across multi-stage builds
+# (see deferred-items.md / Plan 04 issues). Image is ~20MB larger but the
+# `docker compose up --build` golden command works reliably — required for
+# Phase 1 success criterion #4 and the brief §3.3 "ett plus".
 
 # -----------------------------------------------------------------------------
 # Stage 1: builder
 # -----------------------------------------------------------------------------
-FROM node:20-alpine AS builder
+FROM node:20-bookworm-slim AS builder
 
 # pnpm via corepack (matches packageManager pin in root package.json)
 RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 
-# Native deps for argon2: alpine needs python3 + make + g++ for the build,
-# AND we install libstdc++ so the runtime stage can load the prebuilt binary
-# without an alpine-musl mismatch.
-RUN apk add --no-cache python3 make g++ libstdc++
+# Debian build deps for argon2's native module + openssl runtime for Prisma's
+# query engine (Prisma's `debian-openssl-3.0.x` binary needs libssl3 at link).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      python3 make g++ \
+      openssl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -35,6 +46,12 @@ RUN pnpm install --frozen-lockfile
 COPY packages/shared ./packages/shared
 COPY apps/api ./apps/api
 
+# Build shared first — api imports `@meditrack/shared` via the package's
+# `exports` field which points at `./dist/index.js`. Without this step,
+# `tsc -p .` in apps/api fails with TS2307 ("Cannot find module
+# '@meditrack/shared'").
+RUN pnpm --filter @meditrack/shared run build
+
 # Generate the Prisma client, then compile TS → dist.
 RUN pnpm --filter @meditrack/api exec prisma generate
 RUN pnpm --filter @meditrack/api run build
@@ -42,10 +59,16 @@ RUN pnpm --filter @meditrack/api run build
 # -----------------------------------------------------------------------------
 # Stage 2: runtime
 # -----------------------------------------------------------------------------
-FROM node:20-alpine AS runtime
+FROM node:20-bookworm-slim AS runtime
 
 RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
-RUN apk add --no-cache libstdc++ dumb-init
+
+# Runtime needs libssl3 (Prisma query engine) + dumb-init (zombie reaper) +
+# ca-certificates (TLS to anywhere). No python/make/g++ in the runtime layer.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      openssl ca-certificates dumb-init \
+ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -62,6 +85,12 @@ COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
 COPY --from=builder /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
+# `prisma db seed` runs `tsx prisma/seed.ts` which imports
+# `../src/auth/password.js` (TS source resolved at runtime by tsx). Copy
+# the api `src/` and `tsconfig.json` into the runtime image so the seed
+# command works on a fresh `docker compose up --build`.
+COPY --from=builder /app/apps/api/src ./apps/api/src
+COPY --from=builder /app/apps/api/tsconfig.json ./apps/api/tsconfig.json
 
 EXPOSE 3000
 
