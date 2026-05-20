@@ -1,0 +1,189 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import type { FastifyInstance } from 'fastify';
+import {
+  TEST_ADMIN,
+  buildTestApp,
+  ensureAdminSeed,
+  prisma,
+  resetSessions,
+} from './helpers/buildTestApp.js';
+import { hashPassword } from '../src/auth/password.js';
+
+/**
+ * Phase 1 success #2 / AUTH-05 / D-15 / D-18 — RBAC matrix on `/api/admin/ping`.
+ *
+ * The four canonical paths Plan 03 demands:
+ *   - no cookie               → 401 + `unauthenticated` envelope
+ *   - sjukskoterska cookie    → 403 + `forbidden` envelope
+ *   - apotekare cookie        → 403 + `forbidden` envelope
+ *   - admin cookie            → 200 + { pong: true, at: <ISO timestamp> }
+ *
+ * Plus the `/me` regression that proves `permissions: ActionKey[]` is now
+ * populated from the centralized PERMISSIONS map (D-18 — replaces Plan 02's
+ * always-empty stub).
+ */
+
+let app: FastifyInstance;
+
+const APOTEKARE_EMAIL = 'apotekare-ping@example.test';
+const SJUKSKOTERSKA_EMAIL = 'sjukskoterska-ping@example.test';
+const SHARED_PASSWORD = 'demo1234';
+const SHARED_CARE_UNIT_ID = 'careunit-karolinska-01';
+
+beforeAll(async () => {
+  app = await buildTestApp();
+  await ensureAdminSeed();
+  // Seed an apotekare + sjuksköterska on the same CareUnit so the 403 matrix
+  // can exercise both non-admin roles. Plan 05 will move this to the canonical
+  // seed; for Plan 03 these are test-local.
+  const passwordHash = await hashPassword(SHARED_PASSWORD);
+  await prisma.user.upsert({
+    where: { email: APOTEKARE_EMAIL },
+    update: {
+      name: 'Apotekare Ping',
+      role: 'apotekare',
+      careUnitId: SHARED_CARE_UNIT_ID,
+      passwordHash,
+    },
+    create: {
+      email: APOTEKARE_EMAIL,
+      name: 'Apotekare Ping',
+      role: 'apotekare',
+      careUnitId: SHARED_CARE_UNIT_ID,
+      passwordHash,
+    },
+  });
+  await prisma.user.upsert({
+    where: { email: SJUKSKOTERSKA_EMAIL },
+    update: {
+      name: 'Sjuksköterska Ping',
+      role: 'sjukskoterska',
+      careUnitId: SHARED_CARE_UNIT_ID,
+      passwordHash,
+    },
+    create: {
+      email: SJUKSKOTERSKA_EMAIL,
+      name: 'Sjuksköterska Ping',
+      role: 'sjukskoterska',
+      careUnitId: SHARED_CARE_UNIT_ID,
+      passwordHash,
+    },
+  });
+});
+
+beforeEach(async () => {
+  await resetSessions();
+});
+
+afterAll(async () => {
+  await app.close();
+  await prisma.$disconnect();
+});
+
+async function loginAs(email: string, password: string): Promise<string> {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { email, password },
+  });
+  expect(res.statusCode).toBe(200);
+  const setCookie = res.headers['set-cookie'];
+  const cookieHeader = Array.isArray(setCookie) ? setCookie[0]! : String(setCookie);
+  const match = cookieHeader.match(/(meditrack\.sid=[^;]+)/);
+  expect(match).not.toBeNull();
+  return match![1]!;
+}
+
+describe('GET /api/admin/ping — RBAC matrix (Phase 1 success #2)', () => {
+  it('returns 401 + unauthenticated envelope when no cookie is sent', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/admin/ping' });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({
+      error: { code: 'unauthenticated', message: 'Du måste logga in.' },
+    });
+  });
+
+  it('returns 403 + forbidden envelope for a sjuksköterska session', async () => {
+    const cookie = await loginAs(SJUKSKOTERSKA_EMAIL, SHARED_PASSWORD);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/admin/ping',
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({
+      error: {
+        code: 'forbidden',
+        message: 'Du saknar behörighet att utföra denna åtgärd.',
+      },
+    });
+  });
+
+  it('returns 403 + forbidden envelope for an apotekare session', async () => {
+    const cookie = await loginAs(APOTEKARE_EMAIL, SHARED_PASSWORD);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/admin/ping',
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({
+      error: {
+        code: 'forbidden',
+        message: 'Du saknar behörighet att utföra denna åtgärd.',
+      },
+    });
+  });
+
+  it('returns 200 + { pong: true, at: <ISO 8601> } for an admin session', async () => {
+    const cookie = await loginAs(TEST_ADMIN.email, TEST_ADMIN.password);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/admin/ping',
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body).toEqual({
+      pong: true,
+      at: expect.any(String),
+    });
+    // ISO 8601 — `2026-05-20T19:32:09.000Z` shape.
+    expect(body.at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/);
+  });
+});
+
+describe('GET /api/me — permissions[] regression (D-18)', () => {
+  it("returns permissions: ['admin:ping'] for an admin session", async () => {
+    const cookie = await loginAs(TEST_ADMIN.email, TEST_ADMIN.password);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/me',
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().permissions).toEqual(['admin:ping']);
+  });
+
+  it('returns permissions: [] for a sjuksköterska session', async () => {
+    const cookie = await loginAs(SJUKSKOTERSKA_EMAIL, SHARED_PASSWORD);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/me',
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().permissions).toEqual([]);
+  });
+
+  it('returns permissions: [] for an apotekare session', async () => {
+    const cookie = await loginAs(APOTEKARE_EMAIL, SHARED_PASSWORD);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/me',
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().permissions).toEqual([]);
+  });
+});

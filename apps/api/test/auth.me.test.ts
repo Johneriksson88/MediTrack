@@ -68,7 +68,7 @@ describe('GET /api/me', () => {
         id: TEST_ADMIN.careUnitId,
         name: TEST_ADMIN.careUnitName,
       },
-      permissions: [], // Plan 02 — Plan 03 widens via PERMISSIONS map
+      permissions: ['admin:ping'], // Plan 03 — admin role has admin:ping per PERMISSIONS map
     });
     expect(body).not.toHaveProperty('passwordHash');
   });
