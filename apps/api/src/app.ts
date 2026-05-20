@@ -8,6 +8,7 @@ import { cookiesPlugin } from './plugins/cookies.js';
 import { errorHandlerPlugin } from './plugins/errorHandler.js';
 import { authRoutes } from './routes/auth.js';
 import { meRoutes } from './routes/me.js';
+import { adminPingRoutes } from './routes/adminPing.js';
 import { healthzRoutes } from './routes/healthz.js';
 
 /**
@@ -49,6 +50,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Routes.
   await app.register(authRoutes);
   await app.register(meRoutes);
+  await app.register(adminPingRoutes);
   await app.register(healthzRoutes);
 
   return app;

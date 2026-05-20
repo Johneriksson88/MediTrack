@@ -1,12 +1,25 @@
 import { z } from 'zod';
 
 /**
- * D-15 / D-17 / Pattern J — `ActionKey` permission strings shared FE+BE.
+ * D-15 / D-17 / Pattern J / Shared #4 — `ActionKey` permission strings shared FE+BE.
+ *
+ * This file is the SINGLE SOURCE OF TRUTH for the action key string set.
+ * Both the FE (`useAuth` / `useCan` / `<Can>`) and the BE (`PERMISSIONS`
+ * map in `apps/api/src/auth/permissions.ts`) import `ActionKey` from here.
+ *
+ * Adding a new action key:
+ *   1. Append the literal to `ACTION_KEYS` below.
+ *   2. The BE `PERMISSIONS: Record<ActionKey, Role[]>` map will fail to
+ *      compile until you add an entry — this is the drift-prevention
+ *      mechanism (TS exhaustiveness over `Record<ActionKey, …>`).
+ *   3. The FE will autocomplete the new key in `<Can action="…">`.
  *
  * Phase 1 begins with a single demo action (`admin:ping`) so the type
  * isn't `never` and `<Can action="...">` autocompletes from day one.
  * Phase 2+ widens this union with `'medication:create'`,
  * `'order:confirm'`, `'order:deliver'`, `'audit:read'`, etc.
  */
-export const actionKey = z.enum(['admin:ping']);
-export type ActionKey = z.infer<typeof actionKey>;
+export const ACTION_KEYS = ['admin:ping'] as const;
+export type ActionKey = (typeof ACTION_KEYS)[number];
+
+export const actionKey = z.enum(ACTION_KEYS);

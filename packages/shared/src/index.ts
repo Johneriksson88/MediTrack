@@ -7,7 +7,11 @@ export {
   type LoginResponse,
 } from './contracts/login.js';
 export { meResponse, type MeResponse } from './contracts/me.js';
-export { actionKey, type ActionKey } from './contracts/permissions.js';
+export {
+  ACTION_KEYS,
+  actionKey,
+  type ActionKey,
+} from './contracts/permissions.js';
 
 // Constants — locked vocabularies shared FE+BE
 export { ROLES, roleEnum, type Role } from './constants/roles.js';

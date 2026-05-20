@@ -1,5 +1,6 @@
 import type { MeResponse } from '@meditrack/shared';
 import { prisma } from '../db/client.js';
+import { actionsForRole } from '../auth/permissions.js';
 
 /**
  * Pattern D / D-16 / D-18 — `careUnitId` is the FIRST argument (the
@@ -8,8 +9,10 @@ import { prisma } from '../db/client.js';
  * here and use it in every Prisma `where` so a future code change can't
  * accidentally leak across tenants.
  *
- * Plan 02 ships `permissions: []`. Plan 03 computes from the PERMISSIONS
- * map by intersecting the user's role with the action list.
+ * `permissions` is computed at request time by intersecting the user's
+ * role with the centralized PERMISSIONS map (Plan 03 / D-18). The FE
+ * `useAuth().can(action)` (Pattern L) reads off this field — no second
+ * round-trip required.
  */
 export async function getMeForSession(
   careUnitId: string,
@@ -42,6 +45,6 @@ export async function getMeForSession(
       id: session.user.careUnit.id,
       name: session.user.careUnit.name,
     },
-    permissions: [], // Plan 03 widens this from the PERMISSIONS map.
+    permissions: actionsForRole(session.user.role),
   };
 }
