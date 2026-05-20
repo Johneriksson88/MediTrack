@@ -1,0 +1,34 @@
+# Dependencies — re-installed inside the image
+node_modules
+**/node_modules
+
+# Git metadata + tooling
+.git
+.gitignore
+.gitattributes
+
+# Build artifacts (the builder stage regenerates dist/)
+dist
+**/dist
+*.tsbuildinfo
+
+# Local secrets — image must NEVER bake .env
+.env
+.env.local
+.env.*.local
+
+# Local-only artifacts (the assignment brief PDF, etc.)
+local
+
+# Test / coverage
+coverage
+
+# Planning + GSD tooling — not needed at runtime, keep image small
+.planning
+.claude
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode
+.idea
