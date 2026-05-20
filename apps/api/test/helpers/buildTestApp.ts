@@ -47,10 +47,14 @@ export async function resetSessions() {
 }
 
 const ADMIN_EMAIL = 'admin@example.test';
-const ADMIN_PASSWORD = 'demo1234';
+const APOTEKARE_EMAIL = 'apotekare@example.test';
+const SJUKSKOTERSKA_EMAIL = 'sjukskoterska@example.test';
+const SHARED_PASSWORD = 'demo1234';
 const CARE_UNIT_ID = 'careunit-karolinska-01';
 const CARE_UNIT_NAME = 'Avdelning 4, Karolinska';
 const ADMIN_NAME = 'Admin Demo';
+const APOTEKARE_NAME = 'Anna Apotekare';
+const SJUKSKOTERSKA_NAME = 'Sara Sjuksköterska';
 
 /**
  * Ensures the demo admin user exists. Tests can call this in `beforeAll`
@@ -63,7 +67,7 @@ export async function ensureAdminSeed() {
     update: { name: CARE_UNIT_NAME },
     create: { id: CARE_UNIT_ID, name: CARE_UNIT_NAME },
   });
-  const passwordHash = await hashPassword(ADMIN_PASSWORD);
+  const passwordHash = await hashPassword(SHARED_PASSWORD);
   await prisma.user.upsert({
     where: { email: ADMIN_EMAIL },
     update: {
@@ -82,10 +86,73 @@ export async function ensureAdminSeed() {
   });
 }
 
+/**
+ * Ensures all three Phase 1 demo users exist (apotekare, sjukskoterska,
+ * admin) on the shared CareUnit. Mirrors the canonical `prisma/seed.ts`
+ * shape from Plan 05 so tests and the seed agree on the user roster.
+ *
+ * Plan 05 — moves the inline non-admin upserts that lived in
+ * `admin.ping.test.ts`'s `beforeAll` into this shared helper. The smoke
+ * test and the RBAC matrix both call it and observe the same three
+ * canonical emails (no `*-ping@example.test` shadow users).
+ */
+export async function ensureAllRolesSeeded() {
+  const { hashPassword } = await import('../../src/auth/password.js');
+  await prisma.careUnit.upsert({
+    where: { id: CARE_UNIT_ID },
+    update: { name: CARE_UNIT_NAME },
+    create: { id: CARE_UNIT_ID, name: CARE_UNIT_NAME },
+  });
+  const passwordHash = await hashPassword(SHARED_PASSWORD);
+
+  for (const u of [
+    { email: APOTEKARE_EMAIL, name: APOTEKARE_NAME, role: 'apotekare' as const },
+    {
+      email: SJUKSKOTERSKA_EMAIL,
+      name: SJUKSKOTERSKA_NAME,
+      role: 'sjukskoterska' as const,
+    },
+    { email: ADMIN_EMAIL, name: ADMIN_NAME, role: 'admin' as const },
+  ]) {
+    await prisma.user.upsert({
+      where: { email: u.email },
+      update: {
+        name: u.name,
+        role: u.role,
+        careUnitId: CARE_UNIT_ID,
+        passwordHash,
+      },
+      create: {
+        email: u.email,
+        name: u.name,
+        role: u.role,
+        careUnitId: CARE_UNIT_ID,
+        passwordHash,
+      },
+    });
+  }
+}
+
 export const TEST_ADMIN = {
   email: ADMIN_EMAIL,
-  password: ADMIN_PASSWORD,
+  password: SHARED_PASSWORD,
   name: ADMIN_NAME,
+  careUnitId: CARE_UNIT_ID,
+  careUnitName: CARE_UNIT_NAME,
+} as const;
+
+export const TEST_APOTEKARE = {
+  email: APOTEKARE_EMAIL,
+  password: SHARED_PASSWORD,
+  name: APOTEKARE_NAME,
+  careUnitId: CARE_UNIT_ID,
+  careUnitName: CARE_UNIT_NAME,
+} as const;
+
+export const TEST_SJUKSKOTERSKA = {
+  email: SJUKSKOTERSKA_EMAIL,
+  password: SHARED_PASSWORD,
+  name: SJUKSKOTERSKA_NAME,
   careUnitId: CARE_UNIT_ID,
   careUnitName: CARE_UNIT_NAME,
 } as const;
