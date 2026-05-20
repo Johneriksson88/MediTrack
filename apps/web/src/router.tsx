@@ -1,22 +1,29 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 
 import { AuthGate } from '@/auth/AuthGate';
-import { LoginPage } from '@/routes/login/LoginPage';
+import { RoleRoute } from '@/auth/RoleRoute';
+import { AuditPage } from '@/routes/admin/AuditPage';
+import { BestallningarPage } from '@/routes/bestallningar/BestallningarPage';
 import { DashboardPage } from '@/routes/dashboard/DashboardPage';
+import { KontoPage } from '@/routes/konto/KontoPage';
+import { LakemedelPage } from '@/routes/lakemedel/LakemedelPage';
+import { LoginPage } from '@/routes/login/LoginPage';
+import { AppShell } from '@/routes/shell/AppShell';
 
 /**
- * Pattern K / D-12 — router-only routing.
+ * D-12 / D-13 / Pattern K — full Phase 1 route map.
  *
- * Plan 02 ships the minimum viable route map:
- *   - /login         public (no AuthGate)
- *   - /              redirects to /dashboard (gated)
- *   - /dashboard     gated stub (`useAuth` cache fed by AuthGate)
- *   - * (catch-all)  redirects to /dashboard so unknown URLs land in
- *                    the authenticated zone; AuthGate redirects to
- *                    /login if no session.
+ * Structure:
+ *   - /login                              public (no AuthGate)
+ *   - everything else                     wrapped in <AuthGate><AppShell/></AuthGate>
+ *     - index ('/') -> /dashboard
+ *     - /dashboard, /lakemedel, /bestallningar, /konto
+ *     - /admin/audit                      RoleRoute(['admin'])
+ *   - * (catch-all)                       -> /dashboard (which then runs AuthGate)
  *
- * Plan 04 expands this with the full shell + /lakemedel / /bestallningar /
- * /konto / /admin/audit routes.
+ * AppShell provides the <Outlet/> for child routes. AuthGate's loading
+ * state is <AuthSkeleton/>, which mirrors the shell chrome so there is
+ * no layout shift when /me resolves (UI-SPEC §Auth Gate Loading Skeleton).
  */
 export const router = createBrowserRouter([
   {
@@ -24,20 +31,22 @@ export const router = createBrowserRouter([
     element: <LoginPage />,
   },
   {
-    path: '/',
     element: (
       <AuthGate>
-        <Navigate to="/dashboard" replace />
+        <AppShell />
       </AuthGate>
     ),
-  },
-  {
-    path: '/dashboard',
-    element: (
-      <AuthGate>
-        <DashboardPage />
-      </AuthGate>
-    ),
+    children: [
+      { index: true, element: <Navigate to="/dashboard" replace /> },
+      { path: '/dashboard', element: <DashboardPage /> },
+      { path: '/lakemedel', element: <LakemedelPage /> },
+      { path: '/bestallningar', element: <BestallningarPage /> },
+      { path: '/konto', element: <KontoPage /> },
+      {
+        element: <RoleRoute roles={['admin']} />,
+        children: [{ path: '/admin/audit', element: <AuditPage /> }],
+      },
+    ],
   },
   {
     path: '*',
