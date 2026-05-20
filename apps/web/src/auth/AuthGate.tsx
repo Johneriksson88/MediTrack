@@ -4,7 +4,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import type { MeResponse } from '@meditrack/shared';
 
 import { fetchJson, isUnauthenticated } from '@/lib/api';
-import { Skeleton } from '@/components/ui/skeleton';
+import { AuthSkeleton } from '@/routes/shell/AuthSkeleton';
 
 /**
  * Pattern K / D-13 — guards every authenticated route.
@@ -12,8 +12,9 @@ import { Skeleton } from '@/components/ui/skeleton';
  * Source of truth for the `useAuth()` hook (added in Plan 03) is the
  * `['me']` query this component owns. Behavior:
  *
- *   - isLoading           → render skeleton (placeholder until Plan 04
- *                           ships the full AuthSkeleton chrome)
+ *   - isLoading           → render <AuthSkeleton/> (shell chrome with
+ *                           Skeleton blocks, no layout shift on resolve;
+ *                           UI-SPEC §Auth Gate Loading Skeleton)
  *   - 401 (unauthenticated) → <Navigate to="/login"> with `state.from`
  *                             so the LoginForm can redirect back
  *   - any other error     → re-throw (router error boundary handles)
@@ -28,11 +29,7 @@ export function AuthGate({ children }: PropsWithChildren) {
   });
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center p-8">
-        <Skeleton className="h-8 w-48" />
-      </div>
-    );
+    return <AuthSkeleton />;
   }
 
   if (isError) {
