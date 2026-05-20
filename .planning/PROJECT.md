@@ -16,7 +16,8 @@ A nurse can place an order for a low-stock medication and, when delivered, the s
 
 <!-- Shipped and confirmed valuable. -->
 
-(None yet — ship to validate)
+- [x] Role-based auth with three roles — `apotekare`, `sjuksköterska`, `admin` — with route guards and BE policy enforcement. *Validated in Phase 1: foundation-auth* (AUTH-01..07, UX-01; 18/18 vitest green, RBAC envelope verbatim Swedish, three seeded users on `Avdelning 4, Karolinska`, four-breakpoint UX-01 matrix human-approved)
+- [x] `docker compose up` runs the full stack locally with seed data. *Validated in Phase 1: foundation-auth* (postgres + api + web all healthy on fresh `up --build`; seed idempotent via upsert)
 
 ### Active
 
@@ -36,12 +37,12 @@ A nurse can place an order for a low-stock medication and, when delivered, the s
 
 - [ ] AI auto-categorization of medications into therapeutic class from name/ATC
 - [ ] Append-only audit log of every mutation (who / what / when) with admin view
-- [ ] Role-based auth with three roles — `apotekare`, `sjuksköterska`, `admin` — with route guards and BE policy enforcement
+- [x] Role-based auth with three roles — `apotekare`, `sjuksköterska`, `admin` — with route guards and BE policy enforcement *(validated in Phase 1)*
 - [ ] In-app low-stock notification banner on the dashboard
 
 **Interview deliverables (from brief §3.3 + §4):**
 
-- [ ] `docker compose up` runs the full stack locally with seed data
+- [x] `docker compose up` runs the full stack locally with seed data *(validated in Phase 1)*
 - [ ] README.md with: purpose, architecture choices and rationale, run instructions, known gaps, what I'd do with more time
 - [ ] At least one meaningful unit or integration test (target: order delivery flow including stock + audit)
 - [ ] Git history that tells the story (atomic, well-messaged commits — reviewer reads them)
@@ -85,19 +86,19 @@ A nurse can place an order for a low-stock medication and, when delivered, the s
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| TS+React on the frontend | User-locked; matches Medovia's stack | — Pending |
-| Node.js + TypeScript + Fastify on the backend | Same-language stack; Fastify is TS-native and fast; Express is the boring alternative if Fastify trips us | — Pending |
-| PostgreSQL + Prisma | Relational domain; row-level locks for §6 concurrency answer; Prisma generates types from schema | — Pending |
-| React + Vite + TanStack Query + Tailwind + shadcn/ui | Vite for fast dev loop; TanStack Query gives loading/error states (brief §3.2) almost for free; shadcn for stressed-nurse UX without writing CSS | — Pending |
-| Vitest for tests | Lightweight, Vite-native, satisfies §3.1's "minst en enhets-/integrationstest" requirement | — Pending |
-| Swedish UI, English code identifiers | UI matches the domain spec verbatim; code stays portable and readable for non-Swedish reviewers | — Pending |
-| AI optional = auto-categorization by name/ATC | Cheapest of the three AI suboptions; most testable; useful in the UI (filter by therapeutic class) | — Pending |
-| Auth = email/password + sessions + 3-role enum | Real RBAC enforced on BE every mutation; no OAuth; brief §6 question on retrofitting auth answered by *doing* it | — Pending |
-| Audit log = append-only `audit_events` table via BE middleware | Cheap to build, hard to bypass, demos well; admin role can view | — Pending |
-| Notifications = in-app banner on dashboard from a stock-level computed field | Email skipped; smaller scope, fast win, no extra infra | — Pending |
-| Multi-tenant data model from day 1 (`care_unit_id` on orders + `user_care_unit` join) | Brief §6 "50 vårdenheter" question is answered architecturally, not via UI | — Pending |
-| Stock decrement uses Postgres transaction + `SELECT … FOR UPDATE` on medication row | Brief §6 "two nurses ordering simultaneously" question gets a real answer | — Pending |
-| Docker Compose: `postgres` + `api` + `web` services, with a seed script | One command to run; reviewer doesn't fight with local setup | — Pending |
+| TS+React on the frontend | User-locked; matches Medovia's stack | ✓ Done (Phase 1) |
+| Node.js + TypeScript + Fastify on the backend | Same-language stack; Fastify is TS-native and fast; Express is the boring alternative if Fastify trips us | ✓ Done (Phase 1) |
+| PostgreSQL + Prisma | Relational domain; row-level locks for §6 concurrency answer; Prisma generates types from schema | ✓ Done (Phase 1) |
+| React + Vite + TanStack Query + Tailwind + shadcn/ui | Vite for fast dev loop; TanStack Query gives loading/error states (brief §3.2) almost for free; shadcn for stressed-nurse UX without writing CSS | ✓ Done (Phase 1) |
+| Vitest for tests | Lightweight, Vite-native, satisfies §3.1's "minst en enhets-/integrationstest" requirement | ✓ Done (Phase 1, 18/18 green) |
+| Swedish UI, English code identifiers | UI matches the domain spec verbatim; code stays portable and readable for non-Swedish reviewers | ✓ Done (Phase 1) |
+| AI optional = auto-categorization by name/ATC | Cheapest of the three AI suboptions; most testable; useful in the UI (filter by therapeutic class) | — Pending (Phase 6) |
+| Auth = email/password + sessions + 3-role enum | Real RBAC enforced on BE every mutation; no OAuth; brief §6 question on retrofitting auth answered by *doing* it | ✓ Done (Phase 1) |
+| Audit log = append-only `audit_events` table via BE middleware | Cheap to build, hard to bypass, demos well; admin role can view | — Pending (Phase 5) |
+| Notifications = in-app banner on dashboard from a stock-level computed field | Email skipped; smaller scope, fast win, no extra infra | — Pending (Phase 6) |
+| Multi-tenant data model from day 1 (`care_unit_id` on orders + `user_care_unit` join) | Brief §6 "50 vårdenheter" question is answered architecturally, not via UI | ◐ Partial (User+CareUnit shipped in Phase 1; orders join in Phase 3) |
+| Stock decrement uses Postgres transaction + `SELECT … FOR UPDATE` on medication row | Brief §6 "two nurses ordering simultaneously" question gets a real answer | — Pending (Phase 4) |
+| Docker Compose: `postgres` + `api` + `web` services, with a seed script | One command to run; reviewer doesn't fight with local setup | ✓ Done (Phase 1; api on `node:20-bookworm-slim` after Prisma 5 / Alpine incompat) |
 
 ## Evolution
 
@@ -117,4 +118,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-19 after initialization*
+*Last updated: 2026-05-20 after Phase 1 (foundation-auth) completion*
