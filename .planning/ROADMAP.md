@@ -18,7 +18,7 @@
 
 | # | Phase | Goal | Requirements | UI |
 |---|-------|------|--------------|----|
-| 1 | Foundation & Auth | 1/4 | In Progress|  |
+| 1 | Foundation & Auth | 3/4 | In Progress|  |
 | 2 | Medication Catalog | Authorized user can find, create, edit, and delete medications for their unit, with low-stock indicators driven by per-medication thresholds | CAT-01..07, STK-03, STK-04 | yes |
 | 3 | Draft Orders | User can compose, edit, and submit a multi-line medication order, transitioning `Utkast → Skickad` with backend status validation | ORD-01, ORD-02, ORD-03 | yes |
 | 4 | Confirm, Deliver & Stock | Pharmacist confirms and delivers orders; stock updates atomically under row-level locks; integration test covers the full pipeline | ORD-04, ORD-05, ORD-06, ORD-07, STK-01, STK-02, OPS-03 | yes |
@@ -33,10 +33,10 @@
 **Mode:** mvp
 **UI hint:** yes
 **Requirements:** AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05, AUTH-06, AUTH-07, UX-01
-**Plans:** 1/4 plans executed
+**Plans:** 3/4 plans executed
   - [x] 01-02-PLAN.md — Walking Skeleton: monorepo + DB + login + /me + docker-compose end-to-end
-  - [ ] 01-03-PLAN.md — RBAC primitives: PERMISSIONS map + requirePermission + admin:ping + useAuth/useCan/Can
-  - [ ] 01-04-PLAN.md — Responsive app shell + 4 nav destinations + AuthSkeleton + logout (UX-01)
+  - [x] 01-03-PLAN.md — RBAC primitives: PERMISSIONS map + requirePermission + admin:ping + useAuth/useCan/Can
+  - [x] 01-04-PLAN.md — Responsive app shell + 4 nav destinations + AuthSkeleton + logout (UX-01)
   - [ ] 01-05-PLAN.md — 3-role seeds + integration smoke test + FE reconciliation + README seeds
 **Success Criteria:**
 1. Seeded user logs in at `/login`, lands on a dashboard scoped to their `vårdenhet`, and session survives refresh.
