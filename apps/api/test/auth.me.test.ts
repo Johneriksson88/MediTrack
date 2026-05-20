@@ -1,0 +1,98 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import type { FastifyInstance } from 'fastify';
+import {
+  TEST_ADMIN,
+  buildTestApp,
+  ensureAdminSeed,
+  prisma,
+  resetSessions,
+} from './helpers/buildTestApp.js';
+
+/**
+ * Phase 1 success #4 / AUTH-02 / AUTH-07 / D-18 — login → /me smoke test.
+ *
+ * The single most important behavior of Plan 02: a real session cookie
+ * round-trips successfully and `/me` returns the user joined with their
+ * `careUnit`. Plus the two unauthenticated paths (no cookie, tampered
+ * cookie) that both 401 with the canonical envelope.
+ */
+
+let app: FastifyInstance;
+
+beforeAll(async () => {
+  app = await buildTestApp();
+  await ensureAdminSeed();
+});
+
+beforeEach(async () => {
+  await resetSessions();
+});
+
+afterAll(async () => {
+  await app.close();
+  await prisma.$disconnect();
+});
+
+async function loginAndCaptureCookie(): Promise<string> {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { email: TEST_ADMIN.email, password: TEST_ADMIN.password },
+  });
+  expect(res.statusCode).toBe(200);
+  const setCookie = res.headers['set-cookie'];
+  const cookieHeader = Array.isArray(setCookie) ? setCookie[0]! : String(setCookie);
+  // `Set-Cookie: meditrack.sid=<signed-value>; Path=/; ...`
+  const match = cookieHeader.match(/(meditrack\.sid=[^;]+)/);
+  expect(match).not.toBeNull();
+  return match![1]!;
+}
+
+describe('GET /api/me', () => {
+  it('returns 200 + meResponse shape on a valid session cookie', async () => {
+    const cookie = await loginAndCaptureCookie();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/me',
+      headers: { cookie },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body).toEqual({
+      id: expect.any(String),
+      email: TEST_ADMIN.email,
+      name: TEST_ADMIN.name,
+      role: 'admin',
+      careUnit: {
+        id: TEST_ADMIN.careUnitId,
+        name: TEST_ADMIN.careUnitName,
+      },
+      permissions: [], // Plan 02 — Plan 03 widens via PERMISSIONS map
+    });
+    expect(body).not.toHaveProperty('passwordHash');
+  });
+
+  it('returns 401 + unauthenticated envelope when no cookie is sent', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/me' });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({
+      error: { code: 'unauthenticated', message: 'Du måste logga in.' },
+    });
+  });
+
+  it('returns 401 + unauthenticated envelope when the cookie signature is tampered', async () => {
+    const cookie = await loginAndCaptureCookie();
+    // Mutate the signed suffix of the cookie value to break HMAC.
+    const tampered = cookie.replace(/.$/, (c) => (c === 'a' ? 'b' : 'a'));
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/me',
+      headers: { cookie: tampered },
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({
+      error: { code: 'unauthenticated', message: 'Du måste logga in.' },
+    });
+  });
+});
