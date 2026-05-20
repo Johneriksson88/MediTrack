@@ -1,0 +1,59 @@
+// MediTrack — Phase 1 schema (Pattern A, D-01, D-07, AUTH-04, AUTH-07)
+//
+// User → CareUnit:    one user belongs to exactly one vårdenhet (AUTH-07).
+// Session → User:     opaque-ID server-side sessions (D-01); `careUnitId`
+//                     snapshot lives on Session so the auth preHandler can
+//                     decorate `req.user.careUnitId` without joining User
+//                     on every request (D-16, performance + audit safety).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  apotekare
+  sjukskoterska
+  admin
+}
+
+model CareUnit {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  users     User[]
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  role         Role
+  careUnitId   String
+  careUnit     CareUnit  @relation(fields: [careUnitId], references: [id])
+  sessions     Session[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([careUnitId])
+}
+
+model Session {
+  // Session ID is set by the app (crypto.randomBytes(32) base64url, NOT cuid).
+  id         String   @id
+  userId     String
+  // Denormalized snapshot of the user's careUnit at session creation (D-16).
+  careUnitId String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+  lastSeenAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}

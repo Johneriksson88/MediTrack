@@ -1,0 +1,17 @@
+{
+  "name": "meditrack",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "db:migrate": "pnpm --filter @meditrack/api exec prisma migrate dev",
+    "db:seed": "pnpm --filter @meditrack/api exec prisma db seed"
+  },
+  "packageManager": "pnpm@9.0.0"
+}
