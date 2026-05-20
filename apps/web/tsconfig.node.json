@@ -1,0 +1,13 @@
+{
+  "comment": "Reserved for vite.config / build-tool type-checking. Plan 02 type-checks vite.config.ts in the main tsconfig.json (include includes it). Kept for future Vite tooling that scopes node-only modules separately.",
+  "compilerOptions": {
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": []
+}
