@@ -16,8 +16,9 @@ import { fetchJson, type ApiError } from '@/lib/api';
  *   useUpdateOrderLineQuantity — optimistic (250ms debounce, rollback on error; D-52)
  *   useRemoveOrderLine   — pessimistic (D-57 cache hydration)
  *
- * Slice 4 will add:
- *   useSubmitOrder, useDiscardOrder
+ * Slice 4 adds:
+ *   useSubmitOrder  — pessimistic; POST /api/orders/:id/submit; cache hydration + invalidate drafts list
+ *   useDiscardOrder — pessimistic; DELETE /api/orders/:id; invalidate drafts list; navigate on success
  *
  * Pattern mirrors useMedicationMutations.ts (pessimistic/optimistic mutations).
  * 409 order_locked carve-out pattern mirrors conflict_duplicate_medication carve-out.
@@ -208,6 +209,91 @@ export function useRemoveOrderLine() {
       // D-55: 409 order_locked carve-out.
       if (err.envelope.error.code === 'order_locked') {
         toast.error('Beställningen kan inte ändras efter att den skickats.');
+        void queryClient.invalidateQueries({ queryKey: ['order', vars.orderId] });
+        return;
+      }
+      toast.error('Kunde inte spara — försök igen.');
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Slice 4 — Submit + Discard mutations (D-57, D-67, D-69, D-70)
+// ---------------------------------------------------------------------------
+
+/**
+ * Submits a draft order (Utkast → Skickad).
+ *
+ * PESSIMISTIC (D-52): waits for server response before updating UI.
+ * D-57: On success, hydrates ['order', orderId] cache with the full updated Order
+ * (including status: 'skickad', submittedAt, submittedByUserId) + invalidates
+ * ['orders', { status: 'utkast' }] so the draft disappears from the list.
+ *
+ * Toast policy (UI-SPEC §Toast Feedback):
+ *   - Success: silent — the OrderStatusPill flip + SubmitConfirmationBanner is the feedback.
+ *   - 409 order_locked: destructive toast + invalidate ['order', orderId] → Mode B re-render.
+ *   - 422 validation_failed: 'Kunde inte spara — försök igen.' (rare — disabled predicate catches this).
+ *   - Other error: 'Kunde inte spara — försök igen.'
+ */
+export function useSubmitOrder() {
+  const queryClient = useQueryClient();
+
+  return useMutation<OrderResponse, ApiError, { orderId: string }>({
+    mutationFn: ({ orderId }) =>
+      fetchJson<OrderResponse>(`/api/orders/${orderId}/submit`, {
+        method: 'POST',
+      }),
+    onSuccess: (response, vars) => {
+      // D-57: cache hydration — response is the full updated skickad Order.
+      queryClient.setQueryData(['order', vars.orderId], response);
+      // Invalidate drafts list so the just-submitted order disappears (D-57).
+      void queryClient.invalidateQueries({ queryKey: ['orders', { status: 'utkast' }] });
+    },
+    onError: (err, vars) => {
+      // D-55: 409 order_locked carve-out.
+      if (err.envelope.error.code === 'order_locked') {
+        toast.error('Beställningen kan inte ändras efter att den skickats.');
+        void queryClient.invalidateQueries({ queryKey: ['order', vars.orderId] });
+        return;
+      }
+      // 422 validation_failed (belt-and-suspenders — the disabled predicate normally catches this).
+      toast.error('Kunde inte spara — försök igen.');
+    },
+  });
+}
+
+/**
+ * Soft-deletes a draft order (Kasta utkast, D-67).
+ *
+ * PESSIMISTIC (D-52): waits for the 204 response before navigating.
+ * On success: invalidates ['orders', { status: 'utkast' }] so the list refreshes.
+ * Navigation to /bestallningar is performed by the caller (ComposeOrderPage) after
+ * awaiting mutateAsync — the hook is page-agnostic.
+ *
+ * Toast policy (UI-SPEC §Toast Feedback):
+ *   - Success: silent — navigation back to /bestallningar is the feedback.
+ *   - 409 order_locked: destructive toast + invalidate ['order', orderId] → Mode B re-render.
+ *   - Other error: 'Kunde inte spara — försök igen.'
+ */
+export function useDiscardOrder() {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, ApiError, { orderId: string }>({
+    mutationFn: ({ orderId }) =>
+      fetchJson<void>(`/api/orders/${orderId}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: (_data, vars) => {
+      // Invalidate drafts list so the discarded draft disappears.
+      void queryClient.invalidateQueries({ queryKey: ['orders', { status: 'utkast' }] });
+      // Optionally remove the single-order cache entry.
+      queryClient.removeQueries({ queryKey: ['order', vars.orderId] });
+    },
+    onError: (err, vars) => {
+      // D-55: 409 order_locked carve-out — order was submitted by another tab/session.
+      if (err.envelope.error.code === 'order_locked') {
+        toast.error('Beställningen kan inte ändras efter att den skickats.');
+        // Invalidate so the page re-renders into Mode B (the order is now skickad).
         void queryClient.invalidateQueries({ queryKey: ['order', vars.orderId] });
         return;
       }
