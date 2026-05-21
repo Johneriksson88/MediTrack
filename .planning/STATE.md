@@ -62,5 +62,13 @@ See: [.planning/config.json](config.json)
 
 Run `/gsd:discuss-phase 1` to gather context for Phase 1 before planning, or `/gsd:plan-phase 1` to skip discussion and plan directly.
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260521-ip1 | Update Phase 1 regression tests to assert post-Phase-2 permissions arrays | 2026-05-21 | f9cfc28 | [260521-ip1-update-phase-1-regression-tests-to-asser](./quick/260521-ip1-update-phase-1-regression-tests-to-asser/) |
+
+Last activity: 2026-05-21 — Completed quick task 260521-ip1: Update Phase 1 regression tests to assert post-Phase-2 permissions arrays
+
 ---
-*Last updated: 2026-05-19 after roadmap creation*
+*Last updated: 2026-05-21 after quick task 260521-ip1*
