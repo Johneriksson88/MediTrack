@@ -30,8 +30,8 @@ A nurse can place an order for a low-stock medication and, when delivered, the s
 
 - [x] Medication registry with name, ATC code, form, strength, current stock — list / create / edit / delete *(validated in Phase 2)*
 - [x] Search and filter on name, ATC code, or form *(validated in Phase 2)*
-- [ ] Multi-line order creation (one or more medications + desired quantity)
-- [ ] Order status machine `Utkast → Skickad → Bekräftad → Levererad` with transitions enforced
+- [x] Multi-line order creation (one or more medications + desired quantity) *(validated in Phase 3)*
+- [ ] Order status machine `Utkast → Skickad → Bekräftad → Levererad` with transitions enforced *(partial — Utkast→Skickad shipped in Phase 3 with 409 lock; Bekräftad/Levererad pending Phase 4)*
 - [ ] Per-vårdenhet order history view
 - [ ] Stock auto-decrement on delivery (transactional)
 - [x] Low-stock warning when current stock < per-medication threshold *(validated in Phase 2)*
@@ -99,7 +99,7 @@ A nurse can place an order for a low-stock medication and, when delivered, the s
 | Auth = email/password + sessions + 3-role enum | Real RBAC enforced on BE every mutation; no OAuth; brief §6 question on retrofitting auth answered by *doing* it | ✓ Done (Phase 1) |
 | Audit log = append-only `audit_events` table via BE middleware | Cheap to build, hard to bypass, demos well; admin role can view | — Pending (Phase 5) |
 | Notifications = in-app banner on dashboard from a stock-level computed field | Email skipped; smaller scope, fast win, no extra infra | — Pending (Phase 6) |
-| Multi-tenant data model from day 1 (`care_unit_id` on orders + `user_care_unit` join) | Brief §6 "50 vårdenheter" question is answered architecturally, not via UI | ◐ Partial (User+CareUnit shipped in Phase 1; orders join in Phase 3) |
+| Multi-tenant data model from day 1 (`care_unit_id` on orders + `user_care_unit` join) | Brief §6 "50 vårdenheter" question is answered architecturally, not via UI | ✓ Done (User+CareUnit in Phase 1; Order.careUnitId + careUnit-scoped queries in Phase 3 with 404 existence-probe protection) |
 | Stock decrement uses Postgres transaction + `SELECT … FOR UPDATE` on medication row | Brief §6 "two nurses ordering simultaneously" question gets a real answer | — Pending (Phase 4) |
 | Docker Compose: `postgres` + `api` + `web` services, with a seed script | One command to run; reviewer doesn't fight with local setup | ✓ Done (Phase 1; api on `node:20-bookworm-slim` after Prisma 5 / Alpine incompat) |
 
@@ -121,4 +121,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-21 after Phase 2 (medication-catalog) completion*
+*Last updated: 2026-05-22 after Phase 3 (draft-orders) completion*
