@@ -20,7 +20,7 @@
 |---|-------|------|--------------|----|
 | 1 | Foundation & Auth | 4/4 | Complete   | 2026-05-20 |
 | 2 | Medication Catalog | 4/4 | Complete   | 2026-05-21 |
-| 3 | Draft Orders | 2/4 | In Progress|  |
+| 3 | Draft Orders | 3/4 | In Progress|  |
 | 4 | Confirm, Deliver & Stock | Pharmacist confirms and delivers orders; stock updates atomically under row-level locks; integration test covers the full pipeline | ORD-04, ORD-05, ORD-06, ORD-07, STK-01, STK-02, OPS-03 | yes |
 | 5 | Audit Log | Every mutation appended to an immutable `audit_events` table; admin can browse and filter the log | AUD-01, AUD-02, AUD-03 | yes |
 | 6 | AI Categorization & Low-Stock Notifications | LLM suggests therapeutic class on medication save; dashboard banner surfaces low-stock items live | AI-01, AI-02, AI-03, NTF-01, NTF-02 | yes |
@@ -67,10 +67,10 @@
 **Mode:** mvp
 **UI hint:** yes
 **Requirements:** ORD-01, ORD-02, ORD-03
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
   - [x] 03-01-schema-foundation-PLAN.md — Slice 1 (Wave 1): Prisma Order+OrderLine+OrderStatus migration + shared order contracts + order:* permission keys + OrderLockedError/ValidationFailedError + seeded Utkast draft
   - [x] 03-02-drafts-list-PLAN.md — Slice 2 (Wave 2): POST/GET /api/orders + full order service layer (all 8 functions) + drafts list page (table ≥md / cards <md) + Ny beställning → POST empty → navigate + /bestallningar/:id route stub
-  - [ ] 03-03-compose-view-PLAN.md — Slice 3 (Wave 3): GET /api/orders/:id + line CRUD endpoints + picker-options + ComposeOrderPage Mode A + MedicationPickerSheet + QuantityStepper (optimistic+debounced+long-press) + 409 order_locked contract live
+  - [x] 03-03-compose-view-PLAN.md — Slice 3 (Wave 3): GET /api/orders/:id + line CRUD endpoints + picker-options + ComposeOrderPage Mode A + MedicationPickerSheet + QuantityStepper (optimistic+debounced+long-press) + 409 order_locked contract live
   - [ ] 03-04-submit-discard-PLAN.md — Slice 4 (Wave 4): POST /submit + DELETE / + OrderStatusPill + SubmitConfirmationBanner + DiscardDraftDialog + Mode B render + canonical D-73 integration suite (5 scenarios)
 **Success Criteria:**
 1. User can create a draft order containing one or more `(medication, quantity)` rows; the order persists with status `Utkast`.

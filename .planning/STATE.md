@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 03
 status: ready_to_plan
-last_updated: "2026-05-21T23:00:00.000Z"
+last_updated: "2026-05-21T21:17:52.023Z"
 last_activity: 2026-05-21
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 12
   completed_plans: 11
-  percent: 31
+  percent: 29
 ---
 
 # State: MediTrack
@@ -79,7 +79,7 @@ Run `/gsd:discuss-phase 1` to gather context for Phase 1 before planning, or `/g
 |---|------|--------|---------|
 | 03-01 | Schema Foundation | Complete | fded456, edc8b44, 6c2f00f, 392806d |
 | 03-02 | Drafts List | Complete | 19954b2, 62d9458, 2c93792, 6b907b3 |
-| 03-03 | Frontend List + Compose | Pending | - |
+| 03-03 | Frontend List + Compose | Complete | fb5820c, a3212c7, 627a7a8 |
 | 03-04 | Integration Tests | Pending | - |
 
 ## Decisions Made
@@ -91,8 +91,13 @@ Run `/gsd:discuss-phase 1` to gather context for Phase 1 before planning, or `/g
 - formatRelative() helper inlined in DraftCard.tsx — no date-fns dep (T-03-SC)
 - pickerOptionsRoute registered before getOrderRoute — prevents param collision on :id
 - Full order service layer implemented in Slice 2 (lines/submit/delete/picker routes); Slices 3-4 add FE wiring
+- Atomic tx.order.updateMany compare-and-swap precondition (no assertOrderEditable helper) — preserves Postgres row-level write lock for full tx duration (D-54)
+- D-57 full-Order-on-line-op: DELETE/POST/PATCH lines return complete OrderResponse; FE setQueryData in onSuccess
+- QuantityStepper uses debounceRef + longPressInitRef/Repeat refs (not useDebounce hook) to avoid stale closure in intervals
+- MedicationPickerSheet optimistic close is fail-silently UX in Slice 3 (toast is the error feedback)
+- Submit + Kasta inert in Slice 3 — Slice 4 wires useSubmitOrder + DiscardDraftDialog
 
 Last activity: 2026-05-21
 
 ---
-*Last updated: 2026-05-21 after 03-02-drafts-list*
+*Last updated: 2026-05-21 after 03-03-compose-view*
