@@ -10,6 +10,7 @@ import { authRoutes } from './routes/auth.js';
 import { meRoutes } from './routes/me.js';
 import { adminPingRoutes } from './routes/adminPing.js';
 import { healthzRoutes } from './routes/healthz.js';
+import { medicationRoutes } from './routes/medications/index.js';
 
 /**
  * Pattern B — application composition.
@@ -51,6 +52,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(authRoutes);
   await app.register(meRoutes);
   await app.register(adminPingRoutes);
+  // Phase 2: medication catalog routes (list, search, create; update/delete in Plans 03/04).
+  await app.register(medicationRoutes);
   await app.register(healthzRoutes);
 
   return app;
