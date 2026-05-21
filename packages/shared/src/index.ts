@@ -12,6 +12,28 @@ export {
   actionKey,
   type ActionKey,
 } from './contracts/permissions.js';
+export {
+  medicationListItem,
+  type MedicationListItem,
+  medicationListQuery,
+  type MedicationListQuery,
+  medicationListResponse,
+  type MedicationListResponse,
+  medicationSearchQuery,
+  type MedicationSearchQuery,
+  medicationSearchResult,
+  type MedicationSearchResult,
+  medicationSearchResponse,
+  type MedicationSearchResponse,
+  medicationCreateFromNplRequest,
+  type MedicationCreateFromNplRequest,
+  medicationCreateUserRequest,
+  type MedicationCreateUserRequest,
+  medicationCreateRequest,
+  type MedicationCreateRequest,
+  medicationUpdateRequest,
+  type MedicationUpdateRequest,
+} from './contracts/medication.js';
 
 // Constants — locked vocabularies shared FE+BE
 export { ROLES, roleEnum, type Role } from './constants/roles.js';
@@ -21,3 +43,9 @@ export {
   orderStatusEnum,
   type OrderStatus,
 } from './constants/orderStatus.js';
+export {
+  TOP_MEDICATION_FORMS,
+  type MedicationForm,
+  OVRIGA_FILTER_VALUE,
+} from './constants/medicationForms.js';
+export { defaultLowStockThreshold } from './constants/medicationDefaults.js';

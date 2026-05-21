@@ -20,6 +20,12 @@ import type { ActionKey, Role } from '@meditrack/shared';
  */
 export const PERMISSIONS: Record<ActionKey, Role[]> = {
   'admin:ping': ['admin'],
+  // Phase 2 D-43 — medication permission matrix.
+  // All three roles can read (view catalog); only apotekare+admin can mutate.
+  'medication:read':   ['apotekare', 'sjukskoterska', 'admin'],
+  'medication:create': ['apotekare', 'admin'],
+  'medication:update': ['apotekare', 'admin'],
+  'medication:delete': ['apotekare', 'admin'],
 };
 
 /**

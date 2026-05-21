@@ -19,7 +19,13 @@ import { z } from 'zod';
  * Phase 2+ widens this union with `'medication:create'`,
  * `'order:confirm'`, `'order:deliver'`, `'audit:read'`, etc.
  */
-export const ACTION_KEYS = ['admin:ping'] as const;
+export const ACTION_KEYS = [
+  'admin:ping',
+  'medication:read',
+  'medication:create',
+  'medication:update',
+  'medication:delete',
+] as const;
 export type ActionKey = (typeof ACTION_KEYS)[number];
 
 export const actionKey = z.enum(ACTION_KEYS);
