@@ -31,7 +31,7 @@ import { InlineEditThreshold } from '@/components/InlineEditThreshold';
  * Lager cell: when currentStock < lowStockThreshold, renders AlertTriangle
  * icon in a Tooltip + <LowStockBadge> + number. Otherwise just the number.
  *
- * Tröskel cell: number display. // TODO Plan 03: <InlineEditThreshold>
+ * Tröskel cell: <InlineEditThreshold> with click-to-edit + optimistic update.
  *
  * Accessibility: tabIndex + onKeyDown on rows (UI-SPEC §A11y Table keyboard nav).
  */

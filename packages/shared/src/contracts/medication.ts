@@ -47,13 +47,23 @@ export type MedicationListItem = z.infer<typeof medicationListItem>;
 /**
  * Query parameters for GET /api/medications (D-44).
  * All numeric fields use z.coerce.* so Fastify query strings parse cleanly.
- * `belowThreshold` coerced from string 'true'/'false'/'1'/'0'.
+ * `belowThreshold` accepts only the literal strings 'true' or 'false';
+ * absent is treated as unfiltered. Anything else returns 400 validation_failed.
+ *
+ * CR-01 fix: `z.coerce.boolean()` is unusable for query strings — it treats
+ * any non-empty string (including 'false') as `true` because it's just
+ * `Boolean(value)` under the hood. Using an explicit enum + transform makes
+ * `?belowThreshold=false` actually mean "do not filter" for direct API
+ * callers (the FE's clean-URL policy already omits the param when false).
  */
 export const medicationListQuery = z.object({
   q: z.string().optional(),
   atc: z.string().optional(),
   form: z.string().optional(),
-  belowThreshold: z.coerce.boolean().optional(),
+  belowThreshold: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
