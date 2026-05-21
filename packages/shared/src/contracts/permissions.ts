@@ -25,6 +25,14 @@ export const ACTION_KEYS = [
   'medication:create',
   'medication:update',
   'medication:delete',
+  // Phase 3 D-64 — order permissions; all 3 roles per REQUIREMENTS.md ORD-01..03
+  // (no role restriction on Phase 3 operations). Phase 4 adds 'order:confirm' /
+  // 'order:deliver' restricted to apotekare+admin for the delivery transition.
+  'order:read',
+  'order:create',
+  'order:update',
+  'order:submit',
+  'order:delete',
 ] as const;
 export type ActionKey = (typeof ACTION_KEYS)[number];
 

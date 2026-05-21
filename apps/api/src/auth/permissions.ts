@@ -26,6 +26,14 @@ export const PERMISSIONS: Record<ActionKey, Role[]> = {
   'medication:create': ['apotekare', 'admin'],
   'medication:update': ['apotekare', 'admin'],
   'medication:delete': ['apotekare', 'admin'],
+  // Phase 3 D-64 — order permissions; all three roles per REQUIREMENTS.md
+  // ORD-01..03 (no role restriction). Phase 4 adds 'order:confirm' /
+  // 'order:deliver' restricted to apotekare+admin for the delivery transition.
+  'order:read':   ['apotekare', 'sjukskoterska', 'admin'],
+  'order:create': ['apotekare', 'sjukskoterska', 'admin'],
+  'order:update': ['apotekare', 'sjukskoterska', 'admin'],
+  'order:submit': ['apotekare', 'sjukskoterska', 'admin'],
+  'order:delete': ['apotekare', 'sjukskoterska', 'admin'],
 };
 
 /**
