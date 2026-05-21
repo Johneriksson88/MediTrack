@@ -18,6 +18,9 @@ A nurse can place an order for a low-stock medication and, when delivered, the s
 
 - [x] Role-based auth with three roles — `apotekare`, `sjuksköterska`, `admin` — with route guards and BE policy enforcement. *Validated in Phase 1: foundation-auth* (AUTH-01..07, UX-01; 18/18 vitest green, RBAC envelope verbatim Swedish, three seeded users on `Avdelning 4, Karolinska`, four-breakpoint UX-01 matrix human-approved)
 - [x] `docker compose up` runs the full stack locally with seed data. *Validated in Phase 1: foundation-auth* (postgres + api + web all healthy on fresh `up --build`; seed idempotent via upsert)
+- [x] Medication registry with name, ATC code, form, strength, current stock — list / create / edit / delete. *Validated in Phase 2: medication-catalog* (CAT-01..07, STK-03, STK-04; Prisma `Medication` + `CareUnitMedication` with `@@unique([careUnitId, medicationId])` + `pg_trgm` GIN index; 43 538-row NPL seed with deterministic ~8% below-threshold PRNG; GET/POST/PATCH/DELETE `/api/medications` with RBAC + `careUnitId` scoping + soft-delete-with-restore; 40/40 web tests green; 5 items in `02-HUMAN-UAT.md` await live-stack walkthrough)
+- [x] Search and filter on name, ATC code, or form. *Validated in Phase 2: medication-catalog* (LakemedelFilter: 200ms-debounced search, ATC combobox, Form select, "Visa endast under tröskel" chip; all four combine into one query and round-trip through URL search params — deep-linkable)
+- [x] Low-stock warning when current stock < per-medication threshold. *Validated in Phase 2: medication-catalog* (LowStockBadge with AlertTriangle icon on Lager cell; LowStockBanner above the list; `defaultLowStockThreshold(form)` heuristic in shared package; InlineEditThreshold with optimistic update + rollback)
 
 ### Active
 
@@ -25,13 +28,13 @@ A nurse can place an order for a low-stock medication and, when delivered, the s
 
 **Mandatory (from brief §2.1):**
 
-- [ ] Medication registry with name, ATC code, form, strength, current stock — list / create / edit / delete
-- [ ] Search and filter on name, ATC code, or form
+- [x] Medication registry with name, ATC code, form, strength, current stock — list / create / edit / delete *(validated in Phase 2)*
+- [x] Search and filter on name, ATC code, or form *(validated in Phase 2)*
 - [ ] Multi-line order creation (one or more medications + desired quantity)
 - [ ] Order status machine `Utkast → Skickad → Bekräftad → Levererad` with transitions enforced
 - [ ] Per-vårdenhet order history view
 - [ ] Stock auto-decrement on delivery (transactional)
-- [ ] Low-stock warning when current stock < per-medication threshold
+- [x] Low-stock warning when current stock < per-medication threshold *(validated in Phase 2)*
 
 **Chosen optionals (from brief §2.2):**
 
@@ -118,4 +121,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-20 after Phase 1 (foundation-auth) completion*
+*Last updated: 2026-05-21 after Phase 2 (medication-catalog) completion*
