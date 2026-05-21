@@ -19,7 +19,7 @@
 | # | Phase | Goal | Requirements | UI |
 |---|-------|------|--------------|----|
 | 1 | Foundation & Auth | 4/4 | Complete   | 2026-05-20 |
-| 2 | Medication Catalog | 1/4 | In Progress|  |
+| 2 | Medication Catalog | 2/4 | In Progress|  |
 | 3 | Draft Orders | User can compose, edit, and submit a multi-line medication order, transitioning `Utkast → Skickad` with backend status validation | ORD-01, ORD-02, ORD-03 | yes |
 | 4 | Confirm, Deliver & Stock | Pharmacist confirms and delivers orders; stock updates atomically under row-level locks; integration test covers the full pipeline | ORD-04, ORD-05, ORD-06, ORD-07, STK-01, STK-02, OPS-03 | yes |
 | 5 | Audit Log | Every mutation appended to an immutable `audit_events` table; admin can browse and filter the log | AUD-01, AUD-02, AUD-03 | yes |
@@ -50,9 +50,9 @@
 **Mode:** mvp
 **UI hint:** yes
 **Requirements:** CAT-01, CAT-02, CAT-03, CAT-04, CAT-05, CAT-06, CAT-07, STK-03, STK-04
-**Plans:** 1/4 plans executed
+**Plans:** 2/4 plans executed
   - [x] 02-01-PLAN.md — Slice 1 (Wave 1): migration + pg_trgm + seed (43k NPL rows) + GET /api/medications + add Sheet (typeahead + Skapa nytt) + list page with low-stock badge + count banner
-  - [ ] 02-02-PLAN.md — Slice 2 (Wave 2): LakemedelFilter — search input (200ms debounce) + ATC combobox + Form select + below-threshold chip, all URL-deep-linkable
+  - [x] 02-02-PLAN.md — Slice 2 (Wave 2): LakemedelFilter — search input (200ms debounce) + ATC combobox + Form select + below-threshold chip, all URL-deep-linkable
   - [ ] 02-03-PLAN.md — Slice 3 (Wave 3): PATCH /api/medications/:id (NPL-strip + scope-safe) + RBAC-aware edit/view Sheet + InlineEditThreshold (optimistic mutation)
   - [ ] 02-04-PLAN.md — Slice 4 (Wave 4): DELETE /api/medications/:id (soft-delete via deletedAt) + DeleteMedicationDialog + Sheet Ta-bort wiring + transparent-restore verification
 **Success Criteria:**
