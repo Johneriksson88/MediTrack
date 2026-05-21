@@ -50,6 +50,11 @@
 **Mode:** mvp
 **UI hint:** yes
 **Requirements:** CAT-01, CAT-02, CAT-03, CAT-04, CAT-05, CAT-06, CAT-07, STK-03, STK-04
+**Plans:** 4 plans
+  - [ ] 02-01-PLAN.md — Slice 1 (Wave 1): migration + pg_trgm + seed (43k NPL rows) + GET /api/medications + add Sheet (typeahead + Skapa nytt) + list page with low-stock badge + count banner
+  - [ ] 02-02-PLAN.md — Slice 2 (Wave 2): LakemedelFilter — search input (200ms debounce) + ATC combobox + Form select + below-threshold chip, all URL-deep-linkable
+  - [ ] 02-03-PLAN.md — Slice 3 (Wave 3): PATCH /api/medications/:id (NPL-strip + scope-safe) + RBAC-aware edit/view Sheet + InlineEditThreshold (optimistic mutation)
+  - [ ] 02-04-PLAN.md — Slice 4 (Wave 4): DELETE /api/medications/:id (soft-delete via deletedAt) + DeleteMedicationDialog + Sheet Ta-bort wiring + transparent-restore verification
 **Success Criteria:**
 1. Catalog page lists all medications for the current `vårdenhet` with name, ATC code, form, strength, current stock, and a visible indicator when stock < threshold.
 2. Search by name (case-insensitive, partial) and filter by ATC prefix + form work in combination on the same query.
