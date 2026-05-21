@@ -16,6 +16,16 @@
 //                     @@unique([careUnitId, medicationId]) prevents duplicate
 //                     active rows; transparent restore via UPDATE deletedAt=NULL
 //                     instead of INSERT (D-30).
+//
+// Phase 3 additions (D-46..D-48, D-62, D-63):
+//
+// OrderStatus:        Postgres enum mirroring ORDER_STATUSES in
+//                     packages/shared/src/constants/orderStatus.ts (D-46).
+//                     All four values declared here; Phase 3 only uses
+//                     utkast + skickad; Phase 4 uses bekraftad + levererad.
+// Order:              careUnitId-scoped order with soft-delete (D-48, D-62).
+//                     Single table — status column distinguishes lifecycle.
+// OrderLine:          Per-medication line referencing CareUnitMedication (D-63).
 
 generator client {
   provider = "prisma-client-js"
@@ -46,6 +56,7 @@ model CareUnit {
   createdAt           DateTime              @default(now())
   users               User[]
   careUnitMedications CareUnitMedication[]
+  orders              Order[]
 }
 
 model User {
@@ -59,6 +70,10 @@ model User {
   sessions     Session[]
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+
+  /// Phase 3 D-62 — back-relations for orders created / submitted by this user.
+  createdOrders   Order[] @relation("OrderCreatedBy")
+  submittedOrders Order[] @relation("OrderSubmittedBy")
 
   @@index([careUnitId])
 }
@@ -121,7 +136,104 @@ model CareUnitMedication {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// Phase 3 D-63 — back-relation for order lines referencing this med.
+  orderLines OrderLine[]
+
   @@unique([careUnitId, medicationId])
   @@index([careUnitId])
   @@index([deletedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 — Order flow (D-46..D-48, D-62, D-63)
+// ---------------------------------------------------------------------------
+
+/// Phase 3 D-46 — OrderStatus mirrors ORDER_STATUSES from
+/// packages/shared/src/constants/orderStatus.ts verbatim (single source of
+/// truth for the closed status set). All four values declared here even though
+/// Phase 3 only uses utkast + skickad — Phase 4 needs zero schema work to
+/// introduce bekraftad / levererad.
+enum OrderStatus {
+  utkast
+  skickad
+  bekraftad
+  levererad
+}
+
+/// Phase 3 D-48 / D-62 — Single Order table; status column distinguishes
+/// draft from submitted. careUnitId-scoped; soft-delete via deletedAt (D-62 / D-33
+/// carry-over from CareUnitMedication). Dual FKs to User need @relation(name:…)
+/// to disambiguate createdBy vs submittedBy (Prisma requirement).
+///
+/// Indexes: (careUnitId, status) powers GET /api/orders?status=utkast;
+///          (careUnitId, createdAt) powers sort; (createdByUserId) for future
+///          "my drafts" filter.
+///
+/// Phase 4 adds confirm/deliver transitions (ORD-04, ORD-05); the
+/// submittedAt/By column-pair establishes the confirmedAt/By + deliveredAt/By
+/// precedent Phase 4 mirrors.
+model Order {
+  id String @id @default(cuid())
+
+  careUnitId String
+  careUnit   CareUnit @relation(fields: [careUnitId], references: [id])
+
+  /// Draft author; Restrict prevents deleting a user who has authored orders.
+  createdByUserId String
+  createdBy       User   @relation(name: "OrderCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  status OrderStatus @default(utkast)
+
+  /// D-49 — stamped by the submit transition; null while in utkast.
+  submittedAt DateTime?
+
+  /// D-49 — FK to the user who submitted; Restrict prevents deleting a user
+  /// with historical Skickad orders. Named relation required by Prisma to
+  /// disambiguate from createdBy (two FKs to User on the same model).
+  submittedByUserId String?
+  submittedBy       User?  @relation(name: "OrderSubmittedBy", fields: [submittedByUserId], references: [id], onDelete: Restrict)
+
+  /// D-62 / D-33 — soft-delete flag for the Discard affordance (D-67).
+  /// Lists always filter deletedAt: null.
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines OrderLine[]
+
+  @@index([careUnitId, status])
+  @@index([careUnitId, createdAt])
+  @@index([createdByUserId])
+}
+
+/// Phase 3 D-63 — Per-medication line on an order. onDelete: Cascade so
+/// lines are removed when the parent order is hard-deleted (soft-delete on
+/// Order is the normal path — hard-delete is DB maintenance only).
+/// onDelete: Restrict on careUnitMedicationId preserves order history if a
+/// medication is removed from the catalog.
+///
+/// No @@unique([orderId, careUnitMedicationId]) per D-63 — same med allowed
+/// on two lines in v1 (merge-duplicates UI is a Phase 7 README note candidate).
+///
+/// Phase 4 reuses @@index([careUnitMedicationId]) for SELECT … FOR UPDATE on
+/// the stock-lock path (STK-02).
+model OrderLine {
+  id String @id @default(cuid())
+
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  careUnitMedicationId String
+  careUnitMedication   CareUnitMedication @relation(fields: [careUnitMedicationId], references: [id], onDelete: Restrict)
+
+  /// Positive integer validated at the Zod boundary (D-63); no DB-level check
+  /// constraint in Phase 3 (the submit endpoint rejects quantity <= 0 via D-56).
+  quantity Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderId])
+  @@index([careUnitMedicationId])
 }
