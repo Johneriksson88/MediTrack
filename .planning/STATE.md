@@ -70,7 +70,7 @@ Run `/gsd:discuss-phase 1` to gather context for Phase 1 before planning, or `/g
 | 260521-k8b | Unblock web build for fresh clone (Dockerfile shared-build step + host pnpm install) | 2026-05-21 | d22d726 | [260521-k8b-install-missing-radix-ui-react-select-vi](./quick/260521-k8b-install-missing-radix-ui-react-select-vi/) |
 | 260521-kek | Fix CR-01: replace z.coerce.boolean() on medicationListQuery.belowThreshold with explicit enum parser; +6 regression tests; -1 stale TODO | 2026-05-21 | 63fe897 | [260521-kek-fix-cr-01-replace-z-coerce-boolean-with-](./quick/260521-kek-fix-cr-01-replace-z-coerce-boolean-with-/) |
 | 260521-kxa | Fix CR-03: add `.min(1)` to medicationSearchQuery.q so empty searches reject at the API boundary; +5 regression tests | 2026-05-21 | 100aba3 | [260521-kxa-fix-cr-03-enforce-min-length-on-medicati](./quick/260521-kxa-fix-cr-03-enforce-min-length-on-medicati/) |
-| 260521-l5c | Fix CR-04: wrap updateCareUnitMedication's two prisma.update calls in prisma.$transaction so combined-field PATCH bodies update atomically | 2026-05-21 | pending | [260521-l5c-fix-cr-04-wrap-updatecareunitmedication-](./quick/260521-l5c-fix-cr-04-wrap-updatecareunitmedication-/) |
+| 260521-l5c | Fix CR-04: wrap updateCareUnitMedication's two prisma.update calls in prisma.$transaction so combined-field PATCH bodies update atomically | 2026-05-21 | 663b608 | [260521-l5c-fix-cr-04-wrap-updatecareunitmedication-](./quick/260521-l5c-fix-cr-04-wrap-updatecareunitmedication-/) |
 
 Last activity: 2026-05-21 — Completed quick task 260521-l5c: Fix CR-04 update atomicity
 
