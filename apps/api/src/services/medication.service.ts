@@ -443,26 +443,33 @@ export async function updateCareUnitMedication(
     return toListItem(row);
   }
 
-  // Step 4 — Apply the update.
-  let updatedRow = row;
-  if (hasCumUpdate) {
-    updatedRow = await prisma.careUnitMedication.update({
-      where: { id: careUnitMedicationId },
-      data: cumData,
-      include: { medication: true },
-    });
-  }
-  if (hasMedUpdate) {
-    await prisma.medication.update({
-      where: { id: row.medicationId },
-      data: medData,
-    });
-    // Merge updated med fields into the return object.
-    updatedRow = {
-      ...updatedRow,
-      medication: { ...updatedRow.medication, ...medData },
-    };
-  }
+  // Step 4 — Apply the update atomically (CR-04).
+  // Both writes run inside a single $transaction so a partial failure on
+  // user-source rows (where stock/threshold AND name/atc/form/strength are
+  // included in the same PATCH body) can't leave the row half-updated.
+  // Matches the $transaction style used by createCareUnitMedication above.
+  const updatedRow = await prisma.$transaction(async (tx) => {
+    let next = row;
+    if (hasCumUpdate) {
+      next = await tx.careUnitMedication.update({
+        where: { id: careUnitMedicationId },
+        data: cumData,
+        include: { medication: true },
+      });
+    }
+    if (hasMedUpdate) {
+      await tx.medication.update({
+        where: { id: row.medicationId },
+        data: medData,
+      });
+      // Merge updated med fields into the return object.
+      next = {
+        ...next,
+        medication: { ...next.medication, ...medData },
+      };
+    }
+    return next;
+  });
 
   // Step 5 — Defensive scope re-check.
   if (updatedRow.careUnitId !== careUnitId) {
