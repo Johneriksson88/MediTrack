@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 03
 status: ready_to_plan
-last_updated: "2026-05-21T20:40:58.812Z"
+last_updated: "2026-05-21T23:00:00.000Z"
 last_activity: 2026-05-21
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 12
-  completed_plans: 9
-  percent: 29
+  completed_plans: 11
+  percent: 31
 ---
 
 # State: MediTrack
@@ -78,7 +78,7 @@ Run `/gsd:discuss-phase 1` to gather context for Phase 1 before planning, or `/g
 | # | Plan | Status | Commits |
 |---|------|--------|---------|
 | 03-01 | Schema Foundation | Complete | fded456, edc8b44, 6c2f00f, 392806d |
-| 03-02 | API Routes | Pending | - |
+| 03-02 | Drafts List | Complete | 19954b2, 62d9458, 2c93792, 6b907b3 |
 | 03-03 | Frontend List + Compose | Pending | - |
 | 03-04 | Integration Tests | Pending | - |
 
@@ -87,8 +87,12 @@ Run `/gsd:discuss-phase 1` to gather context for Phase 1 before planning, or `/g
 - D-46 confirmed: OrderStatus Postgres enum verbatim mirrors ORDER_STATUSES (utkast/skickad/bekraftad/levererad)
 - D-48 confirmed: single Order table, status column distinguishes lifecycle
 - D-63 confirmed: no @@unique on OrderLine — same med allowed twice in v1
+- usePickerOptionsQuery and useOrderQuery exported as stubs in Slice 2 — Slice 3 consumes unchanged
+- formatRelative() helper inlined in DraftCard.tsx — no date-fns dep (T-03-SC)
+- pickerOptionsRoute registered before getOrderRoute — prevents param collision on :id
+- Full order service layer implemented in Slice 2 (lines/submit/delete/picker routes); Slices 3-4 add FE wiring
 
 Last activity: 2026-05-21
 
 ---
-*Last updated: 2026-05-21 after 03-01-schema-foundation*
+*Last updated: 2026-05-21 after 03-02-drafts-list*
