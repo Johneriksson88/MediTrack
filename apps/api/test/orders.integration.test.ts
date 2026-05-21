@@ -9,7 +9,7 @@ import {
 } from './helpers/buildTestApp.js';
 
 /**
- * Phase 3 D-73 — Order integration tests (Slice 2 + Slice 3).
+ * Phase 3 D-73 — Order integration tests (Slice 2 + Slice 3 + Slice 4).
  *
  * Slice 2 ships three `it` blocks:
  *   (a) POST /api/orders — creates Utkast order scoped to caller's careUnit;
@@ -19,6 +19,13 @@ import {
  *   (c) POST /api/orders without a session returns 401.
  *
  * Slice 3 adds eight `it` blocks covering the line CRUD + picker + 409 + 404 contracts.
+ *
+ * Slice 4 adds the canonical D-73 five-scenario suite:
+ *   1. Happy path — create → add-line → patch-quantity → submit
+ *   2. 409 order_locked after submit on every subsequent line op
+ *   3. 422 validation_failed on submit with empty lines or quantity <= 0
+ *   4. Cross-careUnit returns 404 not 403 for GET/PATCH/DELETE on foreign order
+ *   5. Draft list scoping returns only caller's careUnit utkast orders
  *
  * Harness mirrors apps/api/test/auth.flow.smoke.test.ts exactly.
  */
@@ -512,5 +519,346 @@ describe('Draft orders — Slice 3 API contracts', () => {
     });
     expect(res.statusCode).toBe(401);
     expect(res.json().error.code).toBe('unauthenticated');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slice 4 (D-73): Canonical 5-scenario integration test suite
+// ---------------------------------------------------------------------------
+
+describe('Draft orders integration', () => {
+  // ---------------------------------------------------------------------------
+  // Scenario 1: Happy path — create → add-line → patch-quantity → submit
+  // ---------------------------------------------------------------------------
+  it('happy path: create → add-line → patch-quantity → submit', async () => {
+    const cookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const cum = await findTestCareUnitMedication();
+
+    // POST /api/orders → 201 utkast
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/api/orders',
+      headers: { cookie },
+      payload: {},
+    });
+    expect(createRes.statusCode).toBe(201);
+    const order = createRes.json() as { id: string; status: string; lines: unknown[] };
+    expect(order.status).toBe('utkast');
+    expect(order.lines).toHaveLength(0);
+    const orderId = order.id;
+
+    // POST /api/orders/:id/lines → 200 with 1 line
+    const addRes = await app.inject({
+      method: 'POST',
+      url: `/api/orders/${orderId}/lines`,
+      headers: { cookie },
+      payload: { careUnitMedicationId: cum.id, quantity: 2 },
+    });
+    expect(addRes.statusCode).toBe(200);
+    const addBody = addRes.json() as { lines: Array<{ id: string; quantity: number }> };
+    expect(addBody.lines).toHaveLength(1);
+    const lineId = addBody.lines[0]!.id;
+
+    // PATCH /api/orders/:id/lines/:lineId → 200 with updated quantity
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: `/api/orders/${orderId}/lines/${lineId}`,
+      headers: { cookie },
+      payload: { quantity: 5 },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    const patchBody = patchRes.json() as { lines: Array<{ id: string; quantity: number }> };
+    expect(patchBody.lines.find((l) => l.id === lineId)!.quantity).toBe(5);
+
+    // POST /api/orders/:id/submit → 200 with status: 'skickad'
+    const submitRes = await app.inject({
+      method: 'POST',
+      url: `/api/orders/${orderId}/submit`,
+      headers: { cookie },
+    });
+    expect(submitRes.statusCode).toBe(200);
+    const submitBody = submitRes.json() as {
+      status: string;
+      submittedAt: string | null;
+      submittedByUserId: string | null;
+      lines: Array<{ id: string; quantity: number }>;
+    };
+    expect(submitBody.status).toBe('skickad');
+    expect(submitBody.submittedAt).not.toBeNull();
+    expect(typeof submitBody.submittedAt).toBe('string');
+    // submittedAt should be a valid ISO string
+    expect(() => new Date(submitBody.submittedAt!)).not.toThrow();
+    expect(submitBody.submittedByUserId).not.toBeNull();
+
+    // Verify response is parseable by the orderResponse schema
+    const { orderResponse } = await import('@meditrack/shared');
+    expect(() => orderResponse.parse(submitBody)).not.toThrow();
+
+    // Cleanup
+    await prisma.orderLine.deleteMany({ where: { orderId } });
+    await prisma.order.delete({ where: { id: orderId } });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Scenario 2: 409 order_locked after submit — every subsequent op returns 409
+  // ---------------------------------------------------------------------------
+  it('returns 409 order_locked on all line ops + re-submit + delete after submit', async () => {
+    const cookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const cum = await findTestCareUnitMedication();
+
+    // Create, add line, submit
+    const createRes = await app.inject({ method: 'POST', url: '/api/orders', headers: { cookie }, payload: {} });
+    expect(createRes.statusCode).toBe(201);
+    const orderId = (createRes.json() as { id: string }).id;
+
+    const addRes = await app.inject({
+      method: 'POST',
+      url: `/api/orders/${orderId}/lines`,
+      headers: { cookie },
+      payload: { careUnitMedicationId: cum.id, quantity: 1 },
+    });
+    expect(addRes.statusCode).toBe(200);
+    const lineId = (addRes.json() as { lines: Array<{ id: string }> }).lines[0]!.id;
+
+    const submitRes = await app.inject({ method: 'POST', url: `/api/orders/${orderId}/submit`, headers: { cookie } });
+    expect(submitRes.statusCode).toBe(200);
+    expect((submitRes.json() as { status: string }).status).toBe('skickad');
+
+    // Now verify all subsequent ops return 409 order_locked with details.status = 'skickad'
+    const lockCases: Array<{ method: string; url: string; payload?: unknown }> = [
+      { method: 'POST', url: `/api/orders/${orderId}/lines`, payload: { careUnitMedicationId: cum.id, quantity: 1 } },
+      { method: 'PATCH', url: `/api/orders/${orderId}/lines/${lineId}`, payload: { quantity: 99 } },
+      { method: 'DELETE', url: `/api/orders/${orderId}/lines/${lineId}` },
+      { method: 'POST', url: `/api/orders/${orderId}/submit` },
+      { method: 'DELETE', url: `/api/orders/${orderId}` },
+    ];
+
+    for (const { method, url, payload } of lockCases) {
+      const res = await app.inject({ method, url, headers: { cookie }, payload });
+      expect(res.statusCode).toBe(409);
+      const body = res.json() as { error: { code: string; details: { status: string } } };
+      expect(body.error.code).toBe('order_locked');
+      expect(body.error.details.status).toBe('skickad');
+    }
+
+    // Cleanup — hard-delete since status is skickad
+    await prisma.orderLine.deleteMany({ where: { orderId } });
+    await prisma.order.delete({ where: { id: orderId } });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Scenario 3: 422 validation_failed on submit with empty or poisoned lines
+  // ---------------------------------------------------------------------------
+  it('returns 422 validation_failed on submit with empty lines or quantity <= 0', async () => {
+    const cookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const cum = await findTestCareUnitMedication();
+
+    // Sub-test (a): submit empty draft → 422 empty_order
+    const createResA = await app.inject({ method: 'POST', url: '/api/orders', headers: { cookie }, payload: {} });
+    expect(createResA.statusCode).toBe(201);
+    const orderIdA = (createResA.json() as { id: string }).id;
+
+    const submitEmptyRes = await app.inject({ method: 'POST', url: `/api/orders/${orderIdA}/submit`, headers: { cookie } });
+    expect(submitEmptyRes.statusCode).toBe(422);
+    const emptyBody = submitEmptyRes.json() as { error: { code: string; details: { reason: string } } };
+    expect(emptyBody.error.code).toBe('validation_failed');
+    expect(emptyBody.error.details.reason).toBe('empty_order');
+
+    // Cleanup A
+    await prisma.order.delete({ where: { id: orderIdA } });
+
+    // Sub-test (b): create draft, add line, poison quantity to 0 via prisma, submit → 422 invalid_quantity
+    const createResB = await app.inject({ method: 'POST', url: '/api/orders', headers: { cookie }, payload: {} });
+    expect(createResB.statusCode).toBe(201);
+    const orderIdB = (createResB.json() as { id: string }).id;
+
+    // Add a line via API (normal quantity)
+    const addRes = await app.inject({
+      method: 'POST',
+      url: `/api/orders/${orderIdB}/lines`,
+      headers: { cookie },
+      payload: { careUnitMedicationId: cum.id, quantity: 3 },
+    });
+    expect(addRes.statusCode).toBe(200);
+    const lineId = (addRes.json() as { lines: Array<{ id: string }> }).lines[0]!.id;
+
+    // Poison: directly set quantity = 0 via prisma (the public PATCH route uses .positive() which rejects this)
+    await prisma.orderLine.update({ where: { id: lineId }, data: { quantity: 0 } });
+
+    const submitPoisonedRes = await app.inject({ method: 'POST', url: `/api/orders/${orderIdB}/submit`, headers: { cookie } });
+    expect(submitPoisonedRes.statusCode).toBe(422);
+    const poisonBody = submitPoisonedRes.json() as { error: { code: string; details: { reason: string; lineId: string } } };
+    expect(poisonBody.error.code).toBe('validation_failed');
+    expect(poisonBody.error.details.reason).toBe('invalid_quantity');
+    expect(poisonBody.error.details.lineId).toBe(lineId);
+
+    // Cleanup B
+    await prisma.orderLine.deleteMany({ where: { orderId: orderIdB } });
+    await prisma.order.delete({ where: { id: orderIdB } });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Scenario 4: Cross-careUnit access returns 404 not 403
+  // ---------------------------------------------------------------------------
+  it('cross-careUnit access returns 404 not_found on GET/PATCH/DELETE — never forbidden', async () => {
+    const CARE_UNIT_B_ID = 'careunit-test-b-slice4';
+    const USER_B_EMAIL = 'sjukskoterska-b-slice4@example.test';
+    const { hashPassword } = await import('../src/auth/password.js');
+    const passwordHash = await hashPassword('demo1234');
+
+    // Seed second CareUnit + user
+    await prisma.careUnit.upsert({
+      where: { id: CARE_UNIT_B_ID },
+      update: { name: 'Test Unit B (Slice 4)' },
+      create: { id: CARE_UNIT_B_ID, name: 'Test Unit B (Slice 4)' },
+    });
+    await prisma.user.upsert({
+      where: { email: USER_B_EMAIL },
+      update: { name: 'User B Slice4', role: 'sjukskoterska', careUnitId: CARE_UNIT_B_ID, passwordHash },
+      create: { email: USER_B_EMAIL, name: 'User B Slice4', role: 'sjukskoterska', careUnitId: CARE_UNIT_B_ID, passwordHash },
+    });
+
+    // User A creates an order in CareUnit A
+    const cookieA = await loginAs(TEST_SJUKSKOTERSKA);
+    const createRes = await app.inject({ method: 'POST', url: '/api/orders', headers: { cookie: cookieA }, payload: {} });
+    expect(createRes.statusCode).toBe(201);
+    const orderIdA = (createRes.json() as { id: string }).id;
+
+    // Add a line for testing PATCH/DELETE line endpoints
+    const cum = await findTestCareUnitMedication();
+    const addRes = await app.inject({
+      method: 'POST',
+      url: `/api/orders/${orderIdA}/lines`,
+      headers: { cookie: cookieA },
+      payload: { careUnitMedicationId: cum.id, quantity: 1 },
+    });
+    expect(addRes.statusCode).toBe(200);
+    const lineId = (addRes.json() as { lines: Array<{ id: string }> }).lines[0]!.id;
+
+    // User B from CareUnit B tries to access order from CareUnit A
+    const cookieB = await loginAs({ email: USER_B_EMAIL, password: 'demo1234' });
+
+    const crossCases: Array<{ method: string; url: string; payload?: unknown }> = [
+      { method: 'GET', url: `/api/orders/${orderIdA}` },
+      { method: 'POST', url: `/api/orders/${orderIdA}/lines`, payload: { careUnitMedicationId: cum.id, quantity: 1 } },
+      { method: 'PATCH', url: `/api/orders/${orderIdA}/lines/${lineId}`, payload: { quantity: 5 } },
+      { method: 'DELETE', url: `/api/orders/${orderIdA}/lines/${lineId}` },
+      { method: 'POST', url: `/api/orders/${orderIdA}/submit` },
+      { method: 'DELETE', url: `/api/orders/${orderIdA}` },
+    ];
+
+    for (const { method, url, payload } of crossCases) {
+      const res = await app.inject({ method, url, headers: { cookie: cookieB }, payload });
+      expect(res.statusCode).toBe(404);
+      const body = res.json() as { error: { code: string } };
+      expect(body.error.code).toBe('not_found');
+      // NEVER 403 — verifies D-73 existence-probe protection (T-03-01)
+      expect(body.error.code).not.toBe('forbidden');
+    }
+
+    // Cleanup
+    await prisma.orderLine.deleteMany({ where: { orderId: orderIdA } });
+    await prisma.order.delete({ where: { id: orderIdA } });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Scenario 5: Draft list scoping — only caller's careUnit utkast orders
+  // ---------------------------------------------------------------------------
+  it("drafts list returns only caller's careUnit utkast orders — excludes other status + other careUnit", async () => {
+    const CARE_UNIT_C_ID = 'careunit-test-c-slice4';
+    const USER_C_EMAIL = 'sjukskoterska-c-slice4@example.test';
+    const { hashPassword } = await import('../src/auth/password.js');
+    const passwordHash = await hashPassword('demo1234');
+
+    // Seed third CareUnit + user C
+    await prisma.careUnit.upsert({
+      where: { id: CARE_UNIT_C_ID },
+      update: { name: 'Test Unit C (Slice 4)' },
+      create: { id: CARE_UNIT_C_ID, name: 'Test Unit C (Slice 4)' },
+    });
+    await prisma.user.upsert({
+      where: { email: USER_C_EMAIL },
+      update: { name: 'User C Slice4', role: 'sjukskoterska', careUnitId: CARE_UNIT_C_ID, passwordHash },
+      create: { email: USER_C_EMAIL, name: 'User C Slice4', role: 'sjukskoterska', careUnitId: CARE_UNIT_C_ID, passwordHash },
+    });
+    // Get user C's id for creating orders
+    const userC = await prisma.user.findUnique({ where: { email: USER_C_EMAIL } });
+    if (!userC) throw new Error('User C not found');
+
+    const cookieA = await loginAs(TEST_SJUKSKOTERSKA);
+
+    // Seed CareUnit A: 2 Utkast orders (via API) + 1 Skickad (via direct prisma)
+    const createA1 = await app.inject({ method: 'POST', url: '/api/orders', headers: { cookie: cookieA }, payload: {} });
+    expect(createA1.statusCode).toBe(201);
+    const orderA1Id = (createA1.json() as { id: string }).id;
+
+    const createA2 = await app.inject({ method: 'POST', url: '/api/orders', headers: { cookie: cookieA }, payload: {} });
+    expect(createA2.statusCode).toBe(201);
+    const orderA2Id = (createA2.json() as { id: string }).id;
+
+    // Get user A's id
+    const userA = await prisma.user.findUnique({ where: { email: TEST_SJUKSKOTERSKA.email } });
+    if (!userA) throw new Error('User A not found');
+
+    // Seed 1 Skickad order for CareUnit A directly via prisma
+    const orderASkickad = await prisma.order.create({
+      data: {
+        careUnitId: TEST_SJUKSKOTERSKA.careUnitId,
+        createdByUserId: userA.id,
+        status: 'skickad',
+        submittedAt: new Date(),
+        submittedByUserId: userA.id,
+      },
+    });
+
+    // Seed 1 Utkast for CareUnit C via prisma
+    const orderC = await prisma.order.create({
+      data: {
+        careUnitId: CARE_UNIT_C_ID,
+        createdByUserId: userC.id,
+        status: 'utkast',
+      },
+    });
+
+    // GET /api/orders?status=utkast as User A
+    const listRes = await app.inject({
+      method: 'GET',
+      url: '/api/orders?status=utkast',
+      headers: { cookie: cookieA },
+    });
+    expect(listRes.statusCode).toBe(200);
+    const listBody = listRes.json() as {
+      rows: Array<{
+        id: string;
+        status: string;
+        lineCount: number;
+        totalQuantity: number;
+        createdBy: { id: string; name: string };
+      }>;
+      total: number;
+    };
+
+    const ids = listBody.rows.map((r) => r.id);
+
+    // Must contain A's two utkast orders
+    expect(ids).toContain(orderA1Id);
+    expect(ids).toContain(orderA2Id);
+
+    // Must NOT contain A's skickad order
+    expect(ids).not.toContain(orderASkickad.id);
+
+    // Must NOT contain C's utkast order (wrong careUnit)
+    expect(ids).not.toContain(orderC.id);
+
+    // All rows must be utkast and have populated lineCount + totalQuantity + createdBy.name
+    for (const row of listBody.rows.filter((r) => [orderA1Id, orderA2Id].includes(r.id))) {
+      expect(row.status).toBe('utkast');
+      expect(typeof row.lineCount).toBe('number');
+      expect(typeof row.totalQuantity).toBe('number');
+      expect(typeof row.createdBy.name).toBe('string');
+    }
+
+    // Cleanup
+    await prisma.order.deleteMany({ where: { id: { in: [orderA1Id, orderA2Id, orderASkickad.id, orderC.id] } } });
   });
 });
