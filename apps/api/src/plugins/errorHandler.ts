@@ -36,6 +36,36 @@ export class UnauthenticatedError extends Error {
   }
 }
 
+/**
+ * Phase 2 D-19 — Three new error classes for medication CRUD operations.
+ * Codes match the canonical error envelope (D-19); messages are Swedish
+ * and user-displayable per the project domain-language contract (D-13).
+ */
+
+export class NotFoundError extends Error {
+  readonly code = 'not_found' as const;
+  constructor(message = 'Resursen hittades inte.') {
+    super(message);
+    this.name = 'NotFoundError';
+  }
+}
+
+export class ConflictDuplicateMedicationError extends Error {
+  readonly code = 'conflict_duplicate_medication' as const;
+  constructor() {
+    super('Läkemedlet finns redan i registret för din vårdenhet.');
+    this.name = 'ConflictDuplicateMedicationError';
+  }
+}
+
+export class ForbiddenScopeError extends Error {
+  readonly code = 'forbidden' as const;
+  constructor(message = 'Du saknar behörighet att utföra denna åtgärd.') {
+    super(message);
+    this.name = 'ForbiddenScopeError';
+  }
+}
+
 function envelope(
   code: string,
   message: string,
@@ -99,6 +129,19 @@ export const errorHandlerPlugin = fp(async (app: FastifyInstance) => {
 
     if (err instanceof UnauthenticatedError) {
       return send(reply, 401, envelope('unauthenticated', 'Du måste logga in.'));
+    }
+
+    // Phase 2 D-19 — medication CRUD error codes.
+    if (err instanceof NotFoundError) {
+      return send(reply, 404, envelope('not_found', err.message));
+    }
+
+    if (err instanceof ConflictDuplicateMedicationError) {
+      return send(reply, 409, envelope('conflict_duplicate_medication', err.message));
+    }
+
+    if (err instanceof ForbiddenScopeError) {
+      return send(reply, 403, envelope('forbidden', err.message));
     }
 
     // Unknown errors: log full detail server-side, surface a generic envelope.
