@@ -4,12 +4,12 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 3
 status: ready_to_plan
-last_updated: "2026-05-21T19:11:04.059Z"
-last_activity: "2026-05-21 — Completed quick task 260521-lc5: Fix CR-02 GIN index alignment"
+last_updated: "2026-05-21T20:24:34.053Z"
+last_activity: 2026-05-21
 progress:
   total_phases: 7
   completed_phases: 2
-  total_plans: 8
+  total_plans: 12
   completed_plans: 8
   percent: 29
 ---
@@ -73,7 +73,7 @@ Run `/gsd:discuss-phase 1` to gather context for Phase 1 before planning, or `/g
 | 260521-l5c | Fix CR-04: wrap updateCareUnitMedication's two prisma.update calls in prisma.$transaction so combined-field PATCH bodies update atomically | 2026-05-21 | 663b608 | [260521-l5c-fix-cr-04-wrap-updatecareunitmedication-](./quick/260521-l5c-fix-cr-04-wrap-updatecareunitmedication-/) |
 | 260521-lc5 | Fix CR-02: follow-up migration aligning Medication.name trgm GIN index with Prisma's ILIKE emit; planner now bitmap-scans the index instead of seq-scanning 43k rows | 2026-05-21 | f900b33 | [260521-lc5-fix-cr-02-add-a-follow-up-migration-that](./quick/260521-lc5-fix-cr-02-add-a-follow-up-migration-that/) |
 
-Last activity: 2026-05-21 — Completed quick task 260521-lc5: Fix CR-02 GIN index alignment
+Last activity: 2026-05-21
 
 ---
 *Last updated: 2026-05-21 after quick task 260521-lc5*

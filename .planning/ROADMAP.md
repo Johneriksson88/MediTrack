@@ -67,6 +67,11 @@
 **Mode:** mvp
 **UI hint:** yes
 **Requirements:** ORD-01, ORD-02, ORD-03
+**Plans:** 4 plans
+  - [ ] 03-01-schema-foundation-PLAN.md — Slice 1 (Wave 1): Prisma Order+OrderLine+OrderStatus migration + shared order contracts + order:* permission keys + OrderLockedError/ValidationFailedError + seeded Utkast draft
+  - [ ] 03-02-drafts-list-PLAN.md — Slice 2 (Wave 2): POST/GET /api/orders + drafts list page (table ≥md / cards <md) + Ny beställning → POST empty → navigate + /bestallningar/:id route stub
+  - [ ] 03-03-compose-view-PLAN.md — Slice 3 (Wave 3): GET /api/orders/:id + line CRUD endpoints + picker-options + ComposeOrderPage Mode A + MedicationPickerSheet + QuantityStepper (optimistic+debounced+long-press) + 409 order_locked contract live
+  - [ ] 03-04-submit-discard-PLAN.md — Slice 4 (Wave 4): POST /submit + DELETE / + OrderStatusPill + SubmitConfirmationBanner + DiscardDraftDialog + Mode B render + canonical D-73 integration suite (5 scenarios)
 **Success Criteria:**
 1. User can create a draft order containing one or more `(medication, quantity)` rows; the order persists with status `Utkast`.
 2. User can edit a draft (add lines, remove lines, change quantities); changes persist; total line count and quantities re-render correctly.
