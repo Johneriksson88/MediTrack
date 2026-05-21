@@ -5,6 +5,7 @@ import type { MedicationListItem } from '@meditrack/shared';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Can } from '@/auth/Can';
+import { useCan } from '@/auth/useCan';
 import { useMedicationsQuery } from '@/features/medications/useMedicationsQuery';
 import { LakemedelFilter } from './LakemedelFilter';
 import { LowStockBanner } from './LowStockBanner';
@@ -34,6 +35,7 @@ const DEFAULT_PAGE_SIZE = 25;
 
 export function LakemedelPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const canUpdate = useCan('medication:update');
 
   // All four filter values read directly from URL — no local state for filter values.
   const q = searchParams.get('q') ?? '';
@@ -140,9 +142,13 @@ export function LakemedelPage() {
    */
   const rowsEmpty = !isLoading && data !== undefined && rows.length === 0;
 
+  /**
+   * Open the Sheet in 'edit' mode for apotekare/admin, 'view' mode for sjukskoterska.
+   * Per D-36: mode is driven by useCan('medication:update') — not by role name,
+   * so future role changes propagate here automatically.
+   */
   function handleRowClick(item: MedicationListItem) {
-    // Plan 03 will pass mode='edit' or mode='view' based on useCan('medication:update').
-    setSheet({ mode: 'edit', item });
+    setSheet({ mode: canUpdate ? 'edit' : 'view', item });
   }
 
   return (

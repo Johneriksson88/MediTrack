@@ -15,6 +15,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { LowStockBadge } from '@/components/LowStockBadge';
+import { InlineEditThreshold } from '@/components/InlineEditThreshold';
 
 /**
  * Phase 2 UI-SPEC §2 — Desktop table (≥md).
@@ -122,12 +123,11 @@ export function MedicationTable({ items, onRowClick, className }: MedicationTabl
                     className="px-4 py-3 text-sm"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    {/* TODO Plan 03: <InlineEditThreshold
-                          value={item.lowStockThreshold}
-                          careUnitMedicationId={item.careUnitMedicationId}
-                          medicationName={item.name}
-                        /> */}
-                    {item.lowStockThreshold}
+                    <InlineEditThreshold
+                      careUnitMedicationId={item.careUnitMedicationId}
+                      medicationName={item.name}
+                      value={item.lowStockThreshold}
+                    />
                   </TableCell>
                   <TableCell className="px-4 py-3">
                     {/* Visually empty — entire row is the click affordance */}
