@@ -26,12 +26,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NplBadge } from '@/components/NplBadge';
+import { Can } from '@/auth/Can';
+import { useAuth } from '@/auth/useAuth';
 import { ApiError } from '@/lib/api';
 import { useMedicationSearchQuery } from '@/features/medications/useMedicationsQuery';
 import {
   useCreateMedication,
   useUpdateMedication,
+  useDeleteMedication,
 } from '@/features/medications/useMedicationMutations';
+import { DeleteMedicationDialog } from './DeleteMedicationDialog';
 
 /**
  * Phase 2 D-34 / D-36 / D-37 / D-42 / UI-SPEC §6 — Create / Edit / View Sheet.
@@ -46,6 +50,10 @@ import {
  *            Footer: [Ta bort (destructive)] ... [Avbryt] [Spara] (D-37).
  *   view   — read-only via <fieldset disabled>. Footer: [Stäng] only.
  *            Title appends " · Visning" (D-36).
+ *
+ * D-37 delete flow: Ta bort button (edit mode, apotekare/admin only via <Can>) opens
+ *   DeleteMedicationDialog. On confirm, useDeleteMedication soft-deletes and calls
+ *   onClose to dismiss the Sheet. On error, dialog stays open for retry.
  *
  * D-42 mixed strategy: Sheet saves are PESSIMISTIC (await PATCH, then close + toast).
  *   Only the InlineEditThreshold widget uses the optimistic strategy — see that component.
@@ -125,6 +133,12 @@ function EditSheet({
   const isNpl = careUnitMedication.source === 'npl';
   const updateMutation = useUpdateMedication();
 
+  // Delete dialog state + mutation (D-37 / Plan 04)
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const deleteMutation = useDeleteMedication();
+  // useAuth provides careUnit.name for the dialog title + toast template literal
+  const { user } = useAuth();
+
   const editForm = useForm<MedicationUpdateRequest>({
     resolver: zodResolver(medicationUpdateRequest),
     defaultValues: {
@@ -160,6 +174,7 @@ function EditSheet({
   }, [open, careUnitMedication, isNpl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isPending = updateMutation.isPending;
+  const isDeleting = deleteMutation.isPending;
 
   async function onSubmitEdit(values: MedicationUpdateRequest) {
     // For NPL meds, only send stock/threshold fields.
@@ -188,220 +203,257 @@ function EditSheet({
   const title = careUnitMedication.name;
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side={isDesktop ? 'right' : 'bottom'}
-        className={
-          isDesktop
-            ? 'w-[480px] sm:max-w-xl overflow-y-auto flex flex-col'
-            : 'max-h-[90dvh] rounded-t-2xl overflow-y-auto flex flex-col'
-        }
-      >
-        <SheetHeader>
-          <SheetTitle className="truncate max-w-[360px]">{title}</SheetTitle>
-          {isNpl && (
-            <NplBadge>Från NPL · namn / form / styrka är låsta</NplBadge>
-          )}
-        </SheetHeader>
-
-        <form
-          id="edit-form"
-          onSubmit={editForm.handleSubmit(onSubmitEdit)}
-          className="flex-1 overflow-y-auto p-4 space-y-4"
+    <>
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent
+          side={isDesktop ? 'right' : 'bottom'}
+          className={
+            isDesktop
+              ? 'w-[480px] sm:max-w-xl overflow-y-auto flex flex-col'
+              : 'max-h-[90dvh] rounded-t-2xl overflow-y-auto flex flex-col'
+          }
         >
-          {isNpl ? (
-            // NPL-sourced: locked fields as read-only <p> labels; only Lager + Tröskel editable
-            <div className="space-y-3">
-              <div>
-                <Label>Namn</Label>
-                <p className="text-sm text-foreground mt-1">{careUnitMedication.name}</p>
-              </div>
-              <div>
-                <Label>ATC-kod</Label>
-                <p className="text-sm text-foreground mt-1">{careUnitMedication.atcCode}</p>
-              </div>
-              <div>
-                <Label>Form</Label>
-                <p className="text-sm text-foreground mt-1">{careUnitMedication.form}</p>
-              </div>
-              {careUnitMedication.strength && (
-                <div>
-                  <Label>Styrka</Label>
-                  <p className="text-sm text-foreground mt-1">{careUnitMedication.strength}</p>
-                </div>
-              )}
-              <div>
-                <Label htmlFor="edit-npl-stock">Lager</Label>
-                <Input
-                  id="edit-npl-stock"
-                  autoFocus
-                  type="number"
-                  min={0}
-                  {...editForm.register('currentStock', { valueAsNumber: true })}
-                  disabled={isPending}
-                  className="mt-1"
-                />
-                {editForm.formState.errors.currentStock && (
-                  <p className="text-xs text-destructive mt-1">
-                    {editForm.formState.errors.currentStock.message}
-                  </p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="edit-npl-threshold">Tröskel</Label>
-                <Input
-                  id="edit-npl-threshold"
-                  type="number"
-                  min={1}
-                  {...editForm.register('lowStockThreshold', { valueAsNumber: true })}
-                  disabled={isPending}
-                  className="mt-1"
-                />
-                {editForm.formState.errors.lowStockThreshold && (
-                  <p className="text-xs text-destructive mt-1">
-                    {editForm.formState.errors.lowStockThreshold.message}
-                  </p>
-                )}
-              </div>
-            </div>
-          ) : (
-            // User-sourced: all six fields editable
-            <div className="space-y-3">
-              <div>
-                <Label htmlFor="edit-user-name">Namn</Label>
-                <Input
-                  id="edit-user-name"
-                  autoFocus
-                  {...editForm.register('name')}
-                  disabled={isPending}
-                  className="mt-1"
-                />
-                {editForm.formState.errors.name && (
-                  <p className="text-xs text-destructive mt-1">
-                    {editForm.formState.errors.name.message}
-                  </p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="edit-user-atc">ATC-kod</Label>
-                <Input
-                  id="edit-user-atc"
-                  {...editForm.register('atcCode')}
-                  disabled={isPending}
-                  className="mt-1"
-                />
-                {editForm.formState.errors.atcCode && (
-                  <p className="text-xs text-destructive mt-1">
-                    {editForm.formState.errors.atcCode.message}
-                  </p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="edit-user-form">Form</Label>
-                <select
-                  id="edit-user-form"
-                  {...editForm.register('form')}
-                  disabled={isPending}
-                  className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                >
-                  <option value="">Välj form…</option>
-                  {TOP_MEDICATION_FORMS.map((f) => (
-                    <option key={f} value={f}>
-                      {f}
-                    </option>
-                  ))}
-                </select>
-                {editForm.formState.errors.form && (
-                  <p className="text-xs text-destructive mt-1">
-                    {editForm.formState.errors.form.message}
-                  </p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="edit-user-strength">Styrka (valfri)</Label>
-                <Input
-                  id="edit-user-strength"
-                  {...editForm.register('strength')}
-                  disabled={isPending}
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label htmlFor="edit-user-stock">Lager</Label>
-                <Input
-                  id="edit-user-stock"
-                  type="number"
-                  min={0}
-                  {...editForm.register('currentStock', { valueAsNumber: true })}
-                  disabled={isPending}
-                  className="mt-1"
-                />
-                {editForm.formState.errors.currentStock && (
-                  <p className="text-xs text-destructive mt-1">
-                    {editForm.formState.errors.currentStock.message}
-                  </p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="edit-user-threshold">Tröskel</Label>
-                <Input
-                  id="edit-user-threshold"
-                  type="number"
-                  min={1}
-                  {...editForm.register('lowStockThreshold', { valueAsNumber: true })}
-                  disabled={isPending}
-                  className="mt-1"
-                />
-                {editForm.formState.errors.lowStockThreshold && (
-                  <p className="text-xs text-destructive mt-1">
-                    {editForm.formState.errors.lowStockThreshold.message}
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-        </form>
+          <SheetHeader>
+            <SheetTitle className="truncate max-w-[360px]">{title}</SheetTitle>
+            {isNpl && (
+              <NplBadge>Från NPL · namn / form / styrka är låsta</NplBadge>
+            )}
+          </SheetHeader>
 
-        <SheetFooter className="border-t border-border p-4 flex items-center justify-between gap-2 pb-[calc(1rem+56px+env(safe-area-inset-bottom))]">
-          {/* Left: Ta bort button — stub; Plan 04 wires DeleteMedicationDialog */}
-          <Button
-            variant="destructive"
-            type="button"
-            disabled={isPending}
-            onClick={() => {
-              // TODO Plan 04: open DeleteMedicationDialog
-            }}
+          <form
+            id="edit-form"
+            onSubmit={editForm.handleSubmit(onSubmitEdit)}
+            className="flex-1 overflow-y-auto p-4 space-y-4"
           >
-            Ta bort
-          </Button>
-          {/* Right: Avbryt + Spara */}
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              type="button"
-              disabled={isPending}
-              onClick={() => onOpenChange(false)}
-            >
-              Avbryt
-            </Button>
-            <Button
-              type="submit"
-              form="edit-form"
-              disabled={isPending}
-            >
-              {isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Sparar…
-                </>
-              ) : (
-                'Spara'
-              )}
-            </Button>
-          </div>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+            {isNpl ? (
+              // NPL-sourced: locked fields as read-only <p> labels; only Lager + Tröskel editable
+              <div className="space-y-3">
+                <div>
+                  <Label>Namn</Label>
+                  <p className="text-sm text-foreground mt-1">{careUnitMedication.name}</p>
+                </div>
+                <div>
+                  <Label>ATC-kod</Label>
+                  <p className="text-sm text-foreground mt-1">{careUnitMedication.atcCode}</p>
+                </div>
+                <div>
+                  <Label>Form</Label>
+                  <p className="text-sm text-foreground mt-1">{careUnitMedication.form}</p>
+                </div>
+                {careUnitMedication.strength && (
+                  <div>
+                    <Label>Styrka</Label>
+                    <p className="text-sm text-foreground mt-1">{careUnitMedication.strength}</p>
+                  </div>
+                )}
+                <div>
+                  <Label htmlFor="edit-npl-stock">Lager</Label>
+                  <Input
+                    id="edit-npl-stock"
+                    autoFocus
+                    type="number"
+                    min={0}
+                    {...editForm.register('currentStock', { valueAsNumber: true })}
+                    disabled={isPending}
+                    className="mt-1"
+                  />
+                  {editForm.formState.errors.currentStock && (
+                    <p className="text-xs text-destructive mt-1">
+                      {editForm.formState.errors.currentStock.message}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <Label htmlFor="edit-npl-threshold">Tröskel</Label>
+                  <Input
+                    id="edit-npl-threshold"
+                    type="number"
+                    min={1}
+                    {...editForm.register('lowStockThreshold', { valueAsNumber: true })}
+                    disabled={isPending}
+                    className="mt-1"
+                  />
+                  {editForm.formState.errors.lowStockThreshold && (
+                    <p className="text-xs text-destructive mt-1">
+                      {editForm.formState.errors.lowStockThreshold.message}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              // User-sourced: all six fields editable
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="edit-user-name">Namn</Label>
+                  <Input
+                    id="edit-user-name"
+                    autoFocus
+                    {...editForm.register('name')}
+                    disabled={isPending}
+                    className="mt-1"
+                  />
+                  {editForm.formState.errors.name && (
+                    <p className="text-xs text-destructive mt-1">
+                      {editForm.formState.errors.name.message}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <Label htmlFor="edit-user-atc">ATC-kod</Label>
+                  <Input
+                    id="edit-user-atc"
+                    {...editForm.register('atcCode')}
+                    disabled={isPending}
+                    className="mt-1"
+                  />
+                  {editForm.formState.errors.atcCode && (
+                    <p className="text-xs text-destructive mt-1">
+                      {editForm.formState.errors.atcCode.message}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <Label htmlFor="edit-user-form">Form</Label>
+                  <select
+                    id="edit-user-form"
+                    {...editForm.register('form')}
+                    disabled={isPending}
+                    className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    <option value="">Välj form…</option>
+                    {TOP_MEDICATION_FORMS.map((f) => (
+                      <option key={f} value={f}>
+                        {f}
+                      </option>
+                    ))}
+                  </select>
+                  {editForm.formState.errors.form && (
+                    <p className="text-xs text-destructive mt-1">
+                      {editForm.formState.errors.form.message}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <Label htmlFor="edit-user-strength">Styrka (valfri)</Label>
+                  <Input
+                    id="edit-user-strength"
+                    {...editForm.register('strength')}
+                    disabled={isPending}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-user-stock">Lager</Label>
+                  <Input
+                    id="edit-user-stock"
+                    type="number"
+                    min={0}
+                    {...editForm.register('currentStock', { valueAsNumber: true })}
+                    disabled={isPending}
+                    className="mt-1"
+                  />
+                  {editForm.formState.errors.currentStock && (
+                    <p className="text-xs text-destructive mt-1">
+                      {editForm.formState.errors.currentStock.message}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <Label htmlFor="edit-user-threshold">Tröskel</Label>
+                  <Input
+                    id="edit-user-threshold"
+                    type="number"
+                    min={1}
+                    {...editForm.register('lowStockThreshold', { valueAsNumber: true })}
+                    disabled={isPending}
+                    className="mt-1"
+                  />
+                  {editForm.formState.errors.lowStockThreshold && (
+                    <p className="text-xs text-destructive mt-1">
+                      {editForm.formState.errors.lowStockThreshold.message}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </form>
+
+          <SheetFooter className="border-t border-border p-4 flex items-center justify-between gap-2 pb-[calc(1rem+56px+env(safe-area-inset-bottom))]">
+            {/*
+             * Left: Ta bort button — gated by <Can action="medication:delete"> for
+             * defense-in-depth (D-17 / T-02-18). The edit Sheet itself only opens
+             * in mode='edit' for apotekare/admin (Plan 03 / D-36), but the explicit
+             * <Can> gate makes the security posture readable and survives regressions.
+             */}
+            <Can action="medication:delete">
+              <Button
+                variant="destructive"
+                type="button"
+                disabled={isPending || isDeleting}
+                onClick={() => setIsDeleteOpen(true)}
+              >
+                Ta bort
+              </Button>
+            </Can>
+            {/* Right: Avbryt + Spara */}
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                type="button"
+                disabled={isPending || isDeleting}
+                onClick={() => onOpenChange(false)}
+              >
+                Avbryt
+              </Button>
+              <Button
+                type="submit"
+                form="edit-form"
+                disabled={isPending || isDeleting}
+              >
+                {isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Sparar…
+                  </>
+                ) : (
+                  'Spara'
+                )}
+              </Button>
+            </div>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      {/*
+       * DeleteMedicationDialog rendered outside SheetContent so it sits in its
+       * own AlertDialog portal above the Sheet overlay (D-37 / UI-SPEC §7).
+       * Only mount when user is available (needed for careUnit.name).
+       */}
+      {user && (
+        <DeleteMedicationDialog
+          open={isDeleteOpen}
+          onOpenChange={setIsDeleteOpen}
+          medicationName={careUnitMedication.name}
+          careUnitName={user.careUnit.name}
+          isDeleting={isDeleting}
+          onConfirm={async () => {
+            try {
+              await deleteMutation.mutateAsync({
+                careUnitMedicationId: careUnitMedication.careUnitMedicationId,
+                medicationName: careUnitMedication.name,
+                careUnitName: user.careUnit.name,
+                // onClose closes the Sheet after successful delete
+                onClose: () => onOpenChange(false),
+              });
+              // Close the AlertDialog on success (Sheet closed via onClose above)
+              setIsDeleteOpen(false);
+            } catch {
+              // Hook's onError already toasted; keep dialog open so user can retry or Avbryt
+            }
+          }}
+        />
+      )}
+    </>
   );
 }
 
