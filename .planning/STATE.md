@@ -67,7 +67,7 @@ Run `/gsd:discuss-phase 1` to gather context for Phase 1 before planning, or `/g
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260521-ip1 | Update Phase 1 regression tests to assert post-Phase-2 permissions arrays | 2026-05-21 | f9cfc28 | [260521-ip1-update-phase-1-regression-tests-to-asser](./quick/260521-ip1-update-phase-1-regression-tests-to-asser/) |
-| 260521-k8b | Unblock web build for fresh clone (Dockerfile shared-build step + host pnpm install) | 2026-05-21 | pending | [260521-k8b-install-missing-radix-ui-react-select-vi](./quick/260521-k8b-install-missing-radix-ui-react-select-vi/) |
+| 260521-k8b | Unblock web build for fresh clone (Dockerfile shared-build step + host pnpm install) | 2026-05-21 | d22d726 | [260521-k8b-install-missing-radix-ui-react-select-vi](./quick/260521-k8b-install-missing-radix-ui-react-select-vi/) |
 
 Last activity: 2026-05-21 — Completed quick task 260521-k8b: Unblock web build for fresh clone
 
