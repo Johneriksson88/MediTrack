@@ -68,7 +68,7 @@ describe('GET /api/me', () => {
         id: TEST_ADMIN.careUnitId,
         name: TEST_ADMIN.careUnitName,
       },
-      permissions: ['admin:ping'], // Plan 03 — admin role has admin:ping per PERMISSIONS map
+      permissions: ['admin:ping', 'medication:read', 'medication:create', 'medication:update', 'medication:delete'], // Phase 2 D-43 — admin gains medication:* via PERMISSIONS map
     });
     expect(body).not.toHaveProperty('passwordHash');
   });

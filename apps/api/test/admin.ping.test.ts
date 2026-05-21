@@ -118,7 +118,7 @@ describe('GET /api/admin/ping — RBAC matrix (Phase 1 success #2)', () => {
 });
 
 describe('GET /api/me — permissions[] regression (D-18)', () => {
-  it("returns permissions: ['admin:ping'] for an admin session", async () => {
+  it("returns permissions: ['admin:ping', 'medication:read', 'medication:create', 'medication:update', 'medication:delete'] for an admin session", async () => {
     const cookie = await loginAs(TEST_ADMIN.email, TEST_ADMIN.password);
     const res = await app.inject({
       method: 'GET',
@@ -126,10 +126,10 @@ describe('GET /api/me — permissions[] regression (D-18)', () => {
       headers: { cookie },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().permissions).toEqual(['admin:ping']);
+    expect(res.json().permissions).toEqual(['admin:ping', 'medication:read', 'medication:create', 'medication:update', 'medication:delete']);
   });
 
-  it('returns permissions: [] for a sjuksköterska session', async () => {
+  it("returns permissions: ['medication:read'] for a sjuksköterska session", async () => {
     const cookie = await loginAs(TEST_SJUKSKOTERSKA.email, TEST_SJUKSKOTERSKA.password);
     const res = await app.inject({
       method: 'GET',
@@ -137,10 +137,10 @@ describe('GET /api/me — permissions[] regression (D-18)', () => {
       headers: { cookie },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().permissions).toEqual([]);
+    expect(res.json().permissions).toEqual(['medication:read']);
   });
 
-  it('returns permissions: [] for an apotekare session', async () => {
+  it("returns permissions: ['medication:read', 'medication:create', 'medication:update', 'medication:delete'] for an apotekare session", async () => {
     const cookie = await loginAs(TEST_APOTEKARE.email, TEST_APOTEKARE.password);
     const res = await app.inject({
       method: 'GET',
@@ -148,6 +148,6 @@ describe('GET /api/me — permissions[] regression (D-18)', () => {
       headers: { cookie },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().permissions).toEqual([]);
+    expect(res.json().permissions).toEqual(['medication:read', 'medication:create', 'medication:update', 'medication:delete']);
   });
 });
