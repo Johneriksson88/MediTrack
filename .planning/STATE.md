@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 03
 status: ready_to_plan
-last_updated: "2026-05-21T21:17:52.023Z"
-last_activity: 2026-05-21
+last_updated: "2026-05-22T00:45:00.000Z"
+last_activity: 2026-05-22
 progress:
   total_phases: 7
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 12
-  completed_plans: 11
-  percent: 29
+  completed_plans: 12
+  percent: 43
 ---
 
 # State: MediTrack
@@ -39,7 +39,7 @@ See: [.planning/ROADMAP.md](ROADMAP.md) (created 2026-05-19)
 |---|-------|--------|
 | 1 | Foundation & Auth | Pending |
 | 2 | Medication Catalog | Pending |
-| 3 | Draft Orders | Pending |
+| 3 | Draft Orders | Complete |
 | 4 | Confirm, Deliver & Stock | Pending |
 | 5 | Audit Log | Pending |
 | 6 | AI Categorization & Low-Stock Notifications | Pending |
@@ -80,7 +80,7 @@ Run `/gsd:discuss-phase 1` to gather context for Phase 1 before planning, or `/g
 | 03-01 | Schema Foundation | Complete | fded456, edc8b44, 6c2f00f, 392806d |
 | 03-02 | Drafts List | Complete | 19954b2, 62d9458, 2c93792, 6b907b3 |
 | 03-03 | Frontend List + Compose | Complete | fb5820c, a3212c7, 627a7a8 |
-| 03-04 | Integration Tests | Pending | - |
+| 03-04 | Submit & Discard | Complete | cfa19c1, 5800a92, c79effa |
 
 ## Decisions Made
 
@@ -96,8 +96,10 @@ Run `/gsd:discuss-phase 1` to gather context for Phase 1 before planning, or `/g
 - QuantityStepper uses debounceRef + longPressInitRef/Repeat refs (not useDebounce hook) to avoid stale closure in intervals
 - MedicationPickerSheet optimistic close is fail-silently UX in Slice 3 (toast is the error feedback)
 - Submit + Kasta inert in Slice 3 — Slice 4 wires useSubmitOrder + DiscardDraftDialog
+- ORD-03 complete: submitOrder (Utkast→Skickad) atomic updateMany, D-73 5-scenario integration suite, OrderStatusPill + SubmitConfirmationBanner + DiscardDraftDialog + wired ComposeOrderPage Mode B
+- Phase 3 complete: ORD-01/02/03 all demoable end-to-end
 
-Last activity: 2026-05-21
+Last activity: 2026-05-22
 
 ---
-*Last updated: 2026-05-21 after 03-03-compose-view*
+*Last updated: 2026-05-22 after 03-04-submit-discard*
