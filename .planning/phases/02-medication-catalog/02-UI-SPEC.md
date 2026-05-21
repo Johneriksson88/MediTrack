@@ -1,10 +1,11 @@
 ---
 phase: 2
 slug: medication-catalog
-status: draft
+status: approved
 shadcn_initialized: true
 preset: "style=new-york baseColor=slate css-variables=true"
 created: 2026-05-21
+reviewed_at: 2026-05-21
 ---
 
 # Phase 2 — UI Design Contract: Medication Catalog
@@ -76,7 +77,7 @@ Carry-forward from Phase 1 — no changes. All layout values multiples of 4px.
 
 ## Typography
 
-Carry-forward from Phase 1 — same four levels, same two weights. Phase 2 introduces `text-base` (16px) for data-dense table cells as noted in Phase 1 UI-SPEC ("will appear in later phases for data-dense tables").
+Phase 2 reuses the Phase 1 4-size / 2-weight type scale unchanged. No new sizes or weights are introduced.
 
 | Role | Tailwind size | px | Weight | Tailwind weight | Line height | Usage in Phase 2 |
 |------|---------------|----|--------|-----------------|-------------|------------------|
@@ -110,7 +111,7 @@ Carry-forward from Phase 1. All CSS custom properties from the shadcn slate pres
 
 ### Accent Reserved For (Phase 2 additions to Phase 1 list)
 
-1. Primary action buttons (variant=default): `Lägg till` (desktop), `Spara` in Sheet.
+1. Primary action buttons (variant=default): `Lägg till läkemedel` (desktop), `Spara` in Sheet.
 2. Active nav indicator (carry-forward from Phase 1).
 3. Focus rings: `focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2` — all interactive elements.
 4. FAB button (mobile add trigger): variant=default, same blue as #1.
@@ -159,10 +160,12 @@ No new routes. Sheet and AlertDialog are overlay components — URL does not cha
 
 ### Page Layout — `/lakemedel`
 
+Primary visual anchor: the `Läkemedel` page heading paired with the `Lägg till läkemedel` button (top-right desktop / FAB mobile). Secondary attractor: the low-stock count banner (`⚠ {N} läkemedel under tröskel`) in destructive red — only visible when N > 0.
+
 ```
 ┌─────────────────────────────────────────────────────┐
 │  Page heading row                                    │
-│  "Läkemedel"  (text-2xl font-semibold)   [Lägg till]│
+│  "Läkemedel"  (text-2xl font-semibold)   [Lägg till läkemedel]│
 │  (desktop: button top-right; mobile: FAB below)      │
 ├─────────────────────────────────────────────────────┤
 │  Count banner (if belowThresholdTotal > 0)           │
@@ -182,7 +185,7 @@ No new routes. Sheet and AlertDialog are overlay components — URL does not cha
 └─────────────────────────────────────────────────────┘
 ```
 
-**Mobile (<md):** `[Lägg till]` button is replaced by a FAB. Filter row stacks vertically if needed (wraps naturally). Cards replace table. FAB sits above bottom tab bar.
+**Mobile (<md):** `[Lägg till läkemedel]` button is replaced by a FAB. Filter row stacks vertically if needed (wraps naturally). Cards replace table. FAB sits above bottom tab bar.
 
 ---
 
@@ -542,7 +545,7 @@ Dismiss: `sessionStorage.setItem('lakemedel-banner-dismissed', 'true')`. On moun
 <Can action="medication:create">
   <Button onClick={openCreateSheet}>
     <Plus className="h-4 w-4 mr-2" />
-    Lägg till
+    Lägg till läkemedel
   </Button>
 </Can>
 ```
@@ -612,6 +615,7 @@ Library: shadcn `sonner` adapter. Import: `import { toast } from "sonner"`.
 | Sheet save success (pessimistic) | `toast.success(...)` | `Sparat` |
 | Sheet save error | `toast.error(...)` | `Kunde inte spara — försök igen.` |
 | Delete success | `toast.success(...)` | `Borttaget från {careUnitName}` |
+| Delete error | `toast.error(...)` | `Kunde inte ta bort — försök igen.` |
 | Inline-edit threshold error (optimistic rollback) | `toast.error(...)` | `Kunde inte spara — försök igen.` |
 
 Inline-edit threshold success is **silent** (no toast) — the number updating in-place is sufficient feedback.
@@ -630,7 +634,7 @@ All strings are exact. No translation layer — hardcoded Swedish.
 |---------|-----------|
 | Page `<title>` | `Läkemedel — MediTrack` |
 | Page heading | `Läkemedel` |
-| Add button (desktop) | `Lägg till` |
+| Add button (desktop) | `Lägg till läkemedel` |
 | FAB `aria-label` | `Lägg till läkemedel` |
 | Low-stock banner | `{N} läkemedel under tröskel` |
 | Banner dismiss `aria-label` | `Stäng varning` |
@@ -684,6 +688,8 @@ All strings are exact. No translation layer — hardcoded Swedish.
 | Delete button | `Ta bort` |
 | View-mode close | `Stäng` |
 
+> Note: Single-word verbs `Spara` and `Stäng` are idiomatic Swedish for save/close in form contexts. Domain language is locked by Phase 1 D-13 and 02-CONTEXT.md `<specifics>`; English noun-bearing equivalents are not introduced.
+
 ### AlertDialog (Delete Confirm)
 
 | Element | Exact copy |
@@ -700,6 +706,7 @@ All strings are exact. No translation layer — hardcoded Swedish.
 | Save success | `Sparat` |
 | Save error | `Kunde inte spara — försök igen.` |
 | Delete success | `Borttaget från {careUnit.name}` |
+| Delete error | `Kunde inte ta bort — försök igen.` |
 
 ### Low-Stock Badge
 
@@ -756,8 +763,8 @@ Carry-forward from Phase 1. No change.
 | Idle | `Ta bort` button left-aligned in Sheet footer, `variant="destructive"` |
 | Dialog open | `<AlertDialog>` visible; Cancel default-focused |
 | Confirming | `Ta bort` button disabled + `Loader2` |
-| Success | Dialog closes, Sheet closes, toast fires |
-| Error | Dialog stays open, `Ta bort` re-enables, toast fires |
+| Success | Dialog closes, Sheet closes, toast fires (`Borttaget från {careUnitName}`) |
+| Error | Dialog stays open, `Ta bort` re-enables, toast fires (`Kunde inte ta bort — försök igen.`) |
 
 ---
 
@@ -766,7 +773,7 @@ Carry-forward from Phase 1. No change.
 | Breakpoint | Layout | Add trigger | Filters |
 |-----------|--------|-------------|---------|
 | <768px (mobile) | Card list | FAB (fixed bottom-right) | Stacked/wrapped row |
-| ≥768px (md) | Table | `[Lägg till]` button top-right | Horizontal row |
+| ≥768px (md) | Table | `[Lägg till läkemedel]` button top-right | Horizontal row |
 | ≥1024px (lg) | Table (more column space) | Same | Same |
 | ≥1440px (xl) | Table (sidebar 240px, more main area) | Same | Same |
 
