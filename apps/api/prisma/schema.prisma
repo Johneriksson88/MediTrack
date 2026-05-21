@@ -5,6 +5,17 @@
 //                     snapshot lives on Session so the auth preHandler can
 //                     decorate `req.user.careUnitId` without joining User
 //                     on every request (D-16, performance + audit safety).
+//
+// Phase 2 additions (D-27, D-28, D-33):
+//
+// Medication:         Global NPL registry — one row per drug (~43 538 rows
+//                     from Läkemedelsverket seed). No careUnitId here;
+//                     NPL is the canonical catalog (D-27).
+// CareUnitMedication: Per-vårdenhet join carrying currentStock +
+//                     lowStockThreshold + soft-delete flag (D-28, D-33).
+//                     @@unique([careUnitId, medicationId]) prevents duplicate
+//                     active rows; transparent restore via UPDATE deletedAt=NULL
+//                     instead of INSERT (D-30).
 
 generator client {
   provider = "prisma-client-js"
@@ -21,11 +32,20 @@ enum Role {
   admin
 }
 
+/// Phase 2 D-27 — MedicationSource discriminates NPL-seeded rows from
+/// user-created rows ('Skapa nytt läkemedel' fallback, D-31).
+/// NPL-sourced rows have locked name/atcCode/form/strength (D-32).
+enum MedicationSource {
+  npl
+  user
+}
+
 model CareUnit {
-  id        String   @id @default(cuid())
-  name      String
-  createdAt DateTime @default(now())
-  users     User[]
+  id                  String                @id @default(cuid())
+  name                String
+  createdAt           DateTime              @default(now())
+  users               User[]
+  careUnitMedications CareUnitMedication[]
 }
 
 model User {
@@ -56,4 +76,52 @@ model Session {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+/// Phase 2 D-27 — Global NPL registry. One row per drug; ~43 538 rows from
+/// Läkemedelsverket seed. No careUnitId — per-vårdenhet stock+threshold
+/// lives on CareUnitMedication. form is String (not enum) — the NPL catalog
+/// has 500+ distinct form values; String avoids a migration on every new form.
+model Medication {
+  id                  String               @id @default(cuid())
+  /// Unique NPL identifier; null for user-created drugs (D-31).
+  nplId               String?              @unique
+  name                String
+  atcCode             String
+  form                String
+  strength            String?
+  source              MedicationSource
+  createdAt           DateTime             @default(now())
+  careUnitMedications CareUnitMedication[]
+
+  @@index([atcCode])
+}
+
+/// Phase 2 D-28 — Per-vårdenhet join table. Carries currentStock,
+/// lowStockThreshold, and a soft-delete flag (D-33: always soft-delete;
+/// global Medication is never deleted). @@unique([careUnitId, medicationId])
+/// is the database guard against duplicate active rows (T-02-06).
+/// Phase 4 adds SELECT … FOR UPDATE on the stock-decrement path (STK-02).
+model CareUnitMedication {
+  id String @id @default(cuid())
+
+  careUnitId String
+  careUnit   CareUnit @relation(fields: [careUnitId], references: [id])
+
+  medicationId String
+  medication   Medication @relation(fields: [medicationId], references: [id])
+
+  currentStock      Int
+  lowStockThreshold Int
+
+  /// CAT-07 / D-33 — soft-delete flag. SET deletedAt = now() on delete;
+  /// never hard-delete. Read queries always filter deletedAt: null.
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([careUnitId, medicationId])
+  @@index([careUnitId])
+  @@index([deletedAt])
 }
