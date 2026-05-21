@@ -30,6 +30,13 @@ RUN pnpm install --frozen-lockfile
 COPY packages/shared ./packages/shared
 COPY apps/web ./apps/web
 
+# Build shared first — web imports `@meditrack/shared` via the package's
+# `exports` field which points at `./dist/index.js`. The repo's
+# `.dockerignore` excludes `**/dist`, so the host's prebuilt dist never
+# reaches the image; without this step vite's commonjs--resolver fails with
+# "Failed to resolve entry for package @meditrack/shared".
+RUN pnpm --filter @meditrack/shared run build
+
 # Build the SPA to apps/web/dist.
 RUN pnpm --filter @meditrack/web run build
 
