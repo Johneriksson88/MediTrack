@@ -63,7 +63,7 @@
 5. Catalog page is usable on mobile (360 px): list collapses to a card-per-medication layout, primary actions reachable.
 
 ### Phase 3: Draft Orders
-**Goal:** A nurse can compose a multi-line order, save it as a draft, edit it, then submit it — moving the status from `Utkast` to `Skickad`. Submission is irreversible.
+**Goal:** As a nurse, I want to compose, save, edit, and submit a multi-line medication order, so that the order reaches the pharmacist and the medications can be delivered.
 **Mode:** mvp
 **UI hint:** yes
 **Requirements:** ORD-01, ORD-02, ORD-03
