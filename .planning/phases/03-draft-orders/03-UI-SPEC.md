@@ -1,10 +1,11 @@
 ---
 phase: 3
 slug: draft-orders
-status: draft
+status: approved
 shadcn_initialized: true
 preset: "style=new-york baseColor=slate css-variables=true"
 created: 2026-05-21
+reviewed_at: 2026-05-21
 ---
 
 # Phase 3 — UI Design Contract: Draft Orders
