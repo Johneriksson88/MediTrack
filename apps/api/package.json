@@ -23,6 +23,7 @@
     "@meditrack/shared": "workspace:*",
     "@prisma/client": "^5.18.0",
     "argon2": "^0.40.3",
+    "csv-parse": "^6.2.1",
     "fastify": "^4.28.1",
     "fastify-plugin": "^4.5.1",
     "fastify-type-provider-zod": "^2.0.0",
