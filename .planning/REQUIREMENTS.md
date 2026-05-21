@@ -29,9 +29,9 @@ Requirements for the Medovia interview submission. Each maps to exactly one road
 
 ### Order Flow
 
-- [ ] **ORD-01**: User can create a draft order containing one or more medications with desired quantities
-- [ ] **ORD-02**: User can edit a draft order (add/remove lines, change quantities) before sending
-- [ ] **ORD-03**: User can submit a draft order, transitioning it `Utkast → Skickad`; lines become immutable
+- [x] **ORD-01**: User can create a draft order containing one or more medications with desired quantities
+- [x] **ORD-02**: User can edit a draft order (add/remove lines, change quantities) before sending
+- [x] **ORD-03**: User can submit a draft order, transitioning it `Utkast → Skickad`; lines become immutable
 - [ ] **ORD-04**: User with role `apotekare` or `admin` can confirm a submitted order, transitioning `Skickad → Bekräftad`
 - [ ] **ORD-05**: User with role `apotekare` or `admin` can mark a confirmed order as delivered, transitioning `Bekräftad → Levererad`
 - [ ] **ORD-06**: Backend rejects any status transition that does not follow the linear flow (e.g. `Utkast → Bekräftad` is blocked) with HTTP 409 + JSON error
@@ -138,9 +138,9 @@ Updated during roadmap creation. Each v1 requirement maps to exactly one phase.
 | CAT-07 | Phase 2 | Pending |
 | STK-03 | Phase 2 | Pending |
 | STK-04 | Phase 2 | Pending |
-| ORD-01 | Phase 3 | Pending |
-| ORD-02 | Phase 3 | Pending |
-| ORD-03 | Phase 3 | Pending |
+| ORD-01 | Phase 3 | Complete |
+| ORD-02 | Phase 3 | Complete |
+| ORD-03 | Phase 3 | Complete |
 | ORD-04 | Phase 4 | Pending |
 | ORD-05 | Phase 4 | Pending |
 | ORD-06 | Phase 4 | Pending |

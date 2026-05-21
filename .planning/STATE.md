@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 3
+current_phase: 03
 status: ready_to_plan
-last_updated: "2026-05-21T20:24:34.053Z"
+last_updated: "2026-05-21T20:40:58.812Z"
 last_activity: 2026-05-21
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 12
-  completed_plans: 8
+  completed_plans: 9
   percent: 29
 ---
 
@@ -22,7 +22,7 @@ See: [.planning/PROJECT.md](PROJECT.md) (initialized 2026-05-19)
 
 **Core value:** A nurse can place an order for a low-stock medication and, when delivered, the stock balance and audit trail update atomically — reliably, with no manual reconciliation.
 
-**Current focus:** Phase 3 — draft orders
+**Current focus:** Phase 03 — draft-orders
 
 ## Roadmap Reference
 
@@ -31,7 +31,7 @@ See: [.planning/ROADMAP.md](ROADMAP.md) (created 2026-05-19)
 **Total phases:** 7
 **Phases complete:** 0
 **Phases in progress:** 0
-**Current phase:** 3
+**Current phase:** 03
 
 ## Phase Progress
 
@@ -73,7 +73,22 @@ Run `/gsd:discuss-phase 1` to gather context for Phase 1 before planning, or `/g
 | 260521-l5c | Fix CR-04: wrap updateCareUnitMedication's two prisma.update calls in prisma.$transaction so combined-field PATCH bodies update atomically | 2026-05-21 | 663b608 | [260521-l5c-fix-cr-04-wrap-updatecareunitmedication-](./quick/260521-l5c-fix-cr-04-wrap-updatecareunitmedication-/) |
 | 260521-lc5 | Fix CR-02: follow-up migration aligning Medication.name trgm GIN index with Prisma's ILIKE emit; planner now bitmap-scans the index instead of seq-scanning 43k rows | 2026-05-21 | f900b33 | [260521-lc5-fix-cr-02-add-a-follow-up-migration-that](./quick/260521-lc5-fix-cr-02-add-a-follow-up-migration-that/) |
 
+## Phase 03 Progress
+
+| # | Plan | Status | Commits |
+|---|------|--------|---------|
+| 03-01 | Schema Foundation | Complete | fded456, edc8b44, 6c2f00f, 392806d |
+| 03-02 | API Routes | Pending | - |
+| 03-03 | Frontend List + Compose | Pending | - |
+| 03-04 | Integration Tests | Pending | - |
+
+## Decisions Made
+
+- D-46 confirmed: OrderStatus Postgres enum verbatim mirrors ORDER_STATUSES (utkast/skickad/bekraftad/levererad)
+- D-48 confirmed: single Order table, status column distinguishes lifecycle
+- D-63 confirmed: no @@unique on OrderLine — same med allowed twice in v1
+
 Last activity: 2026-05-21
 
 ---
-*Last updated: 2026-05-21 after quick task 260521-lc5*
+*Last updated: 2026-05-21 after 03-01-schema-foundation*
