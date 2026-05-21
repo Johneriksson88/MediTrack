@@ -1,17 +1,18 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
 import {
   medicationCreateFromNplRequest,
   medicationCreateUserRequest,
-  medicationCreateRequest,
+  medicationUpdateRequest,
   TOP_MEDICATION_FORMS,
   defaultLowStockThreshold,
   type MedicationListItem,
   type MedicationCreateFromNplRequest,
   type MedicationCreateUserRequest,
   type MedicationCreateRequest,
+  type MedicationUpdateRequest,
   type MedicationSearchResult,
 } from '@meditrack/shared';
 import {
@@ -27,25 +28,35 @@ import { Label } from '@/components/ui/label';
 import { NplBadge } from '@/components/NplBadge';
 import { ApiError } from '@/lib/api';
 import { useMedicationSearchQuery } from '@/features/medications/useMedicationsQuery';
-import { useCreateMedication } from '@/features/medications/useMedicationMutations';
+import {
+  useCreateMedication,
+  useUpdateMedication,
+} from '@/features/medications/useMedicationMutations';
 
 /**
- * Phase 2 D-34 / UI-SPEC §6 — Create / Edit / View Sheet.
+ * Phase 2 D-34 / D-36 / D-37 / D-42 / UI-SPEC §6 — Create / Edit / View Sheet.
  *
- * Slice 1 ships create mode fully functional. Edit and view modes ship in
- * Plan 03 — they render a placeholder message with a Stäng footer for now.
+ * Mode contract (D-36 / D-41):
+ *   create — typeahead + user-create form. Saves with useCreateMedication (pessimistic).
+ *   edit   — pre-filled form driven by `careUnitMedication` prop. Two sub-variants:
+ *              source='npl': Namn/ATC/Form/Styrka are locked (read-only <p> labels);
+ *                            only Lager + Tröskel are editable (D-32).
+ *              source='user': all six fields editable.
+ *            Saves with useUpdateMedication (pessimistic, D-42).
+ *            Footer: [Ta bort (destructive)] ... [Avbryt] [Spara] (D-37).
+ *   view   — read-only via <fieldset disabled>. Footer: [Stäng] only.
+ *            Title appends " · Visning" (D-36).
  *
- * Create mode (mode="create"):
- * - Typeahead input searches global Medication via useMedicationSearchQuery
- *   (debounce 150ms). Results shown below the input.
- * - On result select: prefill read-only NPL fields + editable Lager/Tröskel.
- *   source='npl' branch of medicationCreateRequest.
- * - "Skapa nytt läkemedel" CTA expands the full form (source='user' branch).
- * - Footer: Avbryt (ghost) + Spara (default). Spara disabled while submitting.
- * - On 409 conflict: inline error below typeahead (no toast — hook suppresses it).
+ * D-42 mixed strategy: Sheet saves are PESSIMISTIC (await PATCH, then close + toast).
+ *   Only the InlineEditThreshold widget uses the optimistic strategy — see that component.
  *
- * Side: right on md+, bottom on mobile (via useMediaQuery).
- * URL does NOT change when Sheet is open (D-34).
+ * Focus management (UI-SPEC §6):
+ *   create: autoFocus on typeahead.
+ *   edit (npl): autoFocus on Lager input.
+ *   edit (user): autoFocus on Namn input.
+ *   view: autoFocus on Stäng button.
+ *
+ * The Sheet does NOT change the URL (D-34). Open state is managed by the parent page.
  */
 
 type SheetMode = 'create' | 'edit' | 'view';
@@ -55,6 +66,7 @@ interface MedicationSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   careUnitMedication?: MedicationListItem;
+  onSaved?: () => void;
 }
 
 // ---- Typeahead state ----
@@ -93,16 +105,407 @@ function useIsDesktop(): boolean {
   return isDesktop;
 }
 
+// ---- Edit mode sub-component ----
+
+interface EditSheetProps {
+  careUnitMedication: MedicationListItem;
+  isDesktop: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSaved?: () => void;
+}
+
+function EditSheet({
+  careUnitMedication,
+  isDesktop,
+  open,
+  onOpenChange,
+  onSaved,
+}: EditSheetProps) {
+  const isNpl = careUnitMedication.source === 'npl';
+  const updateMutation = useUpdateMedication();
+
+  const editForm = useForm<MedicationUpdateRequest>({
+    resolver: zodResolver(medicationUpdateRequest),
+    defaultValues: {
+      currentStock: careUnitMedication.currentStock,
+      lowStockThreshold: careUnitMedication.lowStockThreshold,
+      ...(isNpl
+        ? {}
+        : {
+            name: careUnitMedication.name,
+            atcCode: careUnitMedication.atcCode,
+            form: careUnitMedication.form,
+            strength: careUnitMedication.strength ?? '',
+          }),
+    },
+  });
+
+  // Reset form when careUnitMedication changes or sheet reopens
+  useEffect(() => {
+    if (open) {
+      editForm.reset({
+        currentStock: careUnitMedication.currentStock,
+        lowStockThreshold: careUnitMedication.lowStockThreshold,
+        ...(isNpl
+          ? {}
+          : {
+              name: careUnitMedication.name,
+              atcCode: careUnitMedication.atcCode,
+              form: careUnitMedication.form,
+              strength: careUnitMedication.strength ?? '',
+            }),
+      });
+    }
+  }, [open, careUnitMedication, isNpl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const isPending = updateMutation.isPending;
+
+  async function onSubmitEdit(values: MedicationUpdateRequest) {
+    // For NPL meds, only send stock/threshold fields.
+    const payload: MedicationUpdateRequest = isNpl
+      ? {
+          ...(values.currentStock !== undefined && { currentStock: values.currentStock }),
+          ...(values.lowStockThreshold !== undefined && {
+            lowStockThreshold: values.lowStockThreshold,
+          }),
+        }
+      : values;
+
+    try {
+      await updateMutation.mutateAsync({
+        careUnitMedicationId: careUnitMedication.careUnitMedicationId,
+        payload,
+      });
+      onOpenChange(false);
+      onSaved?.();
+    } catch {
+      // Hook's onError already fired the toast.
+      // Sheet stays open — user can retry or cancel.
+    }
+  }
+
+  const title = careUnitMedication.name;
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side={isDesktop ? 'right' : 'bottom'}
+        className={
+          isDesktop
+            ? 'w-[480px] sm:max-w-xl overflow-y-auto flex flex-col'
+            : 'max-h-[90dvh] rounded-t-2xl overflow-y-auto flex flex-col'
+        }
+      >
+        <SheetHeader>
+          <SheetTitle className="truncate max-w-[360px]">{title}</SheetTitle>
+          {isNpl && (
+            <NplBadge>Från NPL · namn / form / styrka är låsta</NplBadge>
+          )}
+        </SheetHeader>
+
+        <form
+          id="edit-form"
+          onSubmit={editForm.handleSubmit(onSubmitEdit)}
+          className="flex-1 overflow-y-auto p-4 space-y-4"
+        >
+          {isNpl ? (
+            // NPL-sourced: locked fields as read-only <p> labels; only Lager + Tröskel editable
+            <div className="space-y-3">
+              <div>
+                <Label>Namn</Label>
+                <p className="text-sm text-foreground mt-1">{careUnitMedication.name}</p>
+              </div>
+              <div>
+                <Label>ATC-kod</Label>
+                <p className="text-sm text-foreground mt-1">{careUnitMedication.atcCode}</p>
+              </div>
+              <div>
+                <Label>Form</Label>
+                <p className="text-sm text-foreground mt-1">{careUnitMedication.form}</p>
+              </div>
+              {careUnitMedication.strength && (
+                <div>
+                  <Label>Styrka</Label>
+                  <p className="text-sm text-foreground mt-1">{careUnitMedication.strength}</p>
+                </div>
+              )}
+              <div>
+                <Label htmlFor="edit-npl-stock">Lager</Label>
+                <Input
+                  id="edit-npl-stock"
+                  autoFocus
+                  type="number"
+                  min={0}
+                  {...editForm.register('currentStock', { valueAsNumber: true })}
+                  disabled={isPending}
+                  className="mt-1"
+                />
+                {editForm.formState.errors.currentStock && (
+                  <p className="text-xs text-destructive mt-1">
+                    {editForm.formState.errors.currentStock.message}
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="edit-npl-threshold">Tröskel</Label>
+                <Input
+                  id="edit-npl-threshold"
+                  type="number"
+                  min={1}
+                  {...editForm.register('lowStockThreshold', { valueAsNumber: true })}
+                  disabled={isPending}
+                  className="mt-1"
+                />
+                {editForm.formState.errors.lowStockThreshold && (
+                  <p className="text-xs text-destructive mt-1">
+                    {editForm.formState.errors.lowStockThreshold.message}
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : (
+            // User-sourced: all six fields editable
+            <div className="space-y-3">
+              <div>
+                <Label htmlFor="edit-user-name">Namn</Label>
+                <Input
+                  id="edit-user-name"
+                  autoFocus
+                  {...editForm.register('name')}
+                  disabled={isPending}
+                  className="mt-1"
+                />
+                {editForm.formState.errors.name && (
+                  <p className="text-xs text-destructive mt-1">
+                    {editForm.formState.errors.name.message}
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="edit-user-atc">ATC-kod</Label>
+                <Input
+                  id="edit-user-atc"
+                  {...editForm.register('atcCode')}
+                  disabled={isPending}
+                  className="mt-1"
+                />
+                {editForm.formState.errors.atcCode && (
+                  <p className="text-xs text-destructive mt-1">
+                    {editForm.formState.errors.atcCode.message}
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="edit-user-form">Form</Label>
+                <select
+                  id="edit-user-form"
+                  {...editForm.register('form')}
+                  disabled={isPending}
+                  className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <option value="">Välj form…</option>
+                  {TOP_MEDICATION_FORMS.map((f) => (
+                    <option key={f} value={f}>
+                      {f}
+                    </option>
+                  ))}
+                </select>
+                {editForm.formState.errors.form && (
+                  <p className="text-xs text-destructive mt-1">
+                    {editForm.formState.errors.form.message}
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="edit-user-strength">Styrka (valfri)</Label>
+                <Input
+                  id="edit-user-strength"
+                  {...editForm.register('strength')}
+                  disabled={isPending}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-user-stock">Lager</Label>
+                <Input
+                  id="edit-user-stock"
+                  type="number"
+                  min={0}
+                  {...editForm.register('currentStock', { valueAsNumber: true })}
+                  disabled={isPending}
+                  className="mt-1"
+                />
+                {editForm.formState.errors.currentStock && (
+                  <p className="text-xs text-destructive mt-1">
+                    {editForm.formState.errors.currentStock.message}
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="edit-user-threshold">Tröskel</Label>
+                <Input
+                  id="edit-user-threshold"
+                  type="number"
+                  min={1}
+                  {...editForm.register('lowStockThreshold', { valueAsNumber: true })}
+                  disabled={isPending}
+                  className="mt-1"
+                />
+                {editForm.formState.errors.lowStockThreshold && (
+                  <p className="text-xs text-destructive mt-1">
+                    {editForm.formState.errors.lowStockThreshold.message}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </form>
+
+        <SheetFooter className="border-t border-border p-4 flex items-center justify-between gap-2 pb-[calc(1rem+56px+env(safe-area-inset-bottom))]">
+          {/* Left: Ta bort button — stub; Plan 04 wires DeleteMedicationDialog */}
+          <Button
+            variant="destructive"
+            type="button"
+            disabled={isPending}
+            onClick={() => {
+              // TODO Plan 04: open DeleteMedicationDialog
+            }}
+          >
+            Ta bort
+          </Button>
+          {/* Right: Avbryt + Spara */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              type="button"
+              disabled={isPending}
+              onClick={() => onOpenChange(false)}
+            >
+              Avbryt
+            </Button>
+            <Button
+              type="submit"
+              form="edit-form"
+              disabled={isPending}
+            >
+              {isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Sparar…
+                </>
+              ) : (
+                'Spara'
+              )}
+            </Button>
+          </div>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+// ---- View mode sub-component ----
+
+interface ViewSheetProps {
+  careUnitMedication: MedicationListItem;
+  isDesktop: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+function ViewSheet({
+  careUnitMedication,
+  isDesktop,
+  open,
+  onOpenChange,
+}: ViewSheetProps) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Autofocus the Stäng button when in view mode (UI-SPEC §6)
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => closeButtonRef.current?.focus(), 50);
+    }
+  }, [open]);
+
+  const title = `${careUnitMedication.name} · Visning`;
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side={isDesktop ? 'right' : 'bottom'}
+        className={
+          isDesktop
+            ? 'w-[480px] sm:max-w-xl overflow-y-auto flex flex-col'
+            : 'max-h-[90dvh] rounded-t-2xl overflow-y-auto flex flex-col'
+        }
+      >
+        <SheetHeader>
+          <SheetTitle className="truncate max-w-[360px]">{title}</SheetTitle>
+          {careUnitMedication.source === 'npl' && (
+            <NplBadge>Från NPL · namn / form / styrka är låsta</NplBadge>
+          )}
+        </SheetHeader>
+
+        {/* All fields read-only via fieldset disabled */}
+        <fieldset disabled className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div>
+            <Label>Namn</Label>
+            <p className="text-sm text-foreground mt-1">{careUnitMedication.name}</p>
+          </div>
+          <div>
+            <Label>ATC-kod</Label>
+            <p className="text-sm text-foreground mt-1">{careUnitMedication.atcCode}</p>
+          </div>
+          <div>
+            <Label>Form</Label>
+            <p className="text-sm text-foreground mt-1">{careUnitMedication.form}</p>
+          </div>
+          {careUnitMedication.strength && (
+            <div>
+              <Label>Styrka</Label>
+              <p className="text-sm text-foreground mt-1">{careUnitMedication.strength}</p>
+            </div>
+          )}
+          <div>
+            <Label>Lager</Label>
+            <p className="text-sm text-foreground mt-1">{careUnitMedication.currentStock}</p>
+          </div>
+          <div>
+            <Label>Tröskel</Label>
+            <p className="text-sm text-foreground mt-1">{careUnitMedication.lowStockThreshold}</p>
+          </div>
+        </fieldset>
+
+        <SheetFooter className="border-t border-border p-4 flex items-center justify-end gap-2 pb-[calc(1rem+56px+env(safe-area-inset-bottom))]">
+          <Button
+            ref={closeButtonRef}
+            variant="secondary"
+            type="button"
+            onClick={() => onOpenChange(false)}
+          >
+            Stäng
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+// ---- Public export ----
+
 export function MedicationSheet({
   mode,
   open,
   onOpenChange,
   careUnitMedication,
+  onSaved,
 }: MedicationSheetProps) {
   const isDesktop = useIsDesktop();
   const createMutation = useCreateMedication();
 
-  // Typeahead state
+  // Typeahead state (create mode only)
   const [typeaheadQ, setTypeaheadQ] = useState('');
   const debouncedQ = useDebounce(typeaheadQ, 150);
   const [selectedNpl, setSelectedNpl] = useState<SelectedNplMed | null>(null);
@@ -116,7 +519,7 @@ export function MedicationSheet({
     debouncedQ.length > 0 && !selectedNpl,
   );
 
-  // ---- Forms ----
+  // ---- Create forms ----
 
   // NPL path: only Lager + Tröskel are user-entered
   const nplForm = useForm<Pick<MedicationCreateFromNplRequest, 'currentStock' | 'lowStockThreshold'>>({
@@ -173,7 +576,7 @@ export function MedicationSheet({
     [selectedNpl, showCreateForm], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  // ---- Submit handlers ----
+  // ---- Create submit handlers ----
 
   async function onSubmitNpl(values: Pick<MedicationCreateFromNplRequest, 'currentStock' | 'lowStockThreshold'>) {
     if (!selectedNpl) return;
@@ -230,43 +633,44 @@ export function MedicationSheet({
     setConflictError(null);
   }
 
-  const isPending = createMutation.isPending;
+  // ---- Delegate to edit/view sub-components ----
 
-  // ---- Edit/View placeholder (Plan 03) ----
-  if (mode === 'edit' || mode === 'view') {
-    const title = mode === 'view'
-      ? `${careUnitMedication?.name ?? ''} · Visning`
-      : careUnitMedication?.name ?? '';
+  if (mode === 'edit' && careUnitMedication) {
     return (
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent
-          side={isDesktop ? 'right' : 'bottom'}
-          className={isDesktop ? 'w-[480px] sm:max-w-xl' : 'max-h-[90dvh] rounded-t-2xl'}
-        >
-          <SheetHeader>
-            <SheetTitle className="truncate max-w-[360px]">{title}</SheetTitle>
-          </SheetHeader>
-          <div className="p-4 text-sm text-muted-foreground">
-            Redigeringsläge implementeras i nästa skiva.
-          </div>
-          <SheetFooter className="border-t border-border p-4 pb-[calc(1rem+56px+env(safe-area-inset-bottom))]">
-            <Button variant="secondary" onClick={() => onOpenChange(false)}>
-              Stäng
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+      <EditSheet
+        careUnitMedication={careUnitMedication}
+        isDesktop={isDesktop}
+        open={open}
+        onOpenChange={onOpenChange}
+        onSaved={onSaved}
+      />
+    );
+  }
+
+  if (mode === 'view' && careUnitMedication) {
+    return (
+      <ViewSheet
+        careUnitMedication={careUnitMedication}
+        isDesktop={isDesktop}
+        open={open}
+        onOpenChange={onOpenChange}
+      />
     );
   }
 
   // ---- Create mode ----
+  const isPending = createMutation.isPending;
   const results = searchQuery.data?.results ?? [];
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side={isDesktop ? 'right' : 'bottom'}
-        className={isDesktop ? 'w-[480px] sm:max-w-xl overflow-y-auto flex flex-col' : 'max-h-[90dvh] rounded-t-2xl overflow-y-auto flex flex-col'}
+        className={
+          isDesktop
+            ? 'w-[480px] sm:max-w-xl overflow-y-auto flex flex-col'
+            : 'max-h-[90dvh] rounded-t-2xl overflow-y-auto flex flex-col'
+        }
         onKeyDown={handleKeyDown}
       >
         <SheetHeader>

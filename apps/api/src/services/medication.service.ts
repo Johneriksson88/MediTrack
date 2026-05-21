@@ -390,65 +390,87 @@ export async function createCareUnitMedication(
 
 /**
  * PATCH /api/medications/:id — partial update.
- * For NPL-sourced meds, rejects name/atcCode/form/strength mutations (D-32).
- * Returns 404 if row doesn't exist or belongs to another vårdenhet.
+ *
+ * D-32 defense-in-depth: for NPL-sourced meds, `name`/`atcCode`/`form`/
+ * `strength` fields are SILENTLY STRIPPED before persisting — even if the
+ * request body includes them. The FE for NPL meds also hides those fields,
+ * but the service is the canonical enforcement point.
+ *
+ * D-19 / T-02-13: returns 404 (never 403) when the row belongs to another
+ * vårdenhet. Same response shape as truly-not-found rows — existence-probing
+ * yields nothing.
+ *
+ * D-16: `careUnitId` is the first arg; all Prisma lookups start with it.
+ *
+ * Analog: see user.service.ts (Phase 1) / PATTERNS.md §Pattern D.
  */
 export async function updateCareUnitMedication(
   careUnitId: string,
   careUnitMedicationId: string,
   payload: MedicationUpdateRequest,
 ): Promise<MedicationListItem> {
-  const existing = await prisma.careUnitMedication.findUnique({
+  // Step 1 — Scoped reload with medication joined (source field required for step 3).
+  const row = await prisma.careUnitMedication.findUnique({
     where: { id: careUnitMedicationId },
     include: { medication: true },
   });
 
-  if (!existing || existing.deletedAt !== null) {
-    throw new NotFoundError('Läkemedlet finns inte i din vårdenhet.');
+  // Step 2 — Existence + scope check (D-19: 404 on cross-tenant, never 403).
+  if (!row || row.deletedAt !== null || row.careUnitId !== careUnitId) {
+    throw new NotFoundError('Läkemedlet hittades inte.');
   }
 
-  // Scope assertion — ensure this row belongs to the caller's vårdenhet.
-  if (existing.careUnitId !== careUnitId) {
-    throw new NotFoundError('Läkemedlet finns inte i din vårdenhet.');
+  // Step 3 — NPL-field strip (D-32 defense-in-depth).
+  // Build cumData (CareUnitMedication fields) and medData (Medication fields).
+  const cumData: Partial<{ currentStock: number; lowStockThreshold: number }> = {};
+  if (payload.currentStock !== undefined) cumData.currentStock = payload.currentStock;
+  if (payload.lowStockThreshold !== undefined) cumData.lowStockThreshold = payload.lowStockThreshold;
+
+  // user-source rows: also accept name/atcCode/form/strength.
+  // npl-source rows: those four fields are silently dropped.
+  const medData: Partial<Pick<Medication, 'name' | 'atcCode' | 'form' | 'strength'>> = {};
+  if (row.medication.source === 'user') {
+    if (payload.name !== undefined) medData.name = payload.name;
+    if (payload.atcCode !== undefined) medData.atcCode = payload.atcCode;
+    if (payload.form !== undefined) medData.form = payload.form;
+    if (payload.strength !== undefined) medData.strength = payload.strength;
   }
 
-  // D-32: NPL-sourced meds lock name/atcCode/form/strength.
-  if (existing.medication.source === 'npl') {
-    if (payload.name !== undefined || payload.atcCode !== undefined || payload.form !== undefined || payload.strength !== undefined) {
-      throw new ForbiddenScopeError('Namn, ATC-kod, form och styrka är låsta för NPL-läkemedel.');
-    }
+  // Short-circuit: if nothing to update, return the current row unchanged.
+  const hasCumUpdate = Object.keys(cumData).length > 0;
+  const hasMedUpdate = Object.keys(medData).length > 0;
+  if (!hasCumUpdate && !hasMedUpdate) {
+    return toListItem(row);
   }
 
-  const updatedCum = await prisma.careUnitMedication.update({
-    where: { id: careUnitMedicationId },
-    data: {
-      ...(payload.currentStock !== undefined && { currentStock: payload.currentStock }),
-      ...(payload.lowStockThreshold !== undefined && { lowStockThreshold: payload.lowStockThreshold }),
-    },
-    include: { medication: true },
-  });
-
-  // For user-created meds, also update Medication fields if provided.
-  if (existing.medication.source === 'user') {
-    const medUpdate: Partial<Pick<Medication, 'name' | 'atcCode' | 'form' | 'strength'>> = {};
-    if (payload.name !== undefined) medUpdate.name = payload.name;
-    if (payload.atcCode !== undefined) medUpdate.atcCode = payload.atcCode;
-    if (payload.form !== undefined) medUpdate.form = payload.form;
-    if (payload.strength !== undefined) medUpdate.strength = payload.strength;
-    if (Object.keys(medUpdate).length > 0) {
-      await prisma.medication.update({
-        where: { id: existing.medicationId },
-        data: medUpdate,
-      });
-      // Reload with updated medication fields.
-      return toListItem({
-        ...updatedCum,
-        medication: { ...updatedCum.medication, ...medUpdate },
-      });
-    }
+  // Step 4 — Apply the update.
+  let updatedRow = row;
+  if (hasCumUpdate) {
+    updatedRow = await prisma.careUnitMedication.update({
+      where: { id: careUnitMedicationId },
+      data: cumData,
+      include: { medication: true },
+    });
+  }
+  if (hasMedUpdate) {
+    await prisma.medication.update({
+      where: { id: row.medicationId },
+      data: medData,
+    });
+    // Merge updated med fields into the return object.
+    updatedRow = {
+      ...updatedRow,
+      medication: { ...updatedRow.medication, ...medData },
+    };
   }
 
-  return toListItem(updatedCum);
+  // Step 5 — Defensive scope re-check.
+  if (updatedRow.careUnitId !== careUnitId) {
+    throw new Error('Tenancy invariant violated');
+  }
+
+  // Step 6 — Return via shared toListItem mapper.
+  return toListItem(updatedRow);
 }
 
 // ---------------------------------------------------------------------------

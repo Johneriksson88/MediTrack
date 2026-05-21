@@ -158,18 +158,31 @@ export type MedicationCreateRequest = z.infer<typeof medicationCreateRequest>;
 // ---------------------------------------------------------------------------
 
 /**
- * PATCH /api/medications/:id body. For NPL-sourced meds, the service rejects
- * name/atcCode/form/strength mutations with ForbiddenScopeError (D-32).
- * For user-sourced meds all fields are editable.
- * Shipped with Plan 01 contracts so Plan 03 routes can import without a
- * shared-package rebuild.
+ * PATCH /api/medications/:id body.
+ *
+ * D-32: `name`, `atcCode`, `form`, and `strength` are accepted by this schema
+ * for user-source meds, but the service (`updateCareUnitMedication`) strips
+ * them server-side when the underlying Medication.source === 'npl' — defense
+ * in depth; the FE for NPL meds also hides those fields.
+ *
+ * `.strict()` rejects unknown keys so a tampered body cannot slip extra fields
+ * past Zod's boundary. `.refine(...)` requires at least one field to be present
+ * so an empty PATCH body returns 400 validation_failed instead of a no-op 200.
  */
-export const medicationUpdateRequest = z.object({
-  currentStock: z.number().int().nonnegative().optional(),
-  lowStockThreshold: z.number().int().positive().optional(),
-  name: z.string().min(1).optional(),
-  atcCode: z.string().min(1).optional(),
-  form: z.string().min(1).optional(),
-  strength: z.string().nullable().optional(),
-});
+export const medicationUpdateRequest = z
+  .object({
+    currentStock: z.number().int().min(0).optional(),
+    lowStockThreshold: z.number().int().min(1).optional(),
+    name: z.string().min(1).optional(),
+    atcCode: z
+      .string()
+      .regex(/^[A-V][0-9A-Z]{0,6}$/, 'Ogiltigt ATC-kodformat')
+      .optional(),
+    form: z.string().min(1).optional(),
+    strength: z.string().nullable().optional(),
+  })
+  .strict()
+  .refine((d) => Object.keys(d).length > 0, {
+    message: 'Minst ett fält måste anges.',
+  });
 export type MedicationUpdateRequest = z.infer<typeof medicationUpdateRequest>;

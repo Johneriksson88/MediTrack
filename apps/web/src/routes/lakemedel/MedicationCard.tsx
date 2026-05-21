@@ -1,5 +1,6 @@
 import type { MedicationListItem } from '@meditrack/shared';
 import { LowStockBadge } from '@/components/LowStockBadge';
+import { InlineEditThreshold } from '@/components/InlineEditThreshold';
 
 /**
  * Phase 2 UI-SPEC §3 — Single medication card for the mobile card list (<md).
@@ -45,8 +46,15 @@ export function MedicationCard({ item, onCardClick }: MedicationCardProps) {
       <p className="text-sm text-muted-foreground">
         ATC: {item.atcCode} · Form: {item.form}
       </p>
-      <p className="text-sm text-muted-foreground">
-        Lager: {item.currentStock} · Tröskel: {item.lowStockThreshold}
+      <p className="text-sm text-muted-foreground flex items-center gap-1 flex-wrap">
+        Lager: {item.currentStock} · Tröskel:{' '}
+        <span onClick={(e) => e.stopPropagation()}>
+          <InlineEditThreshold
+            careUnitMedicationId={item.careUnitMedicationId}
+            medicationName={item.name}
+            value={item.lowStockThreshold}
+          />
+        </span>
       </p>
       {item.strength && (
         <p className="text-sm text-muted-foreground">
