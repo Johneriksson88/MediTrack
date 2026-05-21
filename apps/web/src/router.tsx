@@ -4,6 +4,7 @@ import { AuthGate } from '@/auth/AuthGate';
 import { RoleRoute } from '@/auth/RoleRoute';
 import { AuditPage } from '@/routes/admin/AuditPage';
 import { BestallningarPage } from '@/routes/bestallningar/BestallningarPage';
+import { ComposeOrderPage } from '@/routes/bestallningar/ComposeOrderPage';
 import { DashboardPage } from '@/routes/dashboard/DashboardPage';
 import { KontoPage } from '@/routes/konto/KontoPage';
 import { LakemedelPage } from '@/routes/lakemedel/LakemedelPage';
@@ -41,6 +42,7 @@ export const router = createBrowserRouter([
       { path: '/dashboard', element: <DashboardPage /> },
       { path: '/lakemedel', element: <LakemedelPage /> },
       { path: '/bestallningar', element: <BestallningarPage /> },
+      { path: '/bestallningar/:id', element: <ComposeOrderPage /> },
       { path: '/konto', element: <KontoPage /> },
       {
         element: <RoleRoute roles={['admin']} />,
