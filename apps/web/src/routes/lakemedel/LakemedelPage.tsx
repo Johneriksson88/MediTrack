@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Pill } from 'lucide-react';
 import type { MedicationListItem } from '@meditrack/shared';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Can } from '@/auth/Can';
 import { useMedicationsQuery } from '@/features/medications/useMedicationsQuery';
+import { LakemedelFilter } from './LakemedelFilter';
 import { LowStockBanner } from './LowStockBanner';
 import { MedicationTable } from './MedicationTable';
 import { MedicationCardList } from './MedicationCardList';
@@ -15,62 +15,82 @@ import { AddMedicationButton } from './AddMedicationButton';
 import { PaginationFooter } from './PaginationFooter';
 
 /**
- * Phase 2 D-20 / D-22 / UI-SPEC §1 — Medication catalog page.
+ * Phase 2 D-20 / D-39 / UI-SPEC §1 — Medication catalog page.
  *
- * Replaces the Phase 1 stub. Owns:
- * - URL-synced filter state via useSearchParams (D-39, D-44).
- * - One useMedicationsQuery(filters) invocation — server-side pagination (D-44).
- * - Sheet state (create mode for Slice 1; edit/view in Plan 03).
- * - Responsive layout: MedicationTable at ≥md, MedicationCardList at <md.
+ * Replaces the Phase 1 stub (Slice 1). Slice 2 additions:
+ * - Full LakemedelFilter with search, ATC combobox, form select, chip (CAT-02..04).
+ * - `atc` and `form` URL params added to filter state.
+ * - Filters-active empty state: "Inga läkemedel matchade filtren." + "Rensa filter".
+ * - atcSuggestions: top-5-char ATC prefixes from the current page rows.
  *
- * URL is the filter source of truth — useSearchParams drives all filter reads.
+ * URL is the filter source of truth — useSearchParams drives all reads.
+ * The page merges filter patches onto URL via updateFilters(), never via useEffect.
  * Sheet open state does NOT change the URL (D-34).
- *
- * Loading: 8 skeleton rows (table) / 4 skeleton cards (mobile) per UI-SPEC §1.
- * Empty state (zero rows in DB): card with "Inga läkemedel ännu" copy.
- * Empty state (filters active, zero results): inline message below filters.
  */
 
 type SheetState = { mode: 'create' } | { mode: 'edit' | 'view'; item: MedicationListItem } | null;
 
 const DEFAULT_PAGE_SIZE = 25;
 
-function useDebounce<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(id);
-  }, [value, delay]);
-  return debounced;
-}
-
 export function LakemedelPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
+  // All four filter values read directly from URL — no local state for filter values.
   const q = searchParams.get('q') ?? '';
+  const atc = searchParams.get('atc') ?? '';
+  const form = searchParams.get('form') ?? '';
   const belowThreshold = searchParams.get('belowThreshold') === 'true';
   const page = Number(searchParams.get('page') ?? '1');
 
-  const [searchInput, setSearchInput] = useState(q);
-  const debouncedQ = useDebounce(searchInput, 200);
+  /**
+   * Merges a filter patch into the current URL search params.
+   * Clean-URL policy: omit defaults so shared URLs stay readable.
+   * LakemedelFilter always passes `page: 1` in every onChange — this reset
+   * ensures users don't land on an empty page after a filter change.
+   */
+  function updateFilters(patch: {
+    q?: string;
+    atc?: string;
+    form?: string;
+    belowThreshold?: boolean;
+    page?: number;
+    pageSize?: number;
+  }) {
+    setSearchParams((prev) => {
+      const merged = {
+        q: patch.q !== undefined ? patch.q : (prev.get('q') ?? ''),
+        atc: patch.atc !== undefined ? patch.atc : (prev.get('atc') ?? ''),
+        form: patch.form !== undefined ? patch.form : (prev.get('form') ?? ''),
+        belowThreshold:
+          patch.belowThreshold !== undefined
+            ? patch.belowThreshold
+            : prev.get('belowThreshold') === 'true',
+        page:
+          patch.page !== undefined
+            ? patch.page
+            : Number(prev.get('page') ?? '1'),
+        pageSize:
+          patch.pageSize !== undefined
+            ? patch.pageSize
+            : Number(prev.get('pageSize') ?? String(DEFAULT_PAGE_SIZE)),
+      };
 
-  // Sync debounced search to URL
-  useEffect(() => {
-    const current = searchParams.get('q') ?? '';
-    if (debouncedQ !== current) {
-      const next = new URLSearchParams(searchParams);
-      if (debouncedQ) {
-        next.set('q', debouncedQ);
-      } else {
-        next.delete('q');
-      }
-      next.set('page', '1');
-      setSearchParams(next, { replace: true });
-    }
-  }, [debouncedQ]); // eslint-disable-line react-hooks/exhaustive-deps
+      const next = new URLSearchParams();
+      if (merged.q) next.set('q', merged.q);
+      if (merged.atc) next.set('atc', merged.atc);
+      if (merged.form) next.set('form', merged.form);
+      if (merged.belowThreshold) next.set('belowThreshold', 'true');
+      if (merged.page > 1) next.set('page', String(merged.page));
+      if (merged.pageSize !== DEFAULT_PAGE_SIZE)
+        next.set('pageSize', String(merged.pageSize));
+      return next;
+    });
+  }
 
   const filters = {
     q: q || undefined,
+    atc: atc || undefined,
+    form: form || undefined,
     belowThreshold: belowThreshold || undefined,
     page,
     pageSize: DEFAULT_PAGE_SIZE,
@@ -93,35 +113,37 @@ export function LakemedelPage() {
   const belowThresholdTotal = data?.belowThresholdTotal ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / DEFAULT_PAGE_SIZE));
 
+  /**
+   * Derive ATC suggestion list from the current page rows (D-39 / UI-SPEC §8b).
+   * Top distinct 5-char ATC prefixes from visible rows — small, fast, no extra API.
+   * The combobox itself filters this list by what the user types.
+   */
+  const atcSuggestions = useMemo(
+    () =>
+      Array.from(new Set(rows.map((r) => r.atcCode.slice(0, 5)))).sort(),
+    [rows],
+  );
+
   function applyPage(newPage: number) {
-    const next = new URLSearchParams(searchParams);
-    next.set('page', String(newPage));
-    setSearchParams(next, { replace: true });
+    updateFilters({ page: newPage });
   }
 
-  function toggleBelowThreshold() {
-    const next = new URLSearchParams(searchParams);
-    if (belowThreshold) {
-      next.delete('belowThreshold');
-    } else {
-      next.set('belowThreshold', 'true');
-    }
-    next.set('page', '1');
-    setSearchParams(next, { replace: true });
-  }
+  /**
+   * hasActiveFilters: any of the four filter values is set.
+   * Used to distinguish "no rows match filters" from "vårdenhet has no medications".
+   */
+  const hasActiveFilters = !!q || !!atc || !!form || belowThreshold;
 
-  function clearFilters() {
-    setSearchInput('');
-    setSearchParams(new URLSearchParams({ page: '1' }), { replace: true });
-  }
+  /**
+   * rowsEmpty: the loaded response has zero rows.
+   * Guard on !isLoading so this doesn't fire during the initial skeleton phase.
+   */
+  const rowsEmpty = !isLoading && data !== undefined && rows.length === 0;
 
   function handleRowClick(item: MedicationListItem) {
     // Plan 03 will pass mode='edit' or mode='view' based on useCan('medication:update').
-    // For Slice 1, open Sheet in edit mode (placeholder message rendered by Sheet).
     setSheet({ mode: 'edit', item });
   }
-
-  const hasActiveFilters = !!q || belowThreshold;
 
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6 lg:p-8">
@@ -136,34 +158,15 @@ export function LakemedelPage() {
         <LowStockBanner belowThresholdTotal={belowThresholdTotal} />
       )}
 
-      {/* Filter row — search input + below-threshold chip for Slice 1 */}
-      <div className="flex flex-wrap items-center gap-2 py-1">
-        <Input
-          placeholder="Sök på namn…"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          className="w-full sm:w-[240px]"
-          aria-label="Sök på läkemedelsnamn"
-        />
-        <Button
-          variant="outline"
-          aria-pressed={belowThreshold}
-          className={
-            belowThreshold
-              ? 'bg-destructive/10 text-destructive border border-destructive/30 hover:bg-destructive/20'
-              : ''
-          }
-          onClick={toggleBelowThreshold}
-          type="button"
-        >
-          Visa endast under tröskel
-        </Button>
-        {hasActiveFilters && (
-          <Button variant="ghost" size="sm" onClick={clearFilters} type="button">
-            Rensa filter
-          </Button>
-        )}
-      </div>
+      {/* Filter row — search input + ATC combobox + form select + threshold chip (Slice 2) */}
+      <LakemedelFilter
+        q={q}
+        atc={atc}
+        form={form}
+        belowThreshold={belowThreshold}
+        atcSuggestions={atcSuggestions}
+        onChange={updateFilters}
+      />
 
       {/* Loading state */}
       {isLoading && (
@@ -183,8 +186,23 @@ export function LakemedelPage() {
         </>
       )}
 
+      {/* Empty state: filters active, zero results — inline message (UI-SPEC §1) */}
+      {rowsEmpty && hasActiveFilters && (
+        <div className="text-sm text-muted-foreground text-center py-8">
+          Inga läkemedel matchade filtren.{' '}
+          <Button
+            variant="link"
+            className="p-0 h-auto"
+            onClick={() => setSearchParams(new URLSearchParams())}
+            type="button"
+          >
+            Rensa filter
+          </Button>
+        </div>
+      )}
+
       {/* Empty state: zero rows in DB (total === 0, no active filters) */}
-      {!isLoading && total === 0 && !hasActiveFilters && (
+      {rowsEmpty && !hasActiveFilters && (
         <div className="flex items-center justify-center flex-1 p-8">
           <div className="max-w-md w-full p-8 text-center bg-card border border-border rounded-lg shadow-sm">
             <Pill className="h-12 w-12 text-slate-400 mx-auto mb-4" />
@@ -200,20 +218,6 @@ export function LakemedelPage() {
               </Button>
             </Can>
           </div>
-        </div>
-      )}
-
-      {/* Empty state: filters active but no results */}
-      {!isLoading && rows.length === 0 && hasActiveFilters && (
-        <div className="text-sm text-muted-foreground text-center py-8">
-          Inga läkemedel matchade filtren.{' '}
-          <button
-            className="underline hover:no-underline"
-            onClick={clearFilters}
-            type="button"
-          >
-            Rensa filter
-          </button>
         </div>
       )}
 
