@@ -68,7 +68,9 @@ describe('GET /api/me', () => {
         id: TEST_ADMIN.careUnitId,
         name: TEST_ADMIN.careUnitName,
       },
-      permissions: ['admin:ping', 'medication:read', 'medication:create', 'medication:update', 'medication:delete'], // Phase 2 D-43 — admin gains medication:* via PERMISSIONS map
+      // Phase 2 D-43 — admin gains medication:* via PERMISSIONS map.
+      // Phase 3 D-64 — all roles gain order:* (ORD-01..03 no role restriction).
+      permissions: ['admin:ping', 'medication:read', 'medication:create', 'medication:update', 'medication:delete', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete'],
     });
     expect(body).not.toHaveProperty('passwordHash');
   });

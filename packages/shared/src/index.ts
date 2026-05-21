@@ -34,6 +34,31 @@ export {
   medicationUpdateRequest,
   type MedicationUpdateRequest,
 } from './contracts/medication.js';
+// Order contracts — Zod schemas + inferred TS types for the FE↔BE order contract (D-08, Phase 3)
+export {
+  orderLineResponse,
+  type OrderLineResponse,
+  orderResponse,
+  type OrderResponse,
+  orderListItem,
+  type OrderListItem,
+  orderListQuery,
+  type OrderListQuery,
+  orderListResponse,
+  type OrderListResponse,
+  createOrderRequest,
+  type CreateOrderRequest,
+  addOrderLineRequest,
+  type AddOrderLineRequest,
+  updateOrderLineRequest,
+  type UpdateOrderLineRequest,
+  pickerOptionsQuery,
+  type PickerOptionsQuery,
+  pickerOption,
+  type PickerOption,
+  pickerOptionsResponse,
+  type PickerOptionsResponse,
+} from './contracts/order.js';
 
 // Constants — locked vocabularies shared FE+BE
 export { ROLES, roleEnum, type Role } from './constants/roles.js';

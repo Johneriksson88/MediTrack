@@ -40,21 +40,24 @@ const ROLE_MATRIX = [
     label: 'apotekare',
     user: TEST_APOTEKARE,
     expectedRole: 'apotekare' as const,
-    expectedPermissions: ['medication:read', 'medication:create', 'medication:update', 'medication:delete'] as string[],
+    // Phase 3 D-64: all three roles have all five order:* keys (ORD-01..03).
+    expectedPermissions: ['medication:read', 'medication:create', 'medication:update', 'medication:delete', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete'] as string[],
     adminPingStatus: 403,
   },
   {
     label: 'sjukskoterska',
     user: TEST_SJUKSKOTERSKA,
     expectedRole: 'sjukskoterska' as const,
-    expectedPermissions: ['medication:read'] as string[],
+    // Phase 3 D-64: sjukskoterska gains order:* (all roles per ORD-01..03).
+    expectedPermissions: ['medication:read', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete'] as string[],
     adminPingStatus: 403,
   },
   {
     label: 'admin',
     user: TEST_ADMIN,
     expectedRole: 'admin' as const,
-    expectedPermissions: ['admin:ping', 'medication:read', 'medication:create', 'medication:update', 'medication:delete'] as string[],
+    // Phase 3 D-64: admin gains order:* (all roles per ORD-01..03).
+    expectedPermissions: ['admin:ping', 'medication:read', 'medication:create', 'medication:update', 'medication:delete', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete'] as string[],
     adminPingStatus: 200,
   },
 ] as const;

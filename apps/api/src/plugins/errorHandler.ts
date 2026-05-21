@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyError } from 'fastify';
 import fp from 'fastify-plugin';
 import { ZodError } from 'zod';
-import { errorEnvelope, type ErrorEnvelope } from '@meditrack/shared';
+import { errorEnvelope, type ErrorEnvelope, type OrderStatus } from '@meditrack/shared';
 import { env } from '../env.js';
 
 /**
@@ -66,6 +66,43 @@ export class ForbiddenScopeError extends Error {
   }
 }
 
+/**
+ * Phase 3 D-55 — thrown when a mutating order operation is attempted on an
+ * order whose status is not 'utkast' (e.g., already submitted / locked).
+ * Mapped to HTTP 409 with code 'order_locked'.
+ *
+ * details.status carries the actual current status so the FE can show
+ * the precise loser state in the 409 toast (D-55).
+ */
+export class OrderLockedError extends Error {
+  readonly code = 'order_locked' as const;
+  readonly details?: { status?: OrderStatus };
+  constructor(details?: { status?: OrderStatus }) {
+    super('Beställningen kan inte ändras efter att den skickats.');
+    this.name = 'OrderLockedError';
+    this.details = details;
+  }
+}
+
+/**
+ * Phase 3 D-56 — thrown by the submit endpoint when the order fails
+ * server-side validation (empty lines or quantity <= 0). Mapped to HTTP 422
+ * with code 'validation_failed' and a structured details payload.
+ *
+ * This 422 MUST appear BEFORE the generic Zod 400 branch in setErrorHandler
+ * so it is not swallowed by the Zod fallthrough (D-56).
+ */
+export class ValidationFailedError extends Error {
+  readonly code = 'validation_failed' as const;
+  constructor(
+    message: string,
+    public readonly details?: { reason: 'empty_order' | 'invalid_quantity'; lineId?: string },
+  ) {
+    super(message);
+    this.name = 'ValidationFailedError';
+  }
+}
+
 function envelope(
   code: string,
   message: string,
@@ -100,6 +137,18 @@ function send(
 
 export const errorHandlerPlugin = fp(async (app: FastifyInstance) => {
   app.setErrorHandler((err, req, reply) => {
+    // Phase 3 D-56 — OrderLockedError (409) and ValidationFailedError (422) MUST
+    // be checked BEFORE the Zod branch so they are not swallowed by the generic
+    // 400 validation_failed fallthrough. D-56 explicitly maps ValidationFailedError
+    // to 422, overriding the Zod 400 for the submit path.
+    if (err instanceof OrderLockedError) {
+      return send(reply, 409, envelope('order_locked', err.message, err.details));
+    }
+
+    if (err instanceof ValidationFailedError) {
+      return send(reply, 422, envelope('validation_failed', err.message, err.details));
+    }
+
     // Fastify normalizes the body-schema ZodError into `err.validation` only
     // in some adapters; both `err instanceof ZodError` and the
     // `fastify-type-provider-zod` `FastifyZodError`-shape need handling.

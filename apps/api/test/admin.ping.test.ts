@@ -118,7 +118,8 @@ describe('GET /api/admin/ping — RBAC matrix (Phase 1 success #2)', () => {
 });
 
 describe('GET /api/me — permissions[] regression (D-18)', () => {
-  it("returns permissions: ['admin:ping', 'medication:read', 'medication:create', 'medication:update', 'medication:delete'] for an admin session", async () => {
+  // Phase 3 D-64: all roles gain order:* keys (ORD-01..03 — no role restriction).
+  it("returns admin:ping + medication:* + order:* permissions for an admin session", async () => {
     const cookie = await loginAs(TEST_ADMIN.email, TEST_ADMIN.password);
     const res = await app.inject({
       method: 'GET',
@@ -126,10 +127,10 @@ describe('GET /api/me — permissions[] regression (D-18)', () => {
       headers: { cookie },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().permissions).toEqual(['admin:ping', 'medication:read', 'medication:create', 'medication:update', 'medication:delete']);
+    expect(res.json().permissions).toEqual(['admin:ping', 'medication:read', 'medication:create', 'medication:update', 'medication:delete', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete']);
   });
 
-  it("returns permissions: ['medication:read'] for a sjuksköterska session", async () => {
+  it("returns medication:read + order:* permissions for a sjuksköterska session", async () => {
     const cookie = await loginAs(TEST_SJUKSKOTERSKA.email, TEST_SJUKSKOTERSKA.password);
     const res = await app.inject({
       method: 'GET',
@@ -137,10 +138,10 @@ describe('GET /api/me — permissions[] regression (D-18)', () => {
       headers: { cookie },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().permissions).toEqual(['medication:read']);
+    expect(res.json().permissions).toEqual(['medication:read', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete']);
   });
 
-  it("returns permissions: ['medication:read', 'medication:create', 'medication:update', 'medication:delete'] for an apotekare session", async () => {
+  it("returns medication:read/create/update/delete + order:* permissions for an apotekare session", async () => {
     const cookie = await loginAs(TEST_APOTEKARE.email, TEST_APOTEKARE.password);
     const res = await app.inject({
       method: 'GET',
@@ -148,6 +149,6 @@ describe('GET /api/me — permissions[] regression (D-18)', () => {
       headers: { cookie },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().permissions).toEqual(['medication:read', 'medication:create', 'medication:update', 'medication:delete']);
+    expect(res.json().permissions).toEqual(['medication:read', 'medication:create', 'medication:update', 'medication:delete', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete']);
   });
 });
