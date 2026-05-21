@@ -1,31 +1,23 @@
 ---
 phase: 02-medication-catalog
 verified: 2026-05-21T13:00:00Z
-status: human_needed
-score: 17/19 must-haves verified
+human_verified: 2026-05-21T15:30:00Z
+status: pass
+score: 19/19 must-haves verified
 overrides_applied: 0
 re_verification:
-  previous_status: none
-  previous_score: n/a
-  gaps_closed: []
+  previous_status: human_needed
+  previous_score: 17/19
+  gaps_closed:
+    - "Seed-driven low-stock badge + banner render on /lakemedel"
+    - "belowThreshold chip behavior with shared/deep-link URLs"
+    - "Sheet mobile bottom-sheet layout on 360 px viewport"
+    - "InlineEditThreshold stopPropagation isolation in the table"
+    - "Transparent restore on re-add after soft-delete"
   gaps_remaining: []
   regressions: []
-human_verification:
-  - test: "Seed-driven low-stock badge + banner render on /lakemedel"
-    expected: "Table rows with currentStock < lowStockThreshold show red AlertTriangle + 'Lågt lager' pill on the Lager cell; banner above the filter row reads '{N} läkemedel under tröskel' with N > 0 after seeding"
-    why_human: "Requires running docker compose up with the seeded postgres; cannot verify badge render and banner count without a live stack"
-  - test: "belowThreshold chip behavior with shared/deep-link URLs"
-    expected: "Clicking 'Visa endast under tröskel' sets URL param; list narrows to rows with currentStock < lowStockThreshold; URL survives reload; pasting the URL in a new tab restores the filtered view"
-    why_human: "CR-01 in 02-REVIEW.md flags z.coerce.boolean() bug — 'false' string coerces to true. Needs live verification that the FE's clean-URL policy (only ever writes 'true', never 'false') actually prevents user-visible breakage for round-trip URLs"
-  - test: "Sheet mobile bottom-sheet layout on 360 px viewport"
-    expected: "Sheet slides up from bottom; Spara/Avbryt footer is above the 56 px bottom tab bar; env(safe-area-inset-bottom) clearance applies; no content obscured"
-    why_human: "CSS safe-area-inset-bottom behaviour requires physical device or browser device emulation; cannot verify programmatically"
-  - test: "InlineEditThreshold stopPropagation isolation in the table"
-    expected: "Clicking the threshold number enters inline edit mode; the Sheet does NOT open; pressing Enter saves (optimistic flip) without sheet opening; tabbing away or Escape cancels"
-    why_human: "Requires a running browser — stopPropagation isolation and event-bubble behaviour cannot be confirmed by static analysis alone"
-  - test: "Transparent restore on re-add after soft-delete"
-    expected: "Delete a medication via Sheet; search for the same name in the Add typeahead — it appears; selecting and saving reuses the existing CareUnitMedication row (same id, deletedAt reset to null, new stock/threshold). Verify by psql SELECT id, currentStock, deletedAt FROM CareUnitMedication WHERE id = '<original-id>'"
-    why_human: "Full round-trip requires live Postgres + seeded data; the code path exists (createCareUnitMedication transparent restore) but end-to-end cannot be confirmed statically"
+human_verification_record: ".planning/phases/02-medication-catalog/02-HUMAN-UAT.md"
+human_verification_summary: "All 5 items passed via /gsd:verify-work 2 on 2026-05-21. Test 5 (transparent restore) verified indirectly via name-join query (single row per (medication, care unit) with deletedAt = NULL and updated stock/threshold) since the original id baseline was not captured before deletion."
 ---
 
 # Phase 2: Medication Catalog Verification Report
