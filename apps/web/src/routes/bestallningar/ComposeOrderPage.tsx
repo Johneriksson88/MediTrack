@@ -1,47 +1,60 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, ClipboardList } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { EmptyStateCard } from '@/components/EmptyStateCard';
+import { OrderStatusPill } from '@/components/OrderStatusPill';
 import { Can } from '@/auth/Can';
 import { useOrderQuery } from '@/features/orders/useOrderQueries';
+import { useSubmitOrder, useDiscardOrder } from '@/features/orders/useOrderMutations';
 import { OrderLineTable } from './OrderLineTable';
 import { OrderLineCardList } from './OrderLineCardList';
 import { MedicationPickerSheet } from './MedicationPickerSheet';
 import { ComposeStickyFooter } from './ComposeStickyFooter';
+import { SubmitConfirmationBanner } from './SubmitConfirmationBanner';
+import { DiscardDraftDialog } from './DiscardDraftDialog';
 
 /**
  * Phase 3 D-50 / D-67 / D-68 / D-71 / UI-SPEC §4 — Compose Order page.
  *
- * Replaces the Slice 2 placeholder ("Slice 3 fyller i denna vy.").
+ * Slice 4 replaces the Slice 3 stubs:
+ *   - OrderStatusPill: <OrderStatusPill status={order.status} /> (replaces inline span)
+ *   - Mode B body: <SubmitConfirmationBanner> + locked line list (replaces placeholder div)
+ *   - Submit + Kasta handlers: wired via useSubmitOrder + useDiscardOrder
+ *   - DiscardDraftDialog: AlertDialog overlay opened by the Kasta button
  *
  * State branches on useOrderQuery(id):
  *   - loading     → skeleton header + 3 skeleton line blocks, footer hidden
  *   - error 404   → <EmptyStateCard> with back-link
  *   - utkast      → Mode A: editable line list + picker trigger + sticky footer
- *   - non-utkast  → Mode B placeholder (Slice 4 wires SubmitConfirmationBanner)
+ *   - non-utkast  → Mode B: SubmitConfirmationBanner + read-only line list (no footer)
  *
- * OrderStatusPill:
- *   Slice 3 ships an inline placeholder span per plan spec. Slice 4 introduces
- *   <OrderStatusPill> and swaps it in.
- *   // TODO Slice 4: swap for <OrderStatusPill status={order.status} />
+ * Submit flow (D-57):
+ *   ComposeOrderPage passes onSubmit = () => submitMutation.mutateAsync({ orderId })
+ *   to ComposeStickyFooter. On success, cache hydration flips the page to Mode B.
  *
- * Submit + Kasta handlers:
- *   Buttons are inert (onClick={() => {}}) here.
- *   // TODO Slice 4: wire useSubmitOrder + DiscardDraftDialog
+ * Discard flow (D-67):
+ *   Kasta button → setDiscardOpen(true) → DiscardDraftDialog opens.
+ *   onConfirm = discardMutation.mutateAsync({ orderId }) then navigate('/bestallningar').
+ *   On 409 order_locked, the hook invalidates ['order', id] → page re-renders Mode B.
  *
- * Document title: 'Nytt utkast — MediTrack' (utkast) | 'Beställning · Skickad — MediTrack' (skickad)
- * Restored to 'MediTrack' on unmount.
+ * Mobile padding (D-71):
+ *   Mode A: pb-[calc(56px+56px+env(safe-area-inset-bottom))] to clear the sticky footer.
+ *   Mode B: no extra padding (footer absent).
  *
- * Main content mobile padding: pb-[calc(56px+56px+env(safe-area-inset-bottom))] in Mode A
- * so line list never hides behind the fixed footer (UI-SPEC §8 / D-71).
+ * Document title: 'Nytt utkast — MediTrack' (utkast) | 'Beställning · Skickad — MediTrack' (non-utkast)
  */
 
 export function ComposeOrderPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const orderQuery = useOrderQuery(id);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
+
+  const submitMutation = useSubmitOrder();
+  const discardMutation = useDiscardOrder();
 
   const order = orderQuery.data;
   const isLoading = orderQuery.isLoading;
@@ -122,21 +135,6 @@ export function ComposeOrderPage() {
   // ── Shared header ──────────────────────────────────────────────────────────
   const heading = isUtkast ? 'Nytt utkast' : 'Beställning · Skickad';
 
-  // TODO Slice 4: swap for <OrderStatusPill status={order.status} />
-  const statusPillClasses: Record<string, string> = {
-    utkast: 'bg-slate-100 text-slate-700',
-    skickad: 'bg-blue-100 text-blue-800',
-    bekraftad: 'bg-amber-100 text-amber-800',
-    levererad: 'bg-emerald-100 text-emerald-800',
-  };
-  const pillClass = statusPillClasses[order.status] ?? 'bg-slate-100 text-slate-700';
-  const statusLabels: Record<string, string> = {
-    utkast: 'Utkast',
-    skickad: 'Skickad',
-    bekraftad: 'Bekräftad',
-    levererad: 'Levererad',
-  };
-
   const header = (
     <>
       <div>
@@ -150,10 +148,7 @@ export function ComposeOrderPage() {
       </div>
       <div className="flex items-center gap-3 flex-wrap">
         <h1 className="text-2xl font-semibold leading-tight">{heading}</h1>
-        {/* TODO Slice 4: swap for <OrderStatusPill status={order.status} /> */}
-        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${pillClass}`}>
-          {statusLabels[order.status] ?? order.status}
-        </span>
+        <OrderStatusPill status={order.status} />
       </div>
     </>
   );
@@ -164,13 +159,10 @@ export function ComposeOrderPage() {
       <div className="flex flex-col gap-4 p-4 md:p-6 lg:p-8">
         {header}
 
-        {/* Mode B placeholder — Slice 4 wires SubmitConfirmationBanner here */}
-        <div className="mt-2 mx-0 rounded-lg border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-primary">
-          Beställningen är skickad till apotekare.
-          {/* TODO Slice 4: replace with <SubmitConfirmationBanner> */}
-        </div>
+        {/* SubmitConfirmationBanner: role="status" announces on mount (D-68 / UI-SPEC §12) */}
+        <SubmitConfirmationBanner />
 
-        {/* Read-only line list */}
+        {/* Read-only line list (isLocked=true: no trash, QuantityStepper shows static span) */}
         <OrderLineTable
           items={order.lines}
           orderId={order.id}
@@ -228,16 +220,35 @@ export function ComposeOrderPage() {
         orderId={order.id}
       />
 
-      {/* Sticky footer with Submit + Kasta placeholders */}
+      {/* Discard confirmation AlertDialog (D-67) */}
+      <DiscardDraftDialog
+        open={discardOpen}
+        onOpenChange={setDiscardOpen}
+        isDeleting={discardMutation.isPending}
+        onConfirm={async () => {
+          try {
+            await discardMutation.mutateAsync({ orderId: order.id });
+            navigate('/bestallningar');
+          } catch {
+            // Hook handles toast on error; dialog stays open on 409 (Mode B re-render
+            // is triggered by the hook's invalidation — no further action needed here).
+            setDiscardOpen(false);
+          }
+        }}
+      />
+
+      {/* Sticky footer with wired Submit + Kasta (D-71) */}
       <ComposeStickyFooter
         lines={order.lines}
         onAddClick={() => setPickerOpen(true)}
-        onKastaClick={() => {
-          // TODO Slice 4: open DiscardDraftDialog
+        onKastaClick={() => setDiscardOpen(true)}
+        onSubmitClick={async () => {
+          await submitMutation.mutateAsync({ orderId: order.id });
+          // On success, cache hydration (useSubmitOrder onSuccess) updates the
+          // ['order', id] entry to status='skickad', re-rendering this page into Mode B.
+          // No explicit navigation — user stays on /bestallningar/:id per D-68.
         }}
-        onSubmitClick={() => {
-          // TODO Slice 4: wire useSubmitOrder
-        }}
+        isSubmitting={submitMutation.isPending}
       />
     </div>
   );

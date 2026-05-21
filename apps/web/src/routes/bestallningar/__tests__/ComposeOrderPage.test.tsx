@@ -11,6 +11,7 @@ import { ComposeOrderPage } from '../ComposeOrderPage';
 /**
  * Phase 3 D-67 / D-68 / D-71 / UI-SPEC §4 — ComposeOrderPage component tests.
  *
+ * Slice 3 (1–7):
  * (1) Mode A renders: back link, "Nytt utkast", line list, "Lägg till läkemedel",
  *     "Kasta", "Skicka beställning"
  * (2) Empty Mode A renders empty-state copy 'Lägg till läkemedel för att börja.'
@@ -20,6 +21,13 @@ import { ComposeOrderPage } from '../ComposeOrderPage';
  * (6) "Lägg till läkemedel" click opens the picker (setPickerOpen → sheet visible)
  * (7) Mode B placeholder renders when order.status === 'skickad'
  *     and hides sticky footer + trash + picker trigger
+ *
+ * Slice 4 (8–12):
+ * (8) Mode B renders with <SubmitConfirmationBanner> + OrderStatusPill="Skickad" + no footer
+ * (9) Submit click flow: clicking Submit fires submitMutation.mutateAsync
+ * (10) Submit-disabled persists: empty lines → disabled + tooltip
+ * (11) Discard flow: Kasta → AlertDialog opens → confirm fires discardMutation → navigate
+ * (12) Discard cancel: clicking Avbryt closes dialog without firing mutation
  */
 
 // Mock useParams is not needed — we render inside Routes so useParams works.
@@ -36,24 +44,39 @@ vi.mock('@/features/orders/useOrderQueries', () => ({
   usePickerOptionsQuery: vi.fn(),
 }));
 
+// Mock react-router-dom (extend to include useNavigate)
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: vi.fn(),
+  };
+});
+
 // Mock order mutations
 vi.mock('@/features/orders/useOrderMutations', () => ({
   useCreateDraftOrder: vi.fn(),
   useAddOrderLine: vi.fn(),
   useUpdateOrderLineQuantity: vi.fn(),
   useRemoveOrderLine: vi.fn(),
+  useSubmitOrder: vi.fn(),
+  useDiscardOrder: vi.fn(),
 }));
 
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
 import { useOrderQuery, usePickerOptionsQuery } from '@/features/orders/useOrderQueries';
-import { useAddOrderLine, useUpdateOrderLineQuantity, useRemoveOrderLine } from '@/features/orders/useOrderMutations';
+import { useAddOrderLine, useUpdateOrderLineQuantity, useRemoveOrderLine, useSubmitOrder, useDiscardOrder } from '@/features/orders/useOrderMutations';
 
+const mockUseNavigate = vi.mocked(useNavigate);
 const mockUseAuth = vi.mocked(useAuth);
 const mockUseOrderQuery = vi.mocked(useOrderQuery);
 const mockUsePickerOptionsQuery = vi.mocked(usePickerOptionsQuery);
 const mockUseAddOrderLine = vi.mocked(useAddOrderLine);
 const mockUseUpdateOrderLineQuantity = vi.mocked(useUpdateOrderLineQuantity);
 const mockUseRemoveOrderLine = vi.mocked(useRemoveOrderLine);
+const mockUseSubmitOrder = vi.mocked(useSubmitOrder);
+const mockUseDiscardOrder = vi.mocked(useDiscardOrder);
 
 /** Nurse with all order:* permissions */
 function setupNurseAuth() {
@@ -134,13 +157,21 @@ function makeIdleMutation() {
   };
 }
 
-function setupMutations(removeFn = vi.fn()) {
+function setupMutations(removeFn = vi.fn(), submitFn = vi.fn(), discardFn = vi.fn()) {
   mockUseAddOrderLine.mockReturnValue(makeIdleMutation() as unknown as ReturnType<typeof useAddOrderLine>);
   mockUseUpdateOrderLineQuantity.mockReturnValue(makeIdleMutation() as unknown as ReturnType<typeof useUpdateOrderLineQuantity>);
   mockUseRemoveOrderLine.mockReturnValue({
     ...makeIdleMutation(),
     mutate: removeFn,
   } as unknown as ReturnType<typeof useRemoveOrderLine>);
+  mockUseSubmitOrder.mockReturnValue({
+    ...makeIdleMutation(),
+    mutateAsync: submitFn,
+  } as unknown as ReturnType<typeof useSubmitOrder>);
+  mockUseDiscardOrder.mockReturnValue({
+    ...makeIdleMutation(),
+    mutateAsync: discardFn,
+  } as unknown as ReturnType<typeof useDiscardOrder>);
 }
 
 function setupPickerQuery() {
@@ -174,6 +205,8 @@ beforeEach(() => {
   setupNurseAuth();
   setupMutations();
   setupPickerQuery();
+  // Default navigate mock
+  mockUseNavigate.mockReturnValue(vi.fn());
 });
 
 describe('ComposeOrderPage', () => {
@@ -297,6 +330,126 @@ describe('ComposeOrderPage', () => {
       // Picker trigger button should NOT render in Mode B
       // (the inline desktop button is inside <Can> but Mode B returns before rendering it)
       expect(screen.queryByRole('button', { name: /lägg till läkemedel/i })).not.toBeInTheDocument();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Slice 4 tests
+  // ---------------------------------------------------------------------------
+
+  describe('(8) Mode B renders with SubmitConfirmationBanner + OrderStatusPill + no footer', () => {
+    it('shows banner, "Skickad" pill, read-only lines, and hides sticky footer', () => {
+      setupOrderQuery(MOCK_ORDER_SKICKAD);
+
+      renderComposeOrderPage();
+
+      // SubmitConfirmationBanner (role="status")
+      const banner = screen.getByRole('status');
+      expect(banner).toBeInTheDocument();
+      expect(banner).toHaveTextContent('Beställningen är skickad till apotekare.');
+
+      // OrderStatusPill with "Skickad" label
+      expect(screen.getByText('Skickad')).toBeInTheDocument();
+
+      // No sticky footer in Mode B
+      expect(screen.queryByRole('button', { name: /skicka beställning/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^kasta$/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('(9) Submit click flow: fires submitMutation.mutateAsync', () => {
+    it('calls submitMutation.mutateAsync with orderId when Submit clicked', async () => {
+      const submitFn = vi.fn().mockResolvedValue(MOCK_ORDER_SKICKAD);
+      setupMutations(vi.fn(), submitFn, vi.fn());
+      setupOrderQuery(MOCK_ORDER_UTKAST);
+
+      renderComposeOrderPage();
+
+      // Find the Submit button (not disabled since there are lines)
+      const submitBtns = screen.getAllByRole('button', { name: /skicka beställning/i });
+      const enabledBtn = submitBtns.find((b) => !(b as HTMLButtonElement).disabled);
+      expect(enabledBtn).toBeDefined();
+
+      await act(async () => {
+        fireEvent.click(enabledBtn!);
+      });
+
+      expect(submitFn).toHaveBeenCalledTimes(1);
+      expect(submitFn).toHaveBeenCalledWith({ orderId: 'order-1' });
+    });
+  });
+
+  describe('(10) Submit-disabled persists: empty lines → disabled', () => {
+    it('Submit button is disabled when order has no lines', () => {
+      setupOrderQuery(MOCK_ORDER_UTKAST_EMPTY);
+
+      renderComposeOrderPage();
+
+      const submitBtns = screen.getAllByRole('button', { name: /skicka beställning/i });
+      expect(submitBtns.every((btn) => (btn as HTMLButtonElement).disabled)).toBe(true);
+    });
+  });
+
+  describe('(11) Discard flow: Kasta → AlertDialog → confirm fires discardMutation + navigate', () => {
+    it('opens dialog on Kasta click; confirming fires discardMutation.mutateAsync then navigate', async () => {
+      const navigateFn = vi.fn();
+      mockUseNavigate.mockReturnValue(navigateFn);
+      const discardFn = vi.fn().mockResolvedValue(undefined);
+      setupMutations(vi.fn(), vi.fn(), discardFn);
+      setupOrderQuery(MOCK_ORDER_UTKAST);
+
+      renderComposeOrderPage();
+
+      // Click "Kasta" to open the dialog
+      const kastaBtns = screen.getAllByRole('button', { name: /^kasta$/i });
+      await act(async () => {
+        fireEvent.click(kastaBtns[0]!);
+      });
+
+      // Dialog should be open with title
+      expect(screen.getByText('Kasta detta utkast?')).toBeInTheDocument();
+
+      // Click the action "Kasta" inside the dialog
+      const dialogActionBtn = screen.getByRole('button', { name: /^kasta$/i });
+      await act(async () => {
+        fireEvent.click(dialogActionBtn);
+      });
+
+      // discardMutation.mutateAsync should have been called with orderId
+      expect(discardFn).toHaveBeenCalledWith({ orderId: 'order-1' });
+
+      // navigate should have been called with '/bestallningar'
+      expect(navigateFn).toHaveBeenCalledWith('/bestallningar');
+    });
+  });
+
+  describe('(12) Discard cancel: clicking Avbryt closes dialog without firing mutation', () => {
+    it('closes the dialog when Avbryt is clicked', async () => {
+      const discardFn = vi.fn();
+      setupMutations(vi.fn(), vi.fn(), discardFn);
+      setupOrderQuery(MOCK_ORDER_UTKAST);
+
+      renderComposeOrderPage();
+
+      // Open dialog
+      const kastaBtns = screen.getAllByRole('button', { name: /^kasta$/i });
+      await act(async () => {
+        fireEvent.click(kastaBtns[0]!);
+      });
+
+      expect(screen.getByText('Kasta detta utkast?')).toBeInTheDocument();
+
+      // Click Avbryt
+      const cancelBtn = screen.getByRole('button', { name: /avbryt/i });
+      await act(async () => {
+        fireEvent.click(cancelBtn);
+      });
+
+      // Dialog should be closed — title disappears
+      expect(screen.queryByText('Kasta detta utkast?')).not.toBeInTheDocument();
+
+      // Discard mutation should NOT have been called
+      expect(discardFn).not.toHaveBeenCalled();
     });
   });
 });
