@@ -90,11 +90,20 @@ export type MedicationListResponse = z.infer<typeof medicationListResponse>;
 
 /**
  * Query parameters for GET /api/medications/search (D-45).
- * `q` is required (minimum 1 char enforced FE-side via `enabled` gate).
+ * `q` is required and must be ≥ 1 char — empty values reject at the API
+ * boundary with 400 validation_failed.
  * `limit` defaults to 20, max 20.
+ *
+ * CR-03 fix: previously `q: z.string()` accepted '' as valid, which the
+ * service used in `name: { contains: '', mode: 'insensitive' }` — Prisma
+ * compiled this to `ILIKE '%%'` and scanned all ~43k Medication rows on
+ * every empty-string call. The FE already gates on `debouncedQ.length > 0`
+ * (UI-SPEC §6a typeahead), so single-char queries are intentional UX and
+ * we keep `.min(1)` rather than `.min(2)` — the goal is to close the
+ * empty-string hole for direct API callers, not to tighten FE UX.
  */
 export const medicationSearchQuery = z.object({
-  q: z.string(),
+  q: z.string().min(1),
   limit: z.coerce.number().int().min(1).max(20).default(20),
 });
 export type MedicationSearchQuery = z.infer<typeof medicationSearchQuery>;
