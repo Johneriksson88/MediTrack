@@ -9,7 +9,7 @@ import type {
 import { fetchJson, type ApiError } from '@/lib/api';
 
 /**
- * Phase 2 D-30 / D-31 / D-42 / UI-SPEC §Toast Feedback — medication mutation hooks.
+ * Phase 2 D-30 / D-31 / D-33 / D-37 / D-42 / UI-SPEC §Toast Feedback — medication mutation hooks.
  *
  * `useCreateMedication`: POST /api/medications. On success invalidates
  * ['medications'] and ['medication-search'] queries. On 409
@@ -25,7 +25,9 @@ import { fetchJson, type ApiError } from '@/lib/api';
  * only. Flips the cache immediately on mutate; rolls back on error. No success
  * toast (inline edit is silent per D-42 UI-SPEC §5).
  *
- * `useDeleteMedication` is implemented in Plan 04.
+ * `useDeleteMedication` (D-33 / D-37 / CAT-07): DELETE /api/medications/:id.
+ * Soft-delete only. On success invalidates both query keys + toast. On error
+ * toast + dialog stays open for retry.
  *
  * Pattern: mirrors useLogin.ts (useMutation shape with onSuccess invalidation).
  */
@@ -164,5 +166,50 @@ export function useUpdateThresholdOptimistic() {
   });
 }
 
-// TODO: Implemented in Plan 04 (delete)
-// export function useDeleteMedication() { ... }
+/**
+ * Soft-delete a CareUnitMedication (D-33 / D-37 / CAT-07).
+ *
+ * Calls DELETE /api/medications/:careUnitMedicationId.
+ * On success:
+ *   - Invalidates ['medications'] so the list re-fetches without the deleted row.
+ *   - Invalidates ['medication-search'] so the typeahead surfaces the now-deletable
+ *     Medication again (needed for the transparent re-add flow, D-30).
+ *   - Toasts `Borttaget från {careUnitName}` (D-37 / UI-SPEC §7).
+ *   - Calls the optional `onClose` callback so MedicationSheet can close itself from
+ *     within the hook's onSuccess rather than racing the dialog close.
+ * On error: toasts `Kunde inte ta bort — försök igen.`; dialog stays open for retry.
+ *
+ * The `medicationName` and `careUnitName` variables are caller-context (for the toast
+ * template literal). The BE only needs the `careUnitMedicationId`.
+ */
+export function useDeleteMedication() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    void,
+    ApiError,
+    {
+      careUnitMedicationId: string;
+      medicationName: string;
+      careUnitName: string;
+      onClose?: () => void;
+    }
+  >({
+    mutationFn: ({ careUnitMedicationId }) =>
+      fetchJson<void>(`/api/medications/${careUnitMedicationId}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: (_data, { careUnitName, onClose }) => {
+      // Invalidate list so the deleted row disappears.
+      void queryClient.invalidateQueries({ queryKey: ['medications'] });
+      // Invalidate search so the now-deletable Medication surfaces in typeahead (D-30).
+      void queryClient.invalidateQueries({ queryKey: ['medication-search'] });
+      toast.success(`Borttaget från ${careUnitName}`);
+      // Close the parent Sheet via the caller-supplied callback (single-source-of-truth).
+      onClose?.();
+    },
+    onError: () => {
+      toast.error('Kunde inte ta bort — försök igen.');
+    },
+  });
+}
