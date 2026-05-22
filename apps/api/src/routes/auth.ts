@@ -57,6 +57,20 @@ export async function authRoutes(app: FastifyInstance) {
     },
   );
 
+  // WR-01 — logout cost model (post-CR-04):
+  //   1 read  (findSessionById on the unsigned cookie value) +
+  //   1 write (destroySession → session.deleteMany)
+  // The read is required to attribute the auth.logout audit row to the
+  // session's owner: the $extends middleware reads actorUserId from the
+  // ALS store at the moment destroySession fires, so we must resolve
+  // session.userId BEFORE the delete and call setActor with it. Pre-CR-04
+  // logout was 1 write only — this is a 2x DB-roundtrip increase per
+  // logout, paid by both legitimate clients (logout button) and adversarial
+  // probes (session-fixation cookie spam). The cost is bounded by basic
+  // cookie-shape validation (`unsigned.valid && unsigned.value`) so
+  // garbage cookies short-circuit without any DB call. If audit-log
+  // volume reveals high-rate logout probing, consider rate-limiting
+  // DELETE /api/auth/session at the Fastify layer.
   app.delete('/api/auth/session', async (req, reply) => {
     const raw = req.cookies[SESSION_COOKIE];
     if (raw) {
