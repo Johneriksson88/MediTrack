@@ -21,7 +21,7 @@
 | 1 | Foundation & Auth | 4/4 | Complete   | 2026-05-20 |
 | 2 | Medication Catalog | 4/4 | Complete   | 2026-05-21 |
 | 3 | Draft Orders | 4/4 | Complete | 2026-05-22 |
-| 4 | Confirm, Deliver & Stock | Pharmacist confirms and delivers orders; stock updates atomically under row-level locks; integration test covers the full pipeline | ORD-04, ORD-05, ORD-06, ORD-07, STK-01, STK-02, OPS-03 | yes |
+| 4 | Confirm, Deliver & Stock | 1/3 | In Progress|  |
 | 5 | Audit Log | Every mutation appended to an immutable `audit_events` table; admin can browse and filter the log | AUD-01, AUD-02, AUD-03 | yes |
 | 6 | AI Categorization & Low-Stock Notifications | LLM suggests therapeutic class on medication save; dashboard banner surfaces low-stock items live | AI-01, AI-02, AI-03, NTF-01, NTF-02 | yes |
 | 7 | Ops & Submission Polish | One-command Docker Compose runs the full stack with seed data; README explains decisions; git history is review-ready | OPS-01, OPS-02, OPS-04 | no |
@@ -83,8 +83,8 @@
 **Mode:** mvp
 **UI hint:** yes
 **Requirements:** ORD-04, ORD-05, ORD-06, ORD-07, STK-01, STK-02, OPS-03
-**Plans:** 3 plans
-  - [ ] 04-01-PLAN.md — Slice A: schema + shared contracts + RBAC + confirmOrder service + POST /confirm + Mode C wiring + confirm integration test (ORD-04, ORD-06)
+**Plans:** 1/3 plans executed
+  - [x] 04-01-PLAN.md — Slice A: schema + shared contracts + RBAC + confirmOrder service + POST /confirm + Mode C wiring + confirm integration test (ORD-04, ORD-06)
   - [ ] 04-02-PLAN.md — Slice B: deliverOrder service (CUM-batch lock D-79) + POST /deliver + Mode D/E + DeliverConfirmDialog + OrderActorTrail + full pipeline + pg_locks concurrency test (ORD-05, ORD-06, STK-01, STK-02, OPS-03)
   - [ ] 04-03-PLAN.md — Slice C: list API widening (alla / comma-list) + shadcn Tabs + BestallningarPage status-tabs + OrdersTable/CardList + seedDemoOrders fan-out (ORD-07)
 **Success Criteria:**
