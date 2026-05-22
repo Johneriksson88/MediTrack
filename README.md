@@ -198,8 +198,9 @@ active client surface from the `AsyncLocalStorage` store's `activeTx`
 slot — when the caller is inside `prisma.$transaction(async (tx) => ...)`,
 that slot holds the tx client; for bare calls, it falls back to the
 captured root client from `Prisma.defineExtension`. The extension
-intercepts `$transaction` calls at runtime (via `patchTransactionForAudit`
-in `apps/api/src/db/client.ts`) to push the tx into the `activeTx` slot
+intercepts `$transaction` calls at runtime (via `patchTransactionForAudit`,
+defined in `apps/api/src/db/auditExtension.ts`, applied once in
+`apps/api/src/db/client.ts`) to push the tx into the `activeTx` slot
 before the user's callback runs, then clears it in the finally block. The
 handler then routes BOTH the `findUnique` / `findMany` `before`-row
 pre-loads AND the final `auditEvent.create` audit-row INSERT through that
