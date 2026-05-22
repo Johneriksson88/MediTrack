@@ -63,20 +63,26 @@ export function useOrderQuery(id: string | undefined) {
  * Returns up to 20 CareUnitMedication rows matching q within the caller's
  * careUnit. Each row includes currentStock + lowStockThreshold for LowStockBadge.
  *
- * enabled: caller passes `debouncedQ.length > 0` to avoid firing on empty input.
- * retry: false — picker should fail fast on error.
+ * WR-07: q is trimmed before keying the cache + firing the fetch, mirroring
+ * the server-side z.string().trim().min(1). enabled becomes effectively
+ * (trimmed.length > 0 && enabled) so a whitespace-only input doesn't burn
+ * a request. staleTime: 30_000 means revisits within 30 s reuse the cached
+ * result instead of re-fetching (typeahead is heavy on the careUnit's CUM
+ * index — repeated keystrokes with the same prefix were hitting Postgres
+ * every time the Sheet reopened).
  *
- * NOTE: Slice 3 consumes this fully in MedicationPickerSheet. Exported here
- * as a stub so the type compiles — Slice 3 uses it unchanged.
+ * retry: false — picker should fail fast on error.
  */
 export function usePickerOptionsQuery(q: string, enabled: boolean) {
+  const trimmed = q.trim();
   return useQuery<PickerOptionsResponse, ApiError>({
-    queryKey: ['order-picker', q],
+    queryKey: ['order-picker', trimmed],
     queryFn: () =>
       fetchJson<PickerOptionsResponse>(
-        `/api/orders/picker-options?q=${encodeURIComponent(q)}&limit=20`,
+        `/api/orders/picker-options?q=${encodeURIComponent(trimmed)}&limit=20`,
       ),
-    enabled,
+    enabled: enabled && trimmed.length > 0,
     retry: false,
+    staleTime: 30_000,
   });
 }

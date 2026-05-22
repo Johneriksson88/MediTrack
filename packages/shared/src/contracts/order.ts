@@ -163,10 +163,16 @@ export type UpdateOrderLineRequest = z.infer<typeof updateOrderLineRequest>;
 /**
  * Query parameters for GET /api/orders/picker-options (D-59).
  * Verbatim mirror of medicationSearchQuery (medication.ts:105-109):
- * q is required (≥ 1 char), limit defaults to 20 (max 20).
+ * q is required (≥ 1 char AFTER trim), limit defaults to 20 (max 20).
+ *
+ * WR-07: q is .trim()ed before .min(1) so a whitespace-only query (e.g.,
+ * a stray IME composition or a paste with leading spaces) fails fast at
+ * the boundary instead of firing a useless DB ILIKE for ' '. The FE
+ * (usePickerOptionsQuery) also trims before calling, so the two layers
+ * agree on what counts as a "non-empty" query.
  */
 export const pickerOptionsQuery = z.object({
-  q: z.string().min(1),
+  q: z.string().trim().min(1),
   limit: z.coerce.number().int().min(1).max(20).default(20),
 });
 export type PickerOptionsQuery = z.infer<typeof pickerOptionsQuery>;
