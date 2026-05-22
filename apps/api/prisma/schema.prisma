@@ -258,3 +258,100 @@ model OrderLine {
   @@index([orderId])
   @@index([careUnitMedicationId])
 }
+
+// ---------------------------------------------------------------------------
+// Phase 5 — Audit log (AUD-01, D-90..D-105)
+// ---------------------------------------------------------------------------
+
+/// Phase 5 D-97 / D-98 — Append-only audit table for every Phase 2/3/4
+/// mutation. Populated by the Prisma `$extends` middleware in
+/// `apps/api/src/db/auditExtension.ts` inside the same transaction as the
+/// wrapping mutation (D-91); rolled-back mutations leave zero audit rows.
+///
+/// NO foreign key on `actorUserId` (deliberate — D-97). The audit log must
+/// survive User row deletion for forensics; with a FK, deleting a User
+/// would either cascade-corrupt history or block the delete entirely.
+/// The field is a bare String? so the row stays referentially loose.
+/// The denormalized `careUnitId` plays the same role for tenant scoping
+/// in a future per-vårdenhet admin view.
+///
+/// `before` and `after` store FULL row snapshots filtered through the
+/// per-model allowlist in `apps/api/src/db/auditAllowlist.ts` (D-97 —
+/// User.passwordHash and Session.id are excluded). Diff is computed at
+/// READ time inside AuditDiffPanel (D-95).
+///
+/// `entityId` for Session-typed audit rows MUST carry the actor User.id,
+/// NEVER Session.id (which IS the raw signed session token). The
+/// branching lives in `resolveEntityId(model, row)` (D-97 + T-05-03).
+///
+/// Append-only enforcement: the follow-on migration 0008 REVOKEs
+/// UPDATE/DELETE/TRUNCATE on this table from the DB role embedded in
+/// DATABASE_URL (D-98 layer 2). Combined with an ESLint
+/// `no-restricted-syntax` rule banning `prisma.auditEvent.update/delete/
+/// updateMany/deleteMany/upsert` (D-99 — Plan 03, layer 1), append-only
+/// is enforced both in the code and at the role level.
+///
+/// Indexes (D-CONTEXT.md `<domain>` line 13):
+///   (createdAt DESC, id)         — cursor pagination key (D-105)
+///   (actorUserId, createdAt DESC) — actor combobox filter (D-103)
+///   (entityType, createdAt DESC)  — entity-type filter (D-103)
+///   (action, createdAt DESC)      — action filter (D-103)
+///   (requestId)                   — sibling-event grouping (D-94)
+model AuditEvent {
+  id String @id @default(cuid())
+
+  /// D-97 — nullable for auth.login_failed where no User has authenticated.
+  /// No @relation: deleting a User must not cascade-corrupt the audit log.
+  actorUserId String?
+
+  /// D-97 — denormalized careUnit scope (nullable for session/user/auth
+  /// events that aren't naturally vårdenhet-scoped). Enables a future v2
+  /// per-vårdenhet admin view (§6 "50 vårdenheter" answer).
+  careUnitId String?
+
+  /// D-97 — open string enum: medication | care_unit_medication | order |
+  /// order_line | user | session (extensible per D-104 footer). The shared
+  /// AUDIT_ENTITY_TYPES list is the FE label-map source of truth.
+  entityType String
+
+  /// D-97 + T-05-03 — natural PK for the audited row, EXCEPT for Session
+  /// where this column carries the actor User.id (NEVER row.id, which is
+  /// the raw signed session token). Branching centralized in
+  /// resolveEntityId(model, row) in auditAllowlist.ts.
+  entityId String
+
+  /// D-104 — open string set. Defaults to the Prisma method name
+  /// (create/update/delete) but can be overridden via the ALS
+  /// actionOverride field (D-94 — order.submit/order.confirm/
+  /// order.deliver/stock.increment/auth.login/auth.logout/
+  /// auth.login_failed).
+  action String
+
+  /// D-95 — full pre-mutation row snapshot, filtered through
+  /// AUDIT_ALLOWLIST[model]. Null for create events.
+  before Json?
+
+  /// D-95 — full post-mutation row snapshot, filtered through
+  /// AUDIT_ALLOWLIST[model]. Null for delete events.
+  after Json?
+
+  /// D-94 — sibling events share a requestId. Sourced from the
+  /// AsyncLocalStorage store seeded in requestContext.ts; null for
+  /// non-HTTP-originated writes (auth.login_failed before ALS exists,
+  /// or any future cron path that opts in to audit without a request).
+  requestId String?
+
+  /// Claude's discretion (CONTEXT.md `<decisions>` line 105) — cheap
+  /// signal for §6 anti-abuse discussion. Populated from
+  /// req.headers['x-forwarded-for'] / req.ip in the requestContext
+  /// plugin. Null for non-HTTP writes.
+  ipAddress String?
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt(sort: Desc), id])
+  @@index([actorUserId, createdAt(sort: Desc)])
+  @@index([entityType, createdAt(sort: Desc)])
+  @@index([action, createdAt(sort: Desc)])
+  @@index([requestId])
+}
