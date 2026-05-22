@@ -27,17 +27,20 @@ import {
  *
  * # SAME-TX GUARANTEE (D-91)
  *
- * The intercepted call runs whatever the caller passed (`query(args)`).
- * If the caller is already inside prisma.$transaction, Prisma's nested
- * tx behavior means our audit-row INSERT lands in the SAME tx — both
- * the mutation and the audit row commit or roll back together. If the
- * caller is bare (e.g. prisma.medication.create(...) outside a tx),
- * Prisma auto-wraps it in an implicit tx and the same guarantee holds.
+ * Every per-model handler calls `Prisma.getExtensionContext(this)` at
+ * entry to resolve the ACTIVE client surface. When the caller is
+ * inside `prisma.$transaction(async (tx) => ...)`, that surface IS the
+ * tx client; for bare calls, Prisma auto-wraps the operation in an
+ * implicit tx and the surface is that. BOTH the `findUnique` / `findMany`
+ * `before`-row pre-loads AND the final `auditEvent.create` audit-row
+ * INSERT route through that resolved context — NEVER through the
+ * captured outer `client` argument from `Prisma.defineExtension`.
  *
- * For UPDATE / DELETE, we load the `before` row(s) via
- * `client.<model>.findUnique` (or findMany for updateMany / deleteMany)
- * INSIDE the same tx, then run the original op, then write the audit
- * row. Order matters — load before mutating.
+ * The captured outer `client` is used ONLY for the outer
+ * `client.$extends({ ... })` factory return — nowhere else.
+ *
+ * VERIFIED in test by forced rollback inside prisma.$transaction leaving
+ * zero audit_events rows (Plan 04 Task 2).
  *
  * # SKIP RULE (D-92)
  *
@@ -96,19 +99,24 @@ export function buildAuditExtension() {
       const handlers: LooseQueryHandlers = {};
 
       // ---- create ----
-      handlers.create = async ({
-        args,
-        query,
-      }: {
-        args: Record<string, unknown>;
-        query: (a: Record<string, unknown>) => Promise<unknown>;
-      }) => {
+      handlers.create = async function (
+        this: LooseQueryHandlers,
+        {
+          args,
+          query,
+        }: {
+          args: Record<string, unknown>;
+          query: (a: Record<string, unknown>) => Promise<unknown>;
+        },
+      ) {
         const store = als.getStore();
         if (!store) return query(args);
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ctx = Prisma.getExtensionContext(this) as any;
         const result = await query(args);
         const row = result as Record<string, unknown>;
-        await writeAuditRow(client, store, model, {
+        await writeAuditRow(ctx, store, model, {
           before: null,
           after: row,
           row,
@@ -118,27 +126,32 @@ export function buildAuditExtension() {
       };
 
       // ---- update ----
-      handlers.update = async ({
-        args,
-        query,
-      }: {
-        args: Record<string, unknown>;
-        query: (a: Record<string, unknown>) => Promise<unknown>;
-      }) => {
+      handlers.update = async function (
+        this: LooseQueryHandlers,
+        {
+          args,
+          query,
+        }: {
+          args: Record<string, unknown>;
+          query: (a: Record<string, unknown>) => Promise<unknown>;
+        },
+      ) {
         const store = als.getStore();
         if (!store) return query(args);
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ctx = Prisma.getExtensionContext(this) as any;
         const where = args.where as Record<string, unknown> | undefined;
         let beforeRow: Record<string, unknown> | null = null;
         if (where) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const modelClient = (client as any)[propName];
+          const modelClient = (ctx as any)[propName];
           beforeRow = await modelClient.findUnique({ where });
         }
 
         const result = await query(args);
         const row = result as Record<string, unknown>;
-        await writeAuditRow(client, store, model, {
+        await writeAuditRow(ctx, store, model, {
           before: beforeRow,
           after: row,
           row,
@@ -148,19 +161,24 @@ export function buildAuditExtension() {
       };
 
       // ---- updateMany ----
-      handlers.updateMany = async ({
-        args,
-        query,
-      }: {
-        args: Record<string, unknown>;
-        query: (a: Record<string, unknown>) => Promise<unknown>;
-      }) => {
+      handlers.updateMany = async function (
+        this: LooseQueryHandlers,
+        {
+          args,
+          query,
+        }: {
+          args: Record<string, unknown>;
+          query: (a: Record<string, unknown>) => Promise<unknown>;
+        },
+      ) {
         const store = als.getStore();
         if (!store) return query(args);
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ctx = Prisma.getExtensionContext(this) as any;
         const where = (args.where as Record<string, unknown> | undefined) ?? {};
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const modelClient = (client as any)[propName];
+        const modelClient = (ctx as any)[propName];
         const beforeRows: Array<Record<string, unknown>> = await modelClient.findMany({ where });
 
         const result = await query(args);
@@ -171,7 +189,7 @@ export function buildAuditExtension() {
           const afterRow: Record<string, unknown> | null = await modelClient.findUnique({
             where: { id },
           });
-          await writeAuditRow(client, store, model, {
+          await writeAuditRow(ctx, store, model, {
             before: beforeRow,
             after: afterRow,
             row: afterRow ?? beforeRow,
@@ -182,28 +200,33 @@ export function buildAuditExtension() {
       };
 
       // ---- delete ----
-      handlers.delete = async ({
-        args,
-        query,
-      }: {
-        args: Record<string, unknown>;
-        query: (a: Record<string, unknown>) => Promise<unknown>;
-      }) => {
+      handlers.delete = async function (
+        this: LooseQueryHandlers,
+        {
+          args,
+          query,
+        }: {
+          args: Record<string, unknown>;
+          query: (a: Record<string, unknown>) => Promise<unknown>;
+        },
+      ) {
         const store = als.getStore();
         if (!store) return query(args);
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ctx = Prisma.getExtensionContext(this) as any;
         const where = args.where as Record<string, unknown> | undefined;
         let beforeRow: Record<string, unknown> | null = null;
         if (where) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const modelClient = (client as any)[propName];
+          const modelClient = (ctx as any)[propName];
           beforeRow = await modelClient.findUnique({ where });
         }
 
         const result = await query(args);
         // For delete, Prisma's result IS the deleted row.
         const row = (result as Record<string, unknown>) ?? beforeRow ?? {};
-        await writeAuditRow(client, store, model, {
+        await writeAuditRow(ctx, store, model, {
           before: beforeRow ?? (result as Record<string, unknown>),
           after: null,
           row,
@@ -213,25 +236,30 @@ export function buildAuditExtension() {
       };
 
       // ---- deleteMany ----
-      handlers.deleteMany = async ({
-        args,
-        query,
-      }: {
-        args: Record<string, unknown>;
-        query: (a: Record<string, unknown>) => Promise<unknown>;
-      }) => {
+      handlers.deleteMany = async function (
+        this: LooseQueryHandlers,
+        {
+          args,
+          query,
+        }: {
+          args: Record<string, unknown>;
+          query: (a: Record<string, unknown>) => Promise<unknown>;
+        },
+      ) {
         const store = als.getStore();
         if (!store) return query(args);
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ctx = Prisma.getExtensionContext(this) as any;
         const where = (args.where as Record<string, unknown> | undefined) ?? {};
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const modelClient = (client as any)[propName];
+        const modelClient = (ctx as any)[propName];
         const beforeRows: Array<Record<string, unknown>> = await modelClient.findMany({ where });
 
         const result = await query(args);
 
         for (const beforeRow of beforeRows) {
-          await writeAuditRow(client, store, model, {
+          await writeAuditRow(ctx, store, model, {
             before: beforeRow,
             after: null,
             row: beforeRow,
@@ -259,10 +287,17 @@ export function buildAuditExtension() {
  * Internal helper — writes ONE audit row for an intercepted mutation.
  * Filters before/after through the per-model allowlist (D-97 layer 1)
  * and computes entityId via resolveEntityId (D-97 layer 2 / T-05-03).
+ *
+ * `ctx` is the active extension context resolved by
+ * `Prisma.getExtensionContext(this)` inside each per-model handler —
+ * this is the tx surface when the caller is inside
+ * `prisma.$transaction(async (tx) => ...)`, or the implicit-tx surface
+ * for bare calls. Routing `auditEvent.create` through `ctx` instead of
+ * the captured outer `client` is what makes D-91 hold.
  */
 async function writeAuditRow(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  client: any,
+  ctx: any,
   store: NonNullable<ReturnType<typeof als.getStore>>,
   model: AuditedModel,
   payload: {
@@ -296,7 +331,7 @@ async function writeAuditRow(
   if (filteredBefore) data.before = filteredBefore;
   if (filteredAfter) data.after = filteredAfter;
 
-  await client.auditEvent.create({ data });
+  await ctx.auditEvent.create({ data });
 }
 
 // Silence unused-import warnings for AUDIT_ALLOWLIST when this file is
