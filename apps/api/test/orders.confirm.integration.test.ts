@@ -4,7 +4,11 @@ import {
   TEST_SJUKSKOTERSKA,
   TEST_APOTEKARE,
   buildTestApp,
+  captureSessionCookie,
+  createEmptyOrder,
   ensureAllRolesSeeded,
+  findTestCareUnitMedication,
+  loginAs,
   prisma,
   resetSessions,
 } from './helpers/buildTestApp.js';
@@ -39,50 +43,10 @@ afterAll(async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Local helpers (verbatim from orders.integration.test.ts per PATTERNS.md)
+// Local helpers — only the confirm-specific `submitOrder` remains local;
+// captureSessionCookie / loginAs / createEmptyOrder / findTestCareUnitMedication
+// are imported from helpers/buildTestApp per Phase 5 Plan 03 Task 2 Step A.0.
 // ---------------------------------------------------------------------------
-
-function captureSessionCookie(setCookie: string | string[] | undefined): string {
-  const header = Array.isArray(setCookie) ? setCookie[0]! : String(setCookie);
-  const match = header.match(/(meditrack\.sid=[^;]+)/);
-  expect(match).not.toBeNull();
-  return match![1]!;
-}
-
-async function loginAs(user: { email: string; password: string }): Promise<string> {
-  const loginRes = await app.inject({
-    method: 'POST',
-    url: '/api/auth/login',
-    payload: { email: user.email, password: user.password },
-  });
-  expect(loginRes.statusCode).toBe(200);
-  return captureSessionCookie(loginRes.headers['set-cookie']);
-}
-
-async function createEmptyOrder(cookie: string): Promise<{ id: string }> {
-  const res = await app.inject({
-    method: 'POST',
-    url: '/api/orders',
-    headers: { cookie },
-    payload: {},
-  });
-  expect(res.statusCode).toBe(201);
-  return res.json() as { id: string };
-}
-
-async function findTestCareUnitMedication(): Promise<{ id: string; careUnitId: string }> {
-  const cum = await prisma.careUnitMedication.findFirst({
-    where: {
-      careUnitId: TEST_SJUKSKOTERSKA.careUnitId,
-      deletedAt: null,
-    },
-    orderBy: { createdAt: 'asc' },
-  });
-  if (!cum) {
-    throw new Error('No CareUnitMedication found in test DB — run seed first');
-  }
-  return { id: cum.id, careUnitId: cum.careUnitId };
-}
 
 /**
  * Helper: advance an order from empty draft to Skickad (submitted).
@@ -111,11 +75,11 @@ async function submitOrder(nurseCookie: string, orderId: string, cumId: string):
 
 describe('Confirm order — Phase 4 Slice A (6-scenario D-74 suite)', () => {
   it('Test 1 (happy path): create → add-line → submit → confirm; response is bekraftad with actor stamps', async () => {
-    const nurseCookie = await loginAs(TEST_SJUKSKOTERSKA);
-    const apotekareCookie = await loginAs(TEST_APOTEKARE);
+    const nurseCookie = await loginAs(app, TEST_SJUKSKOTERSKA);
+    const apotekareCookie = await loginAs(app, TEST_APOTEKARE);
     const cum = await findTestCareUnitMedication();
 
-    const order = await createEmptyOrder(nurseCookie);
+    const order = await createEmptyOrder(app, nurseCookie);
     await submitOrder(nurseCookie, order.id, cum.id);
 
     const confirmRes = await app.inject({
@@ -164,12 +128,12 @@ describe('Confirm order — Phase 4 Slice A (6-scenario D-74 suite)', () => {
   });
 
   it('Test 2 (wrong-status 409): confirm on utkast order returns order_transition_invalid', async () => {
-    const nurseCookie = await loginAs(TEST_SJUKSKOTERSKA);
-    const apotekareCookie = await loginAs(TEST_APOTEKARE);
+    const nurseCookie = await loginAs(app, TEST_SJUKSKOTERSKA);
+    const apotekareCookie = await loginAs(app, TEST_APOTEKARE);
     const cum = await findTestCareUnitMedication();
 
     // Create draft but do NOT submit
-    const order = await createEmptyOrder(nurseCookie);
+    const order = await createEmptyOrder(app, nurseCookie);
     // Add a line so the order isn't empty, but skip submit
     await app.inject({
       method: 'POST',
@@ -195,11 +159,11 @@ describe('Confirm order — Phase 4 Slice A (6-scenario D-74 suite)', () => {
   });
 
   it('Test 3 (double-confirm 409): second confirm on bekraftad returns 409 with from=bekraftad', async () => {
-    const nurseCookie = await loginAs(TEST_SJUKSKOTERSKA);
-    const apotekareCookie = await loginAs(TEST_APOTEKARE);
+    const nurseCookie = await loginAs(app, TEST_SJUKSKOTERSKA);
+    const apotekareCookie = await loginAs(app, TEST_APOTEKARE);
     const cum = await findTestCareUnitMedication();
 
-    const order = await createEmptyOrder(nurseCookie);
+    const order = await createEmptyOrder(app, nurseCookie);
     await submitOrder(nurseCookie, order.id, cum.id);
 
     // First confirm succeeds
@@ -226,10 +190,10 @@ describe('Confirm order — Phase 4 Slice A (6-scenario D-74 suite)', () => {
   });
 
   it('Test 4 (cross-careUnit 404): apotekare from different careUnit gets 404, not 403', async () => {
-    const nurseCookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const nurseCookie = await loginAs(app, TEST_SJUKSKOTERSKA);
     const cum = await findTestCareUnitMedication();
 
-    const order = await createEmptyOrder(nurseCookie);
+    const order = await createEmptyOrder(app, nurseCookie);
     await submitOrder(nurseCookie, order.id, cum.id);
 
     // Create a second careUnit and an apotekare user in it
@@ -263,7 +227,7 @@ describe('Confirm order — Phase 4 Slice A (6-scenario D-74 suite)', () => {
       },
     });
 
-    const otherCookie = await loginAs({ email: otherApotekare.email, password: 'demo1234' });
+    const otherCookie = await loginAs(app, { email: otherApotekare.email, password: 'demo1234' });
 
     const confirmRes = await app.inject({
       method: 'POST',
@@ -282,10 +246,10 @@ describe('Confirm order — Phase 4 Slice A (6-scenario D-74 suite)', () => {
   });
 
   it('Test 5 (RBAC 403): sjuksköterska POSTing /confirm gets 403 from requirePermission', async () => {
-    const nurseCookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const nurseCookie = await loginAs(app, TEST_SJUKSKOTERSKA);
     const cum = await findTestCareUnitMedication();
 
-    const order = await createEmptyOrder(nurseCookie);
+    const order = await createEmptyOrder(app, nurseCookie);
     await submitOrder(nurseCookie, order.id, cum.id);
 
     const confirmRes = await app.inject({
@@ -304,7 +268,7 @@ describe('Confirm order — Phase 4 Slice A (6-scenario D-74 suite)', () => {
   });
 
   it('Test 6 (not-found 404): apotekare POSTing /confirm with fabricated orderId gets 404', async () => {
-    const apotekareCookie = await loginAs(TEST_APOTEKARE);
+    const apotekareCookie = await loginAs(app, TEST_APOTEKARE);
 
     const confirmRes = await app.inject({
       method: 'POST',

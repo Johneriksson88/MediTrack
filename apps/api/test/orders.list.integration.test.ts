@@ -4,7 +4,10 @@ import {
   TEST_SJUKSKOTERSKA,
   TEST_APOTEKARE,
   buildTestApp,
+  captureSessionCookie,
   ensureAllRolesSeeded,
+  findTestCareUnitMedication,
+  loginAs,
   prisma,
   resetSessions,
 } from './helpers/buildTestApp.js';
@@ -56,36 +59,8 @@ afterAll(async () => {
 // Local helpers
 // ---------------------------------------------------------------------------
 
-function captureSessionCookie(setCookie: string | string[] | undefined): string {
-  const header = Array.isArray(setCookie) ? setCookie[0]! : String(setCookie);
-  const match = header.match(/(meditrack\.sid=[^;]+)/);
-  expect(match).not.toBeNull();
-  return match![1]!;
-}
-
-async function loginAs(user: { email: string; password: string }): Promise<string> {
-  const loginRes = await app.inject({
-    method: 'POST',
-    url: '/api/auth/login',
-    payload: { email: user.email, password: user.password },
-  });
-  expect(loginRes.statusCode).toBe(200);
-  return captureSessionCookie(loginRes.headers['set-cookie']);
-}
-
-async function findTestCareUnitMedication(): Promise<{ id: string }> {
-  const cum = await prisma.careUnitMedication.findFirst({
-    where: {
-      careUnitId: TEST_SJUKSKOTERSKA.careUnitId,
-      deletedAt: null,
-    },
-    orderBy: { createdAt: 'asc' },
-  });
-  if (!cum) {
-    throw new Error('No CareUnitMedication found — run seed first');
-  }
-  return { id: cum.id };
-}
+// captureSessionCookie / loginAs / findTestCareUnitMedication are
+// imported from helpers/buildTestApp per Phase 5 Plan 03 Task 2 Step A.0.
 
 /**
  * Creates an order directly in the DB with the given status + actor stamps.
@@ -140,7 +115,7 @@ async function deleteTestOrders(careUnitId: string): Promise<void> {
 
 describe('List API widening — Phase 4 Slice C (7-scenario ORD-07 suite)', () => {
   it('Test 1 (back-compat default): GET /api/orders returns only utkast orders for the careUnit', async () => {
-    const nurseCookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const nurseCookie = await loginAs(app, TEST_SJUKSKOTERSKA);
     const sjukskoterska = await prisma.user.findUniqueOrThrow({
       where: { email: TEST_SJUKSKOTERSKA.email },
     });
@@ -179,7 +154,7 @@ describe('List API widening — Phase 4 Slice C (7-scenario ORD-07 suite)', () =
   });
 
   it('Test 2 (single status): GET /api/orders?status=skickad returns skickad orders with submittedBy populated', async () => {
-    const nurseCookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const nurseCookie = await loginAs(app, TEST_SJUKSKOTERSKA);
     const sjukskoterska = await prisma.user.findUniqueOrThrow({
       where: { email: TEST_SJUKSKOTERSKA.email },
     });
@@ -233,7 +208,7 @@ describe('List API widening — Phase 4 Slice C (7-scenario ORD-07 suite)', () =
   });
 
   it('Test 3 (comma-list): GET /api/orders?status=skickad,bekraftad,levererad returns all three statuses', async () => {
-    const nurseCookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const nurseCookie = await loginAs(app, TEST_SJUKSKOTERSKA);
     const apotekare = await prisma.user.findUniqueOrThrow({
       where: { email: TEST_APOTEKARE.email },
     });
@@ -289,7 +264,7 @@ describe('List API widening — Phase 4 Slice C (7-scenario ORD-07 suite)', () =
   });
 
   it('Test 4 (alla literal): GET /api/orders?status=alla returns all four statuses', async () => {
-    const nurseCookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const nurseCookie = await loginAs(app, TEST_SJUKSKOTERSKA);
     const apotekare = await prisma.user.findUniqueOrThrow({
       where: { email: TEST_APOTEKARE.email },
     });
@@ -349,7 +324,7 @@ describe('List API widening — Phase 4 Slice C (7-scenario ORD-07 suite)', () =
   });
 
   it('Test 5 (cross-careUnit isolation): careUnit-B order not visible to careUnit-A apotekare ?status=alla', async () => {
-    const apotekareCookie = await loginAs(TEST_APOTEKARE);
+    const apotekareCookie = await loginAs(app, TEST_APOTEKARE);
     const sjukskoterska = await prisma.user.findUniqueOrThrow({
       where: { email: TEST_SJUKSKOTERSKA.email },
     });
@@ -397,7 +372,7 @@ describe('List API widening — Phase 4 Slice C (7-scenario ORD-07 suite)', () =
   });
 
   it('Test 6 (invalid status rejected): ?status=foo → 400; ?status=skickad,foo → 400', async () => {
-    const nurseCookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const nurseCookie = await loginAs(app, TEST_SJUKSKOTERSKA);
 
     // Single invalid token.
     const fooRes = await app.inject({
@@ -417,7 +392,7 @@ describe('List API widening — Phase 4 Slice C (7-scenario ORD-07 suite)', () =
   });
 
   it('Test 7 (actor field shapes): a bekraftad order has confirmedBy + submittedBy populated AND deliveredBy null', async () => {
-    const nurseCookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const nurseCookie = await loginAs(app, TEST_SJUKSKOTERSKA);
     const apotekare = await prisma.user.findUniqueOrThrow({
       where: { email: TEST_APOTEKARE.email },
     });

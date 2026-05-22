@@ -3,7 +3,11 @@ import type { FastifyInstance } from 'fastify';
 import {
   TEST_SJUKSKOTERSKA,
   buildTestApp,
+  captureSessionCookie,
+  createEmptyOrder,
   ensureAllRolesSeeded,
+  findTestCareUnitMedication,
+  loginAs,
   prisma,
   resetSessions,
 } from './helpers/buildTestApp.js';
@@ -46,53 +50,12 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
-function captureSessionCookie(setCookie: string | string[] | undefined): string {
-  const header = Array.isArray(setCookie) ? setCookie[0]! : String(setCookie);
-  const match = header.match(/(meditrack\.sid=[^;]+)/);
-  expect(match).not.toBeNull();
-  return match![1]!;
-}
-
-async function loginAs(user: { email: string; password: string }): Promise<string> {
-  const loginRes = await app.inject({
-    method: 'POST',
-    url: '/api/auth/login',
-    payload: { email: user.email, password: user.password },
-  });
-  expect(loginRes.statusCode).toBe(200);
-  return captureSessionCookie(loginRes.headers['set-cookie']);
-}
-
-/** Helper: create an empty draft order as the sjukskoterska user */
-async function createEmptyOrder(cookie: string): Promise<{ id: string }> {
-  const res = await app.inject({
-    method: 'POST',
-    url: '/api/orders',
-    headers: { cookie },
-    payload: {},
-  });
-  expect(res.statusCode).toBe(201);
-  return res.json() as { id: string };
-}
-
-/** Helper: find the first available CareUnitMedication for the test careUnit */
-async function findTestCareUnitMedication(): Promise<{ id: string; careUnitId: string }> {
-  const cum = await prisma.careUnitMedication.findFirst({
-    where: {
-      careUnitId: TEST_SJUKSKOTERSKA.careUnitId,
-      deletedAt: null,
-    },
-    orderBy: { createdAt: 'asc' },
-  });
-  if (!cum) {
-    throw new Error('No CareUnitMedication found in test DB — run seed first');
-  }
-  return { id: cum.id, careUnitId: cum.careUnitId };
-}
+// Helpers (loginAs, captureSessionCookie, createEmptyOrder, findTestCareUnitMedication)
+// are imported from helpers/buildTestApp per Phase 5 Plan 03 Task 2 Step A.0.
 
 describe('Draft orders — Slice 2 API contracts', () => {
   it('POST /api/orders creates an Utkast Order scoped to req.user.careUnitId, ignores body careUnitId/status/createdByUserId via Zod .strict()', async () => {
-    const cookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const cookie = await loginAs(app, TEST_SJUKSKOTERSKA);
 
     // (a) Stray body fields are rejected by Zod .strict() — 400 validation_failed
     const strictRes = await app.inject({
@@ -131,7 +94,7 @@ describe('Draft orders — Slice 2 API contracts', () => {
   });
 
   it('GET /api/orders?status=utkast returns only the caller\'s careUnit Orders sorted createdAt DESC and includes lineCount/totalQuantity/createdBy.name', async () => {
-    const cookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const cookie = await loginAs(app, TEST_SJUKSKOTERSKA);
 
     // Create two draft orders for this user
     const createA = await app.inject({
@@ -214,11 +177,11 @@ describe('Draft orders — Slice 2 API contracts', () => {
 
 describe('Draft orders — Slice 3 API contracts', () => {
   it('(a) GET /api/orders/:id returns the order with embedded lines and denormalized fields', async () => {
-    const cookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const cookie = await loginAs(app, TEST_SJUKSKOTERSKA);
     const cum = await findTestCareUnitMedication();
 
     // Create an order
-    const order = await createEmptyOrder(cookie);
+    const order = await createEmptyOrder(app, cookie);
 
     // Add a line via the API
     const addRes = await app.inject({
@@ -289,11 +252,11 @@ describe('Draft orders — Slice 3 API contracts', () => {
     });
 
     // Login as user A (primary sjukskoterska), create an order in CareUnit A
-    const cookieA = await loginAs(TEST_SJUKSKOTERSKA);
-    const orderA = await createEmptyOrder(cookieA);
+    const cookieA = await loginAs(app, TEST_SJUKSKOTERSKA);
+    const orderA = await createEmptyOrder(app, cookieA);
 
     // Login as user B (CareUnit B)
-    const cookieB = await loginAs({ email: USER_B_EMAIL, password: 'demo1234' });
+    const cookieB = await loginAs(app, { email: USER_B_EMAIL, password: 'demo1234' });
 
     // Attempt GET /api/orders/:id from user B — must be 404, not 403 (D-73)
     const getRes = await app.inject({
@@ -310,10 +273,10 @@ describe('Draft orders — Slice 3 API contracts', () => {
   });
 
   it('(c) POST /api/orders/:id/lines on Utkast returns 200 with lines.length incremented and lines[*].name populated', async () => {
-    const cookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const cookie = await loginAs(app, TEST_SJUKSKOTERSKA);
     const cum = await findTestCareUnitMedication();
 
-    const order = await createEmptyOrder(cookie);
+    const order = await createEmptyOrder(app, cookie);
 
     const addRes = await app.inject({
       method: 'POST',
@@ -338,10 +301,10 @@ describe('Draft orders — Slice 3 API contracts', () => {
   });
 
   it('(d) PATCH /api/orders/:id/lines/:lineId updates quantity and returns full Order', async () => {
-    const cookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const cookie = await loginAs(app, TEST_SJUKSKOTERSKA);
     const cum = await findTestCareUnitMedication();
 
-    const order = await createEmptyOrder(cookie);
+    const order = await createEmptyOrder(app, cookie);
 
     // Add a line first
     const addRes = await app.inject({
@@ -372,10 +335,10 @@ describe('Draft orders — Slice 3 API contracts', () => {
   });
 
   it('(e) DELETE /api/orders/:id/lines/:lineId removes the line and returns full Order with decremented lines.length', async () => {
-    const cookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const cookie = await loginAs(app, TEST_SJUKSKOTERSKA);
     const cum = await findTestCareUnitMedication();
 
-    const order = await createEmptyOrder(cookie);
+    const order = await createEmptyOrder(app, cookie);
 
     // Add a line
     const addRes = await app.inject({
@@ -404,10 +367,10 @@ describe('Draft orders — Slice 3 API contracts', () => {
   });
 
   it('(f) 409 order_locked — line mutations on a Skickad order return 409 with order_locked code and details.status', async () => {
-    const cookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const cookie = await loginAs(app, TEST_SJUKSKOTERSKA);
     const cum = await findTestCareUnitMedication();
 
-    const order = await createEmptyOrder(cookie);
+    const order = await createEmptyOrder(app, cookie);
 
     // Add a line to the order first (so submit won't fail empty-order 422)
     const addLineFirst = await app.inject({
@@ -465,7 +428,7 @@ describe('Draft orders — Slice 3 API contracts', () => {
   });
 
   it('(g) GET /api/orders/picker-options scopes to careUnit and filters out soft-deleted CareUnitMedications', async () => {
-    const cookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const cookie = await loginAs(app, TEST_SJUKSKOTERSKA);
 
     // Find a real CareUnitMedication to soft-delete
     const cum = await prisma.careUnitMedication.findFirst({
@@ -557,8 +520,8 @@ describe('Draft orders — Slice 3 API contracts', () => {
 
     // User A creates a draft order in CareUnit A and attempts to add a line
     // referencing CareUnit B's CUM id. The FK accepts it; the service must reject.
-    const cookieA = await loginAs(TEST_SJUKSKOTERSKA);
-    const orderA = await createEmptyOrder(cookieA);
+    const cookieA = await loginAs(app, TEST_SJUKSKOTERSKA);
+    const orderA = await createEmptyOrder(app, cookieA);
 
     const addRes = await app.inject({
       method: 'POST',
@@ -594,7 +557,7 @@ describe('Draft orders integration', () => {
   // Scenario 1: Happy path — create → add-line → patch-quantity → submit
   // ---------------------------------------------------------------------------
   it('happy path: create → add-line → patch-quantity → submit', async () => {
-    const cookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const cookie = await loginAs(app, TEST_SJUKSKOTERSKA);
     const cum = await findTestCareUnitMedication();
 
     // POST /api/orders → 201 utkast
@@ -666,7 +629,7 @@ describe('Draft orders integration', () => {
   // Scenario 2: 409 order_locked after submit — every subsequent op returns 409
   // ---------------------------------------------------------------------------
   it('returns 409 order_locked on all line ops + re-submit + delete after submit', async () => {
-    const cookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const cookie = await loginAs(app, TEST_SJUKSKOTERSKA);
     const cum = await findTestCareUnitMedication();
 
     // Create, add line, submit
@@ -713,7 +676,7 @@ describe('Draft orders integration', () => {
   // Scenario 3: 422 validation_failed on submit with empty or poisoned lines
   // ---------------------------------------------------------------------------
   it('returns 422 validation_failed on submit with empty lines or quantity <= 0', async () => {
-    const cookie = await loginAs(TEST_SJUKSKOTERSKA);
+    const cookie = await loginAs(app, TEST_SJUKSKOTERSKA);
     const cum = await findTestCareUnitMedication();
 
     // Sub-test (a): submit empty draft → 422 empty_order
@@ -792,7 +755,7 @@ describe('Draft orders integration', () => {
     });
 
     // User A creates an order in CareUnit A
-    const cookieA = await loginAs(TEST_SJUKSKOTERSKA);
+    const cookieA = await loginAs(app, TEST_SJUKSKOTERSKA);
     const createRes = await app.inject({ method: 'POST', url: '/api/orders', headers: { cookie: cookieA }, payload: {} });
     expect(createRes.statusCode).toBe(201);
     const orderIdA = (createRes.json() as { id: string }).id;
@@ -809,7 +772,7 @@ describe('Draft orders integration', () => {
     const lineId = (addRes.json() as { lines: Array<{ id: string }> }).lines[0]!.id;
 
     // User B from CareUnit B tries to access order from CareUnit A
-    const cookieB = await loginAs({ email: USER_B_EMAIL, password: 'demo1234' });
+    const cookieB = await loginAs(app, { email: USER_B_EMAIL, password: 'demo1234' });
 
     const crossCases: Array<{ method: string; url: string; payload?: unknown }> = [
       { method: 'GET', url: `/api/orders/${orderIdA}` },
@@ -858,7 +821,7 @@ describe('Draft orders integration', () => {
     const userC = await prisma.user.findUnique({ where: { email: USER_C_EMAIL } });
     if (!userC) throw new Error('User C not found');
 
-    const cookieA = await loginAs(TEST_SJUKSKOTERSKA);
+    const cookieA = await loginAs(app, TEST_SJUKSKOTERSKA);
 
     // Seed CareUnit A: 2 Utkast orders (via API) + 1 Skickad (via direct prisma)
     const createA1 = await app.inject({ method: 'POST', url: '/api/orders', headers: { cookie: cookieA }, payload: {} });

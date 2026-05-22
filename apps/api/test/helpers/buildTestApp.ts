@@ -1,4 +1,5 @@
-import { vi } from 'vitest';
+import type { FastifyInstance } from 'fastify';
+import { expect, vi } from 'vitest';
 import { prisma } from '../../src/db/client.js';
 
 /**
@@ -156,5 +157,132 @@ export const TEST_SJUKSKOTERSKA = {
   careUnitId: CARE_UNIT_ID,
   careUnitName: CARE_UNIT_NAME,
 } as const;
+
+// ---------------------------------------------------------------------------
+// Phase 5 Plan 03 Task 2 Step A.0 — promoted composite test helpers.
+//
+// These five helpers previously lived as LOCAL function declarations in
+// six different test files (orders.deliver, orders.confirm, orders.integration,
+// orders.list, auth.flow.smoke, admin.ping). The canonical source was
+// orders.deliver.integration.test.ts lines 54-145. They are promoted here
+// so audit.integration.test.ts has a single, well-known import target —
+// and so future phases (6+) get them for free without copy-paste drift.
+//
+// Signatures match the deliver test's variant (the most general form):
+//   - loginAs(app, { email, password }) — `app` parameter is explicit so
+//     the helper has no module-level dependency on which `app` it targets.
+//   - findTestCareUnitMedication(careUnitId?) — defaults to TEST_SJUKSKOTERSKA
+//     so existing call sites that pass no arg keep working.
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse the `Set-Cookie` header(s) returned from a login and extract the
+ * raw `meditrack.sid=...` token (without the surrounding cookie
+ * attributes). Asserts the cookie is present so the calling test fails
+ * fast if the login response didn't include a session cookie.
+ */
+export function captureSessionCookie(setCookie: string | string[] | undefined): string {
+  const header = Array.isArray(setCookie) ? setCookie[0]! : String(setCookie);
+  const match = header.match(/(meditrack\.sid=[^;]+)/);
+  expect(match).not.toBeNull();
+  return match![1]!;
+}
+
+/**
+ * Log in via `POST /api/auth/login` against the provided Fastify
+ * instance and return the captured session cookie. Asserts the login
+ * succeeded (200). The returned cookie is the value you pass as
+ * `headers.cookie` on subsequent app.inject calls.
+ */
+export async function loginAs(
+  app: FastifyInstance,
+  user: { email: string; password: string },
+): Promise<string> {
+  const loginRes = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { email: user.email, password: user.password },
+  });
+  expect(loginRes.statusCode).toBe(200);
+  return captureSessionCookie(loginRes.headers['set-cookie']);
+}
+
+/**
+ * Create an empty draft order via `POST /api/orders` (no body). Returns
+ * the `{ id }` of the new order. Asserts the create succeeded (201).
+ */
+export async function createEmptyOrder(
+  app: FastifyInstance,
+  cookie: string,
+): Promise<{ id: string }> {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/orders',
+    headers: { cookie },
+    payload: {},
+  });
+  expect(res.statusCode).toBe(201);
+  return res.json() as { id: string };
+}
+
+/**
+ * Look up the first available `CareUnitMedication` row for the given
+ * careUnit (defaults to `TEST_SJUKSKOTERSKA.careUnitId`). Throws if
+ * none exist — the caller is expected to have seeded the test database
+ * before invoking this helper.
+ */
+export async function findTestCareUnitMedication(
+  careUnitId: string = TEST_SJUKSKOTERSKA.careUnitId,
+): Promise<{ id: string; careUnitId: string }> {
+  const cum = await prisma.careUnitMedication.findFirst({
+    where: { careUnitId, deletedAt: null },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (!cum) {
+    throw new Error('No CareUnitMedication found in test DB — run seed first');
+  }
+  return { id: cum.id, careUnitId: cum.careUnitId };
+}
+
+/**
+ * Composite helper: advances a draft order from empty to `bekraftad`.
+ * Adds each line as the nurse, submits as the nurse, then confirms as
+ * the apotekare. Each step asserts the corresponding endpoint returned
+ * 200 so test failures point to the exact step that broke.
+ *
+ * The fan-out produces the Phase 5 D-94 audit-row pattern: one
+ * `order.submit` row, then one `order.confirm` row, all sharing one
+ * `requestId` per HTTP call. The audit-integration test asserts this
+ * shape directly via `prisma.auditEvent.findMany`.
+ */
+export async function progressOrderToBekraftad(
+  app: FastifyInstance,
+  nurseCookie: string,
+  apotekareCookie: string,
+  orderId: string,
+  lineSpecs: Array<{ cumId: string; quantity: number }>,
+): Promise<void> {
+  for (const spec of lineSpecs) {
+    const lineRes = await app.inject({
+      method: 'POST',
+      url: `/api/orders/${orderId}/lines`,
+      headers: { cookie: nurseCookie },
+      payload: { careUnitMedicationId: spec.cumId, quantity: spec.quantity },
+    });
+    expect(lineRes.statusCode).toBe(200);
+  }
+  const submitRes = await app.inject({
+    method: 'POST',
+    url: `/api/orders/${orderId}/submit`,
+    headers: { cookie: nurseCookie },
+  });
+  expect(submitRes.statusCode).toBe(200);
+  const confirmRes = await app.inject({
+    method: 'POST',
+    url: `/api/orders/${orderId}/confirm`,
+    headers: { cookie: apotekareCookie },
+  });
+  expect(confirmRes.statusCode).toBe(200);
+}
 
 export { prisma };

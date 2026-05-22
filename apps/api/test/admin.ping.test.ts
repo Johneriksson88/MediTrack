@@ -6,6 +6,7 @@ import {
   TEST_SJUKSKOTERSKA,
   buildTestApp,
   ensureAllRolesSeeded,
+  loginAs,
   prisma,
   resetSessions,
 } from './helpers/buildTestApp.js';
@@ -44,19 +45,7 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
-async function loginAs(email: string, password: string): Promise<string> {
-  const res = await app.inject({
-    method: 'POST',
-    url: '/api/auth/login',
-    payload: { email, password },
-  });
-  expect(res.statusCode).toBe(200);
-  const setCookie = res.headers['set-cookie'];
-  const cookieHeader = Array.isArray(setCookie) ? setCookie[0]! : String(setCookie);
-  const match = cookieHeader.match(/(meditrack\.sid=[^;]+)/);
-  expect(match).not.toBeNull();
-  return match![1]!;
-}
+// loginAs is imported from helpers/buildTestApp per Phase 5 Plan 03 Task 2 Step A.0.
 
 describe('GET /api/admin/ping — RBAC matrix (Phase 1 success #2)', () => {
   it('returns 401 + unauthenticated envelope when no cookie is sent', async () => {
@@ -68,7 +57,7 @@ describe('GET /api/admin/ping — RBAC matrix (Phase 1 success #2)', () => {
   });
 
   it('returns 403 + forbidden envelope for a sjuksköterska session', async () => {
-    const cookie = await loginAs(TEST_SJUKSKOTERSKA.email, TEST_SJUKSKOTERSKA.password);
+    const cookie = await loginAs(app, TEST_SJUKSKOTERSKA);
     const res = await app.inject({
       method: 'GET',
       url: '/api/admin/ping',
@@ -84,7 +73,7 @@ describe('GET /api/admin/ping — RBAC matrix (Phase 1 success #2)', () => {
   });
 
   it('returns 403 + forbidden envelope for an apotekare session', async () => {
-    const cookie = await loginAs(TEST_APOTEKARE.email, TEST_APOTEKARE.password);
+    const cookie = await loginAs(app, TEST_APOTEKARE);
     const res = await app.inject({
       method: 'GET',
       url: '/api/admin/ping',
@@ -100,7 +89,7 @@ describe('GET /api/admin/ping — RBAC matrix (Phase 1 success #2)', () => {
   });
 
   it('returns 200 + { pong: true, at: <ISO 8601> } for an admin session', async () => {
-    const cookie = await loginAs(TEST_ADMIN.email, TEST_ADMIN.password);
+    const cookie = await loginAs(app, TEST_ADMIN);
     const res = await app.inject({
       method: 'GET',
       url: '/api/admin/ping',
@@ -120,7 +109,7 @@ describe('GET /api/admin/ping — RBAC matrix (Phase 1 success #2)', () => {
 describe('GET /api/me — permissions[] regression (D-18)', () => {
   // Phase 3 D-64: all roles gain order:* keys (ORD-01..03 — no role restriction).
   it("returns admin:ping + medication:* + order:* permissions for an admin session", async () => {
-    const cookie = await loginAs(TEST_ADMIN.email, TEST_ADMIN.password);
+    const cookie = await loginAs(app, TEST_ADMIN);
     const res = await app.inject({
       method: 'GET',
       url: '/api/me',
@@ -133,7 +122,7 @@ describe('GET /api/me — permissions[] regression (D-18)', () => {
   });
 
   it("returns medication:read + order:* permissions for a sjuksköterska session", async () => {
-    const cookie = await loginAs(TEST_SJUKSKOTERSKA.email, TEST_SJUKSKOTERSKA.password);
+    const cookie = await loginAs(app, TEST_SJUKSKOTERSKA);
     const res = await app.inject({
       method: 'GET',
       url: '/api/me',
@@ -144,7 +133,7 @@ describe('GET /api/me — permissions[] regression (D-18)', () => {
   });
 
   it("returns medication:read/create/update/delete + order:* permissions for an apotekare session", async () => {
-    const cookie = await loginAs(TEST_APOTEKARE.email, TEST_APOTEKARE.password);
+    const cookie = await loginAs(app, TEST_APOTEKARE);
     const res = await app.inject({
       method: 'GET',
       url: '/api/me',

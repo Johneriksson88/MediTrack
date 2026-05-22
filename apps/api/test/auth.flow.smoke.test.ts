@@ -5,6 +5,7 @@ import {
   TEST_APOTEKARE,
   TEST_SJUKSKOTERSKA,
   buildTestApp,
+  captureSessionCookie,
   ensureAllRolesSeeded,
   prisma,
   resetSessions,
@@ -82,12 +83,8 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
-function captureSessionCookie(setCookie: string | string[] | undefined): string {
-  const header = Array.isArray(setCookie) ? setCookie[0]! : String(setCookie);
-  const match = header.match(/(meditrack\.sid=[^;]+)/);
-  expect(match).not.toBeNull();
-  return match![1]!;
-}
+// captureSessionCookie is imported from helpers/buildTestApp
+// per Phase 5 Plan 03 Task 2 Step A.0.
 
 describe('Auth flow smoke — login → /me → admin:ping → logout per role', () => {
   for (const row of ROLE_MATRIX) {

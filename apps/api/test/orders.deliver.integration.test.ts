@@ -4,8 +4,13 @@ import {
   TEST_SJUKSKOTERSKA,
   TEST_APOTEKARE,
   buildTestApp,
+  captureSessionCookie,
+  createEmptyOrder,
   ensureAllRolesSeeded,
+  findTestCareUnitMedication,
+  loginAs,
   prisma,
+  progressOrderToBekraftad,
   resetSessions,
 } from './helpers/buildTestApp.js';
 // D-86: Import deliverOrder directly (NOT via app.inject) for the concurrency test.
@@ -48,50 +53,11 @@ afterAll(async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Local helpers (verbatim from orders.confirm.integration.test.ts per PATTERNS.md)
+// Local helpers — only the deliver-specific `findSecondTestCareUnitMedication`
+// remains local; the other five (loginAs, captureSessionCookie, createEmptyOrder,
+// findTestCareUnitMedication, progressOrderToBekraftad) are imported from
+// helpers/buildTestApp per Phase 5 Plan 03 Task 2 Step A.0.
 // ---------------------------------------------------------------------------
-
-function captureSessionCookie(setCookie: string | string[] | undefined): string {
-  const header = Array.isArray(setCookie) ? setCookie[0]! : String(setCookie);
-  const match = header.match(/(meditrack\.sid=[^;]+)/);
-  expect(match).not.toBeNull();
-  return match![1]!;
-}
-
-async function loginAs(user: { email: string; password: string }): Promise<string> {
-  const loginRes = await app.inject({
-    method: 'POST',
-    url: '/api/auth/login',
-    payload: { email: user.email, password: user.password },
-  });
-  expect(loginRes.statusCode).toBe(200);
-  return captureSessionCookie(loginRes.headers['set-cookie']);
-}
-
-async function createEmptyOrder(cookie: string): Promise<{ id: string }> {
-  const res = await app.inject({
-    method: 'POST',
-    url: '/api/orders',
-    headers: { cookie },
-    payload: {},
-  });
-  expect(res.statusCode).toBe(201);
-  return res.json() as { id: string };
-}
-
-async function findTestCareUnitMedication(): Promise<{ id: string; careUnitId: string }> {
-  const cum = await prisma.careUnitMedication.findFirst({
-    where: {
-      careUnitId: TEST_SJUKSKOTERSKA.careUnitId,
-      deletedAt: null,
-    },
-    orderBy: { createdAt: 'asc' },
-  });
-  if (!cum) {
-    throw new Error('No CareUnitMedication found in test DB — run seed first');
-  }
-  return { id: cum.id, careUnitId: cum.careUnitId };
-}
 
 async function findSecondTestCareUnitMedication(excludeId: string): Promise<{ id: string; careUnitId: string }> {
   const cum = await prisma.careUnitMedication.findFirst({
@@ -108,50 +74,14 @@ async function findSecondTestCareUnitMedication(excludeId: string): Promise<{ id
   return { id: cum.id, careUnitId: cum.careUnitId };
 }
 
-/**
- * D-87: Composite helper — advances an order from empty draft to Bekräftad.
- * Issues line-adds as sjuksköterska, submits, then confirms as apotekare.
- */
-async function progressOrderToBekraftad(
-  nurseCookie: string,
-  apotekareCookie: string,
-  orderId: string,
-  lineSpecs: Array<{ cumId: string; quantity: number }>,
-): Promise<void> {
-  // Add each line as sjuksköterska
-  for (const spec of lineSpecs) {
-    const lineRes = await app.inject({
-      method: 'POST',
-      url: `/api/orders/${orderId}/lines`,
-      headers: { cookie: nurseCookie },
-      payload: { careUnitMedicationId: spec.cumId, quantity: spec.quantity },
-    });
-    expect(lineRes.statusCode).toBe(200);
-  }
-  // Submit as sjuksköterska
-  const submitRes = await app.inject({
-    method: 'POST',
-    url: `/api/orders/${orderId}/submit`,
-    headers: { cookie: nurseCookie },
-  });
-  expect(submitRes.statusCode).toBe(200);
-  // Confirm as apotekare
-  const confirmRes = await app.inject({
-    method: 'POST',
-    url: `/api/orders/${orderId}/confirm`,
-    headers: { cookie: apotekareCookie },
-  });
-  expect(confirmRes.statusCode).toBe(200);
-}
-
 // ---------------------------------------------------------------------------
 // Test suite
 // ---------------------------------------------------------------------------
 
 describe('Deliver order — Phase 4 Slice B (8-scenario D-78/D-79/D-81/D-88 suite)', () => {
   it('Test 1 (happy path): full pipeline create→submit→confirm→deliver; two CUMs with aggregated lines; stock incremented, actor trail populated', async () => {
-    const nurseCookie = await loginAs(TEST_SJUKSKOTERSKA);
-    const apotekareCookie = await loginAs(TEST_APOTEKARE);
+    const nurseCookie = await loginAs(app, TEST_SJUKSKOTERSKA);
+    const apotekareCookie = await loginAs(app, TEST_APOTEKARE);
     const cum1 = await findTestCareUnitMedication();
     const cum2 = await findSecondTestCareUnitMedication(cum1.id);
 
@@ -161,10 +91,10 @@ describe('Deliver order — Phase 4 Slice B (8-scenario D-78/D-79/D-81/D-88 suit
     expect(before1).not.toBeNull();
     expect(before2).not.toBeNull();
 
-    const order = await createEmptyOrder(nurseCookie);
+    const order = await createEmptyOrder(app, nurseCookie);
 
     // Progress to Bekräftad with: 2 lines on CUM1 (qty 2+3=5) and 1 line on CUM2 (qty 4)
-    await progressOrderToBekraftad(nurseCookie, apotekareCookie, order.id, [
+    await progressOrderToBekraftad(app, nurseCookie, apotekareCookie, order.id, [
       { cumId: cum1.id, quantity: 2 },
       { cumId: cum1.id, quantity: 3 },
       { cumId: cum2.id, quantity: 4 },
@@ -218,12 +148,12 @@ describe('Deliver order — Phase 4 Slice B (8-scenario D-78/D-79/D-81/D-88 suit
   });
 
   it('Test 2 (wrong-status 409): deliver on Skickad order returns order_transition_invalid with from=skickad', async () => {
-    const nurseCookie = await loginAs(TEST_SJUKSKOTERSKA);
-    const apotekareCookie = await loginAs(TEST_APOTEKARE);
+    const nurseCookie = await loginAs(app, TEST_SJUKSKOTERSKA);
+    const apotekareCookie = await loginAs(app, TEST_APOTEKARE);
     const cum = await findTestCareUnitMedication();
 
     // Create and submit but do NOT confirm (status stays skickad)
-    const order = await createEmptyOrder(nurseCookie);
+    const order = await createEmptyOrder(app, nurseCookie);
     await app.inject({
       method: 'POST',
       url: `/api/orders/${order.id}/lines`,
@@ -252,14 +182,14 @@ describe('Deliver order — Phase 4 Slice B (8-scenario D-78/D-79/D-81/D-88 suit
   });
 
   it('Test 3 (double-deliver 409): second deliver returns 409; stock incremented exactly once', async () => {
-    const nurseCookie = await loginAs(TEST_SJUKSKOTERSKA);
-    const apotekareCookie = await loginAs(TEST_APOTEKARE);
+    const nurseCookie = await loginAs(app, TEST_SJUKSKOTERSKA);
+    const apotekareCookie = await loginAs(app, TEST_APOTEKARE);
     const cum = await findTestCareUnitMedication();
 
     const before = await prisma.careUnitMedication.findUnique({ where: { id: cum.id } });
 
-    const order = await createEmptyOrder(nurseCookie);
-    await progressOrderToBekraftad(nurseCookie, apotekareCookie, order.id, [
+    const order = await createEmptyOrder(app, nurseCookie);
+    await progressOrderToBekraftad(app, nurseCookie, apotekareCookie, order.id, [
       { cumId: cum.id, quantity: 3 },
     ]);
 
@@ -290,12 +220,12 @@ describe('Deliver order — Phase 4 Slice B (8-scenario D-78/D-79/D-81/D-88 suit
   });
 
   it('Test 4 (cross-careUnit 404): apotekare from different careUnit gets 404, not 403', async () => {
-    const nurseCookie = await loginAs(TEST_SJUKSKOTERSKA);
-    const apotekareCookie = await loginAs(TEST_APOTEKARE);
+    const nurseCookie = await loginAs(app, TEST_SJUKSKOTERSKA);
+    const apotekareCookie = await loginAs(app, TEST_APOTEKARE);
     const cum = await findTestCareUnitMedication();
 
-    const order = await createEmptyOrder(nurseCookie);
-    await progressOrderToBekraftad(nurseCookie, apotekareCookie, order.id, [
+    const order = await createEmptyOrder(app, nurseCookie);
+    await progressOrderToBekraftad(app, nurseCookie, apotekareCookie, order.id, [
       { cumId: cum.id, quantity: 2 },
     ]);
 
@@ -328,7 +258,7 @@ describe('Deliver order — Phase 4 Slice B (8-scenario D-78/D-79/D-81/D-88 suit
       },
     });
 
-    const otherCookie = await loginAs({ email: otherApotekare.email, password: 'demo1234' });
+    const otherCookie = await loginAs(app, { email: otherApotekare.email, password: 'demo1234' });
 
     const deliverRes = await app.inject({
       method: 'POST',
@@ -347,12 +277,12 @@ describe('Deliver order — Phase 4 Slice B (8-scenario D-78/D-79/D-81/D-88 suit
   });
 
   it('Test 5 (sjuksköterska 403): sjuksköterska POSTing /deliver gets 403 from requirePermission', async () => {
-    const nurseCookie = await loginAs(TEST_SJUKSKOTERSKA);
-    const apotekareCookie = await loginAs(TEST_APOTEKARE);
+    const nurseCookie = await loginAs(app, TEST_SJUKSKOTERSKA);
+    const apotekareCookie = await loginAs(app, TEST_APOTEKARE);
     const cum = await findTestCareUnitMedication();
 
-    const order = await createEmptyOrder(nurseCookie);
-    await progressOrderToBekraftad(nurseCookie, apotekareCookie, order.id, [
+    const order = await createEmptyOrder(app, nurseCookie);
+    await progressOrderToBekraftad(app, nurseCookie, apotekareCookie, order.id, [
       { cumId: cum.id, quantity: 1 },
     ]);
 
@@ -372,16 +302,16 @@ describe('Deliver order — Phase 4 Slice B (8-scenario D-78/D-79/D-81/D-88 suit
   });
 
   it('Test 6 (soft-deleted CUM → 422 medication_removed): tx rolls back, no stock change', async () => {
-    const nurseCookie = await loginAs(TEST_SJUKSKOTERSKA);
-    const apotekareCookie = await loginAs(TEST_APOTEKARE);
+    const nurseCookie = await loginAs(app, TEST_SJUKSKOTERSKA);
+    const apotekareCookie = await loginAs(app, TEST_APOTEKARE);
     const cum1 = await findTestCareUnitMedication();
     const cum2 = await findSecondTestCareUnitMedication(cum1.id);
 
     const before1 = await prisma.careUnitMedication.findUnique({ where: { id: cum1.id } });
     const before2 = await prisma.careUnitMedication.findUnique({ where: { id: cum2.id } });
 
-    const order = await createEmptyOrder(nurseCookie);
-    await progressOrderToBekraftad(nurseCookie, apotekareCookie, order.id, [
+    const order = await createEmptyOrder(app, nurseCookie);
+    await progressOrderToBekraftad(app, nurseCookie, apotekareCookie, order.id, [
       { cumId: cum1.id, quantity: 5 },
       { cumId: cum2.id, quantity: 3 },
     ]);
@@ -424,15 +354,15 @@ describe('Deliver order — Phase 4 Slice B (8-scenario D-78/D-79/D-81/D-88 suit
   });
 
   it('Test 7 (line aggregation): same CUM on 3 lines (qty 1+1+1=3); stock incremented by sum', async () => {
-    const nurseCookie = await loginAs(TEST_SJUKSKOTERSKA);
-    const apotekareCookie = await loginAs(TEST_APOTEKARE);
+    const nurseCookie = await loginAs(app, TEST_SJUKSKOTERSKA);
+    const apotekareCookie = await loginAs(app, TEST_APOTEKARE);
     const cum = await findTestCareUnitMedication();
 
     const before = await prisma.careUnitMedication.findUnique({ where: { id: cum.id } });
 
-    const order = await createEmptyOrder(nurseCookie);
+    const order = await createEmptyOrder(app, nurseCookie);
     // Three lines on the same CUM
-    await progressOrderToBekraftad(nurseCookie, apotekareCookie, order.id, [
+    await progressOrderToBekraftad(app, nurseCookie, apotekareCookie, order.id, [
       { cumId: cum.id, quantity: 1 },
       { cumId: cum.id, quantity: 1 },
       { cumId: cum.id, quantity: 1 },
@@ -468,12 +398,12 @@ describe('Deliver order — Phase 4 Slice B (8-scenario D-78/D-79/D-81/D-88 suit
      * We use Promise.allSettled([txA, txB]) for stability. The pg_locks poll runs in the
      * background as both txs are in flight — it captures the blocked state.
      */
-    const nurseCookie = await loginAs(TEST_SJUKSKOTERSKA);
-    const apotekareCookie = await loginAs(TEST_APOTEKARE);
+    const nurseCookie = await loginAs(app, TEST_SJUKSKOTERSKA);
+    const apotekareCookie = await loginAs(app, TEST_APOTEKARE);
     const cum = await findTestCareUnitMedication();
 
-    const order = await createEmptyOrder(nurseCookie);
-    await progressOrderToBekraftad(nurseCookie, apotekareCookie, order.id, [
+    const order = await createEmptyOrder(app, nurseCookie);
+    await progressOrderToBekraftad(app, nurseCookie, apotekareCookie, order.id, [
       { cumId: cum.id, quantity: 5 },
     ]);
 
