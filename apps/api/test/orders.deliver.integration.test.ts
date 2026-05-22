@@ -492,14 +492,13 @@ describe('Deliver order — Phase 4 Slice B (8-scenario D-78/D-79/D-81/D-88 suit
     // before Promise.allSettled can capture the results.
     let blockedRowsObserved: { granted: boolean }[] = [];
 
-    // Start Tx-A first, then immediately start the pg_locks poll + Tx-B in parallel.
+    // Start Tx-A and Tx-B genuinely in parallel — the FOR UPDATE will produce
+    // contention regardless. Removing the 50ms delay tightens the race window
+    // and makes the pg_locks observation below a real correctness check.
     const txAPromise = deliverOrder(careUnitId, order.id, apotekareUser!.id);
     // Suppress unhandled rejection until allSettled captures it
     txAPromise.catch(() => { /* captured by allSettled below */ });
 
-    // After a brief yield to allow Tx-A to acquire its FOR UPDATE lock,
-    // start Tx-B. Both are now in flight on separate Prisma connections.
-    await new Promise<void>((resolve) => setTimeout(resolve, 50));
     const txBPromise = deliverOrder(careUnitId, order.id, apotekareUser!.id);
     // Suppress unhandled rejection until allSettled captures it
     txBPromise.catch(() => { /* captured by allSettled below */ });
@@ -537,16 +536,12 @@ describe('Deliver order — Phase 4 Slice B (8-scenario D-78/D-79/D-81/D-88 suit
     expect(err.code).toBe('order_transition_invalid');
     expect(err.details.expected).toBe('bekraftad');
 
-    // pg_locks proof: we observed tx-B blocked (granted=false) at the DB level at least once.
-    // If blockedRowsObserved is empty, the test still passes on the stock assertion but logs a warning.
-    // A truly sequential implementation can't block at pg_locks level, so this guards against false passes.
-    if (blockedRowsObserved.length > 0) {
-      // Observed DB-level lock contention — the FOR UPDATE is working correctly.
-      expect(blockedRowsObserved.length).toBeGreaterThan(0);
-    }
-    // Note: if the race resolved faster than 50ms and we missed the blocked window,
-    // the allSettled assertions above still prove correctness. pg_locks observation
-    // is a best-effort timing-dependent proof, not the only correctness check.
+    // pg_locks proof: we observed tx-B blocked (granted=false) at the DB level at
+    // least once. A truly sequential implementation could not block at the
+    // pg_locks level, so this assertion is what makes the test a real
+    // correctness check rather than a stock-count-by-coincidence check. If this
+    // fails in CI, widen the polling window above before relaxing the assert.
+    expect(blockedRowsObserved.length).toBeGreaterThan(0);
 
     // Stock incremented by EXACTLY 5 (not 10) — proves only one tx committed
     const after = await prisma.careUnitMedication.findUnique({ where: { id: cum.id } });
