@@ -140,6 +140,11 @@ export function QuantityStepper({
     if (longPressRepeatRef.current) {
       clearInterval(longPressRepeatRef.current);
       longPressRepeatRef.current = null;
+      // WR-03: flush the held value on pointer-up so the trailing debounce
+      // installed by the last scheduledCommit in the interval callback can't
+      // fire against an unmounted component (mode-B transition, route nav).
+      // Mirrors handleInputBlur's flushCommit pattern.
+      flushCommit(localValue);
     }
   }
 
