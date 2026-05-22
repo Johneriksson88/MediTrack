@@ -44,12 +44,21 @@
 -- v2 ships the GUC-gated function. The README §"Known gap" section references
 -- this migration and the v2 retention note.
 --
--- IDEMPOTENT RE-RUN SAFETY
--- ========================
--- All DDL operations are wrapped in DO-block EXCEPTION handlers. Re-running
--- this migration is a no-op: the second run's DELETE targets rows older than
--- the re-run timestamp, which will be the post-fix rows (if any) — in practice
--- zero rows because the fixed extension only writes correct rows.
+-- WARNING — DESTRUCTIVE ON RE-RUN
+-- ================================
+-- Re-running this migration deletes ALL existing AuditEvent rows. It is
+-- designed to be applied exactly ONCE to purge orphaned audit rows written
+-- before the $extends-based audit pipeline landed. Operators who trigger
+-- re-application (via `prisma migrate resolve --rolled-back` +
+-- `migrate deploy`, raw psql, or `prisma migrate reset`) must understand
+-- the data-loss implications — there is no in-migration guard that
+-- distinguishes legitimate post-fix rows from the orphans this DELETE
+-- targets. `CURRENT_TIMESTAMP` evaluates to the moment of execution, not
+-- the moment of the original apply, so every row written between the first
+-- apply and any second apply is in scope for deletion. The DDL DO-blocks
+-- catching SQLSTATE classes around DISABLE/ENABLE TRIGGER do NOT protect
+-- the AuditEvent rows themselves — by the time Step 4's trigger-state gate
+-- runs, the Step 2 DELETE has already obliterated history.
 
 -- Step 1 — Disable the no-delete trigger inside our migration transaction.
 -- EXCEPTION block: if the trigger is already absent (e.g., re-run on a fresh DB
