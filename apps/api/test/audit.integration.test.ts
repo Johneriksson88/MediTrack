@@ -20,9 +20,9 @@ import {
 /**
  * Phase 5 Plan 03 — Audit log integration tests.
  *
- * 7 tests across 4 describe blocks covering AUD-01 / AUD-02 / AUD-03 with
+ * 11 tests across 6 describe blocks covering AUD-01 / AUD-02 / AUD-03 with
  * the threat-model assertions T-05-02 (append-only) and T-05-03 (session
- * id leak via entityId).
+ * id leak via entityId), plus Plan 05 gap-closure regression tests.
  *
  *   AUD-01 — full pipeline coverage
  *     Test 1: create draft → submit → confirm → deliver writes the
@@ -52,10 +52,23 @@ import {
  *             session token (Session.id). Closes the second leak path:
  *             the allowlist closes the `after` JSON leak; resolveEntityId
  *             closes the `entityId` column leak. Both layers MUST hold.
+ *     Test 9 (CR-04): auth.logout audit row carries actorUserId equal to
+ *             the session owner User.id (D-92 / CR-04). Pre-fix: the
+ *             route never called setActor() before destroySession.
+ *
+ *   AUD-01 — failed-login entityType taxonomy (WR-07)
+ *     Test 10: unknown-email failed-login writes entityType=auth_attempt
+ *              with entityId=email (was entityType='session', entityId='').
+ *     Test 11: known-user-wrong-password still writes entityType=session
+ *              with entityId=user.id — protects the unchanged convention.
  *
  *   AUD-02 — admin-only access
  *     Test 6: `GET /api/audit/events` returns 403 for sjuksköterska,
  *             403 for apotekare, 200 for admin (requirePermission gate).
+ *
+ *   AUD-02 — cursor error envelope (CR-02)
+ *     Test 8: GET /api/audit/events with a malformed cursor responds 422
+ *             with details.reason === 'invalid_cursor' (not 'invalid_quantity').
  */
 
 let app: FastifyInstance;
@@ -324,12 +337,12 @@ describe('AUD-01 — sensitive-field redaction (D-97 / T-05-03)', () => {
     expect(logoutRes.statusCode).toBe(204);
 
     // Note: DELETE /api/auth/session has no requireSession preHandler
-    // (idempotent logout works without a cookie). So the ALS store's
-    // actorUserId may be null at the moment the Session is deleted —
-    // we do NOT filter on actorUserId here, only on action+timestamp.
-    // The entityId assertion (resolveEntityId returns the row's userId
-    // for Session deletes) is what proves T-05-03 — the raw session
-    // token is NEVER the entityId.
+    // (idempotent logout works without a cookie). Plan 05 Task 2 fixed
+    // CR-04 — the route now resolves session.userId via findSessionById
+    // and calls setActor() BEFORE logout(), so the auth.logout audit row
+    // carries actorUserId === session.userId. The actorUserId assertion
+    // lives in the dedicated CR-04 test below (Test 9); here we focus on
+    // the entityId convention from T-05-03.
     const logoutAuditRow = await prisma.auditEvent.findFirst({
       where: {
         action: 'auth.logout',
@@ -353,6 +366,97 @@ describe('AUD-01 — sensitive-field redaction (D-97 / T-05-03)', () => {
     const logoutAfter = logoutAuditRow!.after as Record<string, unknown> | null;
     expect(JSON.stringify(loginAfter ?? {})).not.toContain(sessionRow.id);
     expect(JSON.stringify(logoutAfter ?? {})).not.toContain(sessionRow.id);
+  });
+
+  it('auth.logout audit row carries actorUserId equal to the session owner User.id (D-92 / CR-04)', async () => {
+    // Test 9 — CR-04 regression: Plan 05 Task 2 fixed the logout route to
+    // call setActor(session.userId, session.careUnitId, req.ip) BEFORE
+    // logout(). Pre-fix: every auth.logout audit row had actorUserId: null
+    // because no setActor() call happened before destroySession. Post-fix:
+    // the ALS store carries the actor at the moment $extends writes the row.
+    const testStartedAt = new Date();
+    const testUser = await prisma.user.findUniqueOrThrow({
+      where: { email: TEST_APOTEKARE.email },
+      select: { id: true },
+    });
+    const cookie = await loginAs(app, TEST_APOTEKARE);
+
+    const logoutRes = await app.inject({
+      method: 'DELETE',
+      url: '/api/auth/session',
+      headers: { cookie },
+    });
+    expect(logoutRes.statusCode).toBe(204);
+
+    const logoutAuditRow = await prisma.auditEvent.findFirst({
+      where: { action: 'auth.logout', createdAt: { gte: testStartedAt } },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(logoutAuditRow).not.toBeNull();
+    // CR-04 assertion: pre-fix this was null; post-fix it equals the user id.
+    expect(logoutAuditRow!.actorUserId).toBe(testUser.id);
+  });
+});
+
+describe('AUD-01 — failed-login entityType taxonomy (WR-07)', () => {
+  it('unknown-email failed-login writes entityType=auth_attempt with entityId=email (WR-07)', async () => {
+    // Test 10 — WR-07 regression: unknown-email branch in auth.service.ts
+    // previously wrote entityType='session', entityId=''. Now writes
+    // entityType='auth_attempt', entityId=attemptedEmail. This makes the
+    // admin brute-force filter `?entityType=auth_attempt&entityId=X` meaningful.
+    const testStartedAt = new Date();
+    const attemptedEmail = 'nonexistent-test-user-' + Date.now() + '@example.test';
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: attemptedEmail, password: 'whatever-wrong-password' },
+    });
+    // InvalidCredentialsError surfaces as 400 invalid_credentials (D-04/T-01-05)
+    expect(res.statusCode).toBe(400);
+
+    const row = await prisma.auditEvent.findFirst({
+      where: { action: 'auth.login_failed', createdAt: { gte: testStartedAt } },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(row).not.toBeNull();
+    // WR-07 assertions: new entityType and entityId convention.
+    expect(row!.entityType).toBe('auth_attempt');
+    expect(row!.entityId).toBe(attemptedEmail);
+    // D-96: unknown-email → no actor (we don't know who tried).
+    expect(row!.actorUserId).toBeNull();
+    // D-96: after JSON contains ONLY the attempted email — no password material.
+    const after = row!.after as Record<string, unknown> | null;
+    expect(after).toEqual({ email: attemptedEmail });
+  });
+
+  it('known-user-wrong-password failed-login still writes entityType=session with entityId=user.id (D-96 unchanged)', async () => {
+    // Test 11 — protection test: the known-user-wrong-password branch
+    // (auth.service.ts lines 79-99) is unchanged by WR-07. This test
+    // guards against accidental regression.
+    const testStartedAt = new Date();
+    const testUser = await prisma.user.findUniqueOrThrow({
+      where: { email: TEST_SJUKSKOTERSKA.email },
+      select: { id: true },
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: TEST_SJUKSKOTERSKA.email, password: 'wrong-password-deliberately' },
+    });
+    expect(res.statusCode).toBe(400);
+
+    const row = await prisma.auditEvent.findFirst({
+      where: { action: 'auth.login_failed', actorUserId: testUser.id, createdAt: { gte: testStartedAt } },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(row).not.toBeNull();
+    // The known-user convention: entityType='session', entityId=user.id.
+    expect(row!.entityType).toBe('session');
+    expect(row!.entityId).toBe(testUser.id);
+    // D-96: known user attempting → actorUserId is set (we know who tried).
+    expect(row!.actorUserId).toBe(testUser.id);
   });
 });
 
@@ -387,6 +491,29 @@ describe('AUD-02 — admin-only access', () => {
     };
     expect(body).toHaveProperty('events');
     expect(body).toHaveProperty('nextCursor');
+  });
+
+  it('GET /api/audit/events with a malformed cursor responds 422 with details.reason === invalid_cursor (CR-02)', async () => {
+    // Test 8 — CR-02 regression: decodeCursor used to throw ValidationFailedError
+    // with details.reason: 'invalid_quantity' — the order-line validation reason
+    // code (a cross-subsystem taxonomy leak). Fixed in Plan 05 Task 1 to use
+    // 'invalid_cursor'. This test asserts both the positive value and the absence
+    // of the wrong value so any future copy-paste regression is caught immediately.
+    const adminCookie = await loginAs(app, TEST_ADMIN);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/audit/events?cursor=not-base64-anything%21%40%23',
+      headers: { cookie: adminCookie },
+    });
+    expect(res.statusCode).toBe(422);
+
+    const body = res.json() as { error: { code: string; message: string; details: { reason: string } } };
+    expect(body.error.code).toBe('validation_failed');
+    expect(body.error.details.reason).toBe('invalid_cursor');
+    // Explicit cross-subsystem-leak assertion: the order-domain reason
+    // must NEVER appear on a cursor-decode failure.
+    expect(body.error.details.reason).not.toBe('invalid_quantity');
   });
 });
 
