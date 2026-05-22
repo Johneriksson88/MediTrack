@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import type { FastifyInstance } from 'fastify';
+import { als } from '../src/plugins/requestContext.js';
 import {
   TEST_SJUKSKOTERSKA,
   TEST_APOTEKARE,
@@ -27,8 +28,12 @@ import {
  *     Test 1: create draft → submit → confirm → deliver writes the
  *             canonical 4+N audit-row set; the deliver row and its
  *             stock.increment siblings share one requestId (D-94).
- *     Test 2: A failed mutation leaves zero audit rows (D-91 rollback
- *             contract — "the audit log doesn't lie").
+ *     Test 2: A forced rollback inside prisma.$transaction leaves zero audit
+ *             rows for the rolled-back mutation (D-91 rollback contract —
+ *             "the audit log doesn't lie"). Replaces the pre-CR-01 test
+ *             which threw a validation error BEFORE reaching the audit-write
+ *             site; the new test issues a mutation that SUCCEEDS first, then
+ *             forces a throw, exercising the actual rollback path.
  *
  *   AUD-03 — append-only enforcement (two layers asserted together)
  *     Test 3: `git grep` finds zero `prisma.auditEvent.update`,
@@ -126,30 +131,77 @@ describe('AUD-01 — full pipeline coverage', () => {
     expect(stockIncRows.every((r) => r.requestId === deliverRow!.requestId)).toBe(true);
   });
 
-  it('rolled-back mutations leave zero audit rows (D-91)', async () => {
+  it('forced-rollback inside prisma.$transaction leaves zero audit rows for the rolled-back mutation (D-91)', async () => {
     const testStartedAt = new Date();
-    const nurseCookie = await loginAs(app, TEST_SJUKSKOTERSKA);
-    const order = await createEmptyOrder(app, nurseCookie);
 
-    // Submit an empty draft — fails with 422 (zero lines).
-    const submitRes = await app.inject({
-      method: 'POST',
-      url: `/api/orders/${order.id}/submit`,
-      headers: { cookie: nurseCookie },
+    // Resolve the test user id and careUnitId before the als.run scope.
+    const testUser = await prisma.user.findUniqueOrThrow({
+      where: { email: TEST_SJUKSKOTERSKA.email },
+      select: { id: true, careUnitId: true },
     });
-    expect(submitRes.statusCode).toBe(422);
 
-    // The failed submit's atomic UPDATE rolled back; the audit row
-    // rolled back with it (D-91: $extends middleware runs inside the
-    // same tx as the wrapping mutation).
-    const submitAuditRows = await prisma.auditEvent.findMany({
+    // Find a CareUnitMedication row to use as the mutation target.
+    const cum = await findTestCareUnitMedication(TEST_SJUKSKOTERSKA.careUnitId);
+
+    // Capture the current stock so we can assert it rolled back.
+    const cumBefore = await prisma.careUnitMedication.findUniqueOrThrow({
+      where: { id: cum.id },
+      select: { currentStock: true },
+    });
+
+    // The audit extension only writes rows when the ALS store is
+    // populated (D-92). The test wraps the prisma.$transaction in an
+    // als.run so the extension sees an actor context — and therefore
+    // WILL attempt to write an audit row inside the tx. The forced
+    // throw then proves the audit row also rolled back (D-91).
+    await expect(
+      als.run(
+        {
+          actorUserId: testUser.id,
+          careUnitId: testUser.careUnitId,
+          requestId: 'test-rollback-' + Date.now(),
+          requestSource: 'test',
+          ipAddress: null,
+        },
+        async () => {
+          await prisma.$transaction(async (tx) => {
+            // Successful mutation inside the tx — the audit extension
+            // intercepts this and attempts to write an audit row.
+            await tx.careUnitMedication.update({
+              where: { id: cum.id },
+              data: { currentStock: { increment: 1 } },
+            });
+            // Forced throw rolls back the entire tx, including any
+            // audit row the extension wrote against the tx context.
+            throw new Error('forced rollback');
+          });
+        },
+      ),
+    ).rejects.toThrow('forced rollback');
+
+    // Sanity check: the stock change rolled back correctly.
+    const cumAfter = await prisma.careUnitMedication.findUniqueOrThrow({
+      where: { id: cum.id },
+      select: { currentStock: true },
+    });
+    expect(cumAfter.currentStock).toBe(cumBefore.currentStock);
+
+    // D-91 assertion: zero audit rows for the rolled-back mutation.
+    const orphanRows = await prisma.auditEvent.findMany({
       where: {
-        action: 'order.submit',
-        entityId: order.id,
+        entityType: 'care_unit_medication',
+        entityId: cum.id,
         createdAt: { gte: testStartedAt },
       },
     });
-    expect(submitAuditRows).toHaveLength(0);
+    expect(orphanRows).toHaveLength(0);
+
+    // Extra forensic clarity: no audit row with this test's requestId
+    // survived either (proves it's not an entity-filter false negative).
+    const orphanByRequestId = await prisma.auditEvent.count({
+      where: { requestId: { startsWith: 'test-rollback-' } },
+    });
+    expect(orphanByRequestId).toBe(0);
   });
 });
 
