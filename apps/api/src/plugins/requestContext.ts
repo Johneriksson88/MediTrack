@@ -59,6 +59,14 @@ export interface RequestContext {
    * into the next mutation.
    */
   actionOverride?: string;
+  /**
+   * D-91 — set by the $transaction interceptor in auditExtension.ts
+   * to the active tx client. Per-model handlers read this to route
+   * pre-load reads and audit INSERTs through the same transaction as
+   * the wrapping mutation. Cleared in the interceptor's finally block.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  activeTx?: any;
 }
 
 /**

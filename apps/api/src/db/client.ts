@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { buildAuditExtension } from './auditExtension.js';
+import { buildAuditExtension, patchTransactionForAudit } from './auditExtension.js';
 
 /**
  * Singleton PrismaClient. The `globalThis` cache avoids creating a new
@@ -12,15 +12,20 @@ import { buildAuditExtension } from './auditExtension.js';
  * continue to work unchanged. Mutations against the audited model set
  * automatically write audit_events rows inside the same transaction —
  * the audit log retrofits without touching Phase 2/3/4 service logic.
+ *
+ * `patchTransactionForAudit` applies a runtime (TypeScript-invisible)
+ * patch to `$transaction` so the tx client is stored in the ALS context
+ * before the user's callback runs — closing the D-91 same-tx gap.
  */
 const globalForPrisma = globalThis as unknown as {
   prisma?: ReturnType<typeof buildPrismaClient>;
 };
 
 function buildPrismaClient() {
-  return new PrismaClient({
+  const extended = new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
   }).$extends(buildAuditExtension());
+  return patchTransactionForAudit(extended);
 }
 
 export const prisma = globalForPrisma.prisma ?? buildPrismaClient();
