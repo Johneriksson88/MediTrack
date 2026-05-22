@@ -83,6 +83,10 @@
 **Mode:** mvp
 **UI hint:** yes
 **Requirements:** ORD-04, ORD-05, ORD-06, ORD-07, STK-01, STK-02, OPS-03
+**Plans:** 3 plans
+  - [ ] 04-01-PLAN.md — Slice A: schema + shared contracts + RBAC + confirmOrder service + POST /confirm + Mode C wiring + confirm integration test (ORD-04, ORD-06)
+  - [ ] 04-02-PLAN.md — Slice B: deliverOrder service (CUM-batch lock D-79) + POST /deliver + Mode D/E + DeliverConfirmDialog + OrderActorTrail + full pipeline + pg_locks concurrency test (ORD-05, ORD-06, STK-01, STK-02, OPS-03)
+  - [ ] 04-03-PLAN.md — Slice C: list API widening (alla / comma-list) + shadcn Tabs + BestallningarPage status-tabs + OrdersTable/CardList + seedDemoOrders fan-out (ORD-07)
 **Success Criteria:**
 1. User with role `apotekare` or `admin` advances an order through `Skickad → Bekräftad → Levererad`; invalid jumps (e.g. `Utkast → Bekräftad`) return HTTP 409.
 2. On `Levererad`, every line's quantity is added to the medication's current stock in a single DB transaction; the catalog reflects the new totals immediately.
