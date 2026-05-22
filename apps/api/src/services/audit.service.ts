@@ -60,7 +60,10 @@ function encodeCursor(createdAt: Date, id: string): string {
 /**
  * Decode the opaque cursor back into `{createdAt, id}`. Throws
  * ValidationFailedError on any decode failure — a malformed cursor
- * surfaces as the canonical 422 envelope (D-19 catalog reuse).
+ * surfaces as the canonical 422 envelope (D-19 catalog reuse). The
+ * envelope's `details.reason` is `'invalid_cursor'` — distinct from
+ * order-domain `'invalid_quantity'` to prevent cross-subsystem taxonomy
+ * leaks (CR-02 fix).
  */
 function decodeCursor(raw: string): CursorPayload {
   try {
@@ -83,7 +86,7 @@ function decodeCursor(raw: string): CursorPayload {
     return { createdAt, id };
   } catch {
     throw new ValidationFailedError('Ogiltig cursor.', {
-      reason: 'invalid_quantity',
+      reason: 'invalid_cursor',
     });
   }
 }

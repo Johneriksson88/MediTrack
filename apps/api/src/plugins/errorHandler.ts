@@ -97,7 +97,7 @@ export class ValidationFailedError extends Error {
   constructor(
     message: string,
     public readonly details?: {
-      reason: 'empty_order' | 'invalid_quantity' | 'medication_removed';
+      reason: 'empty_order' | 'invalid_quantity' | 'medication_removed' | 'invalid_cursor';
       lineId?: string;
       medicationName?: string; // populated when reason === 'medication_removed' (UI toast uses this)
     },
