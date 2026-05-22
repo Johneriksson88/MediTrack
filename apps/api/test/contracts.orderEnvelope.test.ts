@@ -130,6 +130,13 @@ describe('orderResponse — Zod schema round-trip', () => {
     status: 'utkast' as const,
     submittedAt: null,
     submittedByUserId: null,
+    // Phase 4 D-84 — confirm/deliver trios; null while in utkast/skickad.
+    confirmedAt: null,
+    confirmedByUserId: null,
+    confirmedBy: null,
+    deliveredAt: null,
+    deliveredByUserId: null,
+    deliveredBy: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     lines: [sampleOrderLine],

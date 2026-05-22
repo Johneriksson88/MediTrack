@@ -3,6 +3,7 @@ import { prisma } from '../db/client.js';
 import {
   NotFoundError,
   OrderLockedError,
+  OrderTransitionError,
   ValidationFailedError,
 } from '../plugins/errorHandler.js';
 import type {
@@ -479,6 +480,109 @@ export async function submitOrder(
         createdBy: { select: { id: true, name: true } },
         submittedBy: { select: { id: true, name: true } },
         // Phase 4 D-84 — actor include widening.
+        confirmedBy: { select: { id: true, name: true } },
+        deliveredBy: { select: { id: true, name: true } },
+      },
+    });
+
+    return final!;
+  });
+
+  return toOrderResponse(result);
+}
+
+// ---------------------------------------------------------------------------
+// Confirm — POST /api/orders/:id/confirm (D-74, D-75, D-84)
+// ---------------------------------------------------------------------------
+
+/**
+ * Confirms a Skickad order atomically — flips status from 'skickad' to 'bekraftad'.
+ *
+ * D-74: Returns 409 order_transition_invalid (not 409 order_locked) when the
+ *       source status is wrong (enables FE to produce localized error toast).
+ * D-75: Narrow single-action endpoint — no body accepted; all context from session.
+ * D-84: Stamps confirmedAt + confirmedByUserId.
+ * D-54: Atomic UPDATE with WHERE status = 'skickad' precondition — race-free.
+ * D-73: 404 (not 403) on cross-careUnit to hide order existence.
+ */
+export async function confirmOrder(
+  careUnitId: string,
+  orderId: string,
+  actorUserId: string,
+): Promise<OrderResponse> {
+  const result = await prisma.$transaction(async (tx) => {
+    // Step 0 — CR-02: lock the Order row FOR UPDATE (same pattern as submitOrder).
+    // Serializes concurrent confirms on the same order.
+    await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`;
+
+    // Step 1 — Load the order with all relation includes.
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: {
+        lines: {
+          include: {
+            careUnitMedication: { include: { medication: true } },
+          },
+        },
+        createdBy: { select: { id: true, name: true } },
+        submittedBy: { select: { id: true, name: true } },
+        confirmedBy: { select: { id: true, name: true } },
+        deliveredBy: { select: { id: true, name: true } },
+      },
+    });
+
+    // Step 2 — Existence + scope check (D-73).
+    if (!order || order.deletedAt !== null || order.careUnitId !== careUnitId) {
+      throw new NotFoundError('Beställningen hittades inte.');
+    }
+
+    // Step 3 — Status precondition: must be 'skickad' to confirm.
+    if (order.status !== 'skickad') {
+      throw new OrderTransitionError({
+        from: order.status,
+        to: 'bekraftad',
+        expected: 'skickad',
+      });
+    }
+
+    // Step 4 — Defense-in-depth: validate non-empty lines (mirrors submitOrder step 4).
+    if (order.lines.length === 0) {
+      throw new ValidationFailedError(
+        'Beställningen måste ha minst en rad.',
+        { reason: 'empty_order' },
+      );
+    }
+
+    // Step 5 — Atomic UPDATE with status precondition (D-54).
+    const updated = await tx.order.updateMany({
+      where: { id: orderId, careUnitId, status: 'skickad', deletedAt: null },
+      data: {
+        status: 'bekraftad',
+        confirmedAt: new Date(),
+        confirmedByUserId: actorUserId,
+      },
+    });
+
+    // count === 0 means a race condition — another request confirmed first.
+    if (updated.count === 0) {
+      throw new OrderTransitionError({
+        from: 'bekraftad',
+        to: 'bekraftad',
+        expected: 'skickad',
+      });
+    }
+
+    // Step 6 — Return the full updated order.
+    const final = await tx.order.findUnique({
+      where: { id: orderId },
+      include: {
+        lines: {
+          include: {
+            careUnitMedication: { include: { medication: true } },
+          },
+        },
+        createdBy: { select: { id: true, name: true } },
+        submittedBy: { select: { id: true, name: true } },
         confirmedBy: { select: { id: true, name: true } },
         deliveredBy: { select: { id: true, name: true } },
       },
