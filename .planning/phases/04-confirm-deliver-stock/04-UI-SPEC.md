@@ -1,10 +1,11 @@
 ---
 phase: 4
 slug: confirm-deliver-stock
-status: draft
+status: approved
 shadcn_initialized: true
 preset: "style=new-york baseColor=slate css-variables=true"
 created: 2026-05-22
+reviewed_at: 2026-05-22
 ---
 
 # Phase 4 — UI Design Contract: Confirm, Deliver & Stock
@@ -70,7 +71,7 @@ Carry-forward from Phases 1–3 — no changes. All layout values multiples of 4
 - **Action buttons (Mode C/D):** `Bekräfta beställning` and `Markera som levererad` must be `min-h-[44px]` — touch target floor from Phase 1 D-10. At desktop they render right-aligned in the header row; at mobile they render inside the sticky footer (same pattern as D-71).
 - **Sticky footer (Mode C/D, mobile):** outer `p-4` + `pb-[calc(1rem+56px+env(safe-area-inset-bottom))]` — verbatim Phase 3 D-71 geometry. The action button is the only content in the Mode C/D footer (no `Kasta`; no summary count); the `Bekräfta`/`Markera levererad` button occupies full width with `w-full`.
 - **Status-tab strip (mobile):** Tailwind `overflow-x-auto` wrapper, `flex-nowrap`, tabs rendered as a horizontally scrollable row. Tab minimum width must not compress to < 80px to keep labels legible; use `flex-shrink-0` on each tab trigger.
-- **Actor-trail line (Mode D/E):** `text-xs text-muted-foreground`, `flex flex-wrap gap-x-1 gap-y-0.5`. Dot separators (`·`) are `px-0.5 text-muted-foreground/60`. Wrap gracefully on narrow viewports.
+- **Actor-trail line (Mode D/E):** `text-xs text-muted-foreground`, `flex flex-wrap gap-x-1 gap-y-1`. Dot separators (`·`) are `px-0.5 text-muted-foreground/60`. Wrap gracefully on narrow viewports.
 
 ---
 
@@ -109,9 +110,10 @@ Carry-forward from Phases 1–3. All CSS custom properties from the shadcn slate
 ### Accent Reserved For (Phase 4 additions to Phases 1–3 list)
 
 1. **`Bekräfta beställning` button** (Mode C, `<Can action="order:confirm">`) — `Button variant="default"` (blue bg + white text). Primary CTA of Mode C.
-2. **Mode D confirmation banner** (`Beställningen är bekräftad — väntar på leverans.`) — `bg-primary/10 border-primary/20 text-primary` tint. Informational, same geometry as Phase 3 submit-confirmation banner.
-3. **Active status tab underline indicator** — `border-b-2 border-primary` on the active `<TabsTrigger>`. Underlined-tabs aesthetic matching Phase 2 filter-chip active state. Active tab label color: `text-primary`.
-4. **Focus rings** — `focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2` on all Phase 4 interactives (tab triggers, action buttons).
+2. **`Markera som levererad` button** (Mode D, `<Can action="order:deliver">`) — `Button variant="default"` (blue bg + white text). Primary CTA of Mode D.
+3. **Mode D confirmation banner** (`Beställningen är bekräftad — väntar på leverans.`) — `bg-primary/10 border-primary/20 text-primary` tint. Informational, same geometry as Phase 3 submit-confirmation banner.
+4. **Active status tab underline indicator** — `border-b-2 border-primary` on the active `<TabsTrigger>`. Underlined-tabs aesthetic matching Phase 2 filter-chip active state. Active tab label color: `text-primary`.
+5. **Focus rings** — `focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2` on all Phase 4 interactives (tab triggers, action buttons).
 
 **Accent must NOT appear on:** Mode E actor-trail line, read-only line cells, status pill backgrounds (each has its own locked color — see `<OrderStatusPill>` below), or the deliver `AlertDialog` confirm button (that is a `Button variant="default"` but styled separately — see Destructive section).
 
@@ -176,6 +178,8 @@ No new nav items. No new top-level routes. The `Beställningar` nav link already
 ### 1. `<BestallningarPage>` — Status-Tab Filter (D-82)
 
 **File:** `apps/web/src/routes/bestallningar/BestallningarPage.tsx` (extend)
+
+**Primary visual anchor:** the active tab underline (accent blue) + the first row of the order list table/card.
 
 **New behavior:** Replace the static `?status=utkast` query with a URL-backed status-tab filter. Tab value is read from `useSearchParams()` (`?status=skickad`). Navigating tabs updates the URL without a full page reload.
 
@@ -578,7 +582,7 @@ Renders only segments where the corresponding `*By` is non-null. Segments separa
 **Visual:**
 
 ```jsx
-<p className="text-xs text-muted-foreground flex flex-wrap gap-x-1 gap-y-0.5 mt-4">
+<p className="text-xs text-muted-foreground flex flex-wrap gap-x-1 gap-y-1 mt-4">
   <span>Skapad av {createdBy.name}</span>
   {submittedBy && <span>· Skickad av {submittedBy.name} {HH:mm}</span>}
   {confirmedBy && <span>· Bekräftad av {confirmedBy.name} {HH:mm}</span>}
