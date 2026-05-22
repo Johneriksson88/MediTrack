@@ -3,6 +3,7 @@ import { prisma } from '../db/client.js';
 import { findSessionById, touchSession } from './session.js';
 import { SESSION_COOKIE } from './cookie.js';
 import { UnauthenticatedError } from '../plugins/errorHandler.js';
+import { setActor } from '../plugins/requestContext.js';
 
 /**
  * Pattern C / D-15 / D-19 — Fastify preHandler that gates authenticated routes.
@@ -59,4 +60,10 @@ export async function requireSession(
     email: user.email,
     sessionId,
   };
+
+  // Phase 5 D-92 — populate the ALS store with the authenticated
+  // actor + careUnit so the Prisma audit extension can attribute every
+  // mutation downstream of this preHandler. ipAddress was set on the
+  // store at onRequest time by requestContextPlugin; we leave it.
+  setActor(user.id, session.careUnitId);
 }

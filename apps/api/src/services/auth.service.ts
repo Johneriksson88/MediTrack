@@ -3,6 +3,7 @@ import { prisma } from '../db/client.js';
 import { verifyPassword } from '../auth/password.js';
 import { createSession, destroySession } from '../auth/session.js';
 import { InvalidCredentialsError } from '../plugins/errorHandler.js';
+import { als } from '../plugins/requestContext.js';
 
 /**
  * Pattern D / D-16 — service layer for authentication.
@@ -47,15 +48,76 @@ export async function login(
   if (!user) {
     // T-01-06: still run a verify against the dummy hash to equalize timing.
     await verifyPassword(DUMMY_HASH_PLACEHOLDER, password);
+
+    // Phase 5 D-96 — explicit auth.login_failed write. The $extends
+    // middleware can't observe this case because no Session row is
+    // created. entityId '' is the chosen sentinel for "no entity exists
+    // yet"; greppable and obvious. The `after` JSON contains ONLY the
+    // attempted email — never password material. actorUserId is null
+    // because we don't know who tried (the email matched no user).
+    const store = als.getStore();
+    await prisma.auditEvent.create({
+      data: {
+        actorUserId: null,
+        careUnitId: null,
+        entityType: 'session',
+        entityId: '',
+        action: 'auth.login_failed',
+        // before / after are Json? — omitting before defaults to DB null.
+        after: { email },
+        requestId: store?.requestId ?? null,
+        ipAddress: store?.ipAddress ?? null,
+      },
+    });
+
     throw new InvalidCredentialsError();
   }
 
   const ok = await verifyPassword(user.passwordHash, password);
   if (!ok) {
+    // Phase 5 D-96 — explicit auth.login_failed write. We KNOW which
+    // user the attacker claimed to be (email matched), so we record
+    // user.id as both actorUserId and entityId (for Session writes
+    // entityId is the User.id per resolveEntityId — we mirror that
+    // convention here even though the $extends path isn't involved).
+    const store = als.getStore();
+    await prisma.auditEvent.create({
+      data: {
+        actorUserId: user.id,
+        careUnitId: user.careUnitId,
+        entityType: 'session',
+        entityId: user.id, // D-97 + T-05-03 — NEVER a Session id (no session exists).
+        action: 'auth.login_failed',
+        // before omitted (defaults to DB null).
+        after: { email },
+        requestId: store?.requestId ?? null,
+        ipAddress: store?.ipAddress ?? null,
+      },
+    });
+
     throw new InvalidCredentialsError();
   }
 
+  // Phase 5 D-92 — populate the ALS store with the authenticated actor
+  // BEFORE createSession. The Session create that follows goes through
+  // the $extends middleware and writes an auth.login audit row with
+  // the actor + careUnit attributed correctly; without this, the audit
+  // row would carry actorUserId: null because requireSession hasn't
+  // run yet (login is an unprotected route — no preHandler).
+  const store = als.getStore();
+  if (store) {
+    store.actorUserId = user.id;
+    store.careUnitId = user.careUnitId;
+    store.actionOverride = 'auth.login';
+  }
+
   const session = await createSession(user.id, user.careUnitId);
+
+  // Clear the override so it doesn't bleed into any subsequent mutation
+  // in this same request.
+  if (store) {
+    store.actionOverride = undefined;
+  }
 
   // Shape strips passwordHash explicitly (T-01-07) and matches loginResponse.
   return {
@@ -73,5 +135,15 @@ export async function login(
 }
 
 export async function logout(sessionId: string): Promise<void> {
-  await destroySession(sessionId);
+  // Phase 5 D-94 — set auth.logout as the action override so the
+  // Session delete that destroySession runs records as 'auth.logout'
+  // rather than the generic 'delete'.
+  const store = als.getStore();
+  const previous = store?.actionOverride;
+  if (store) store.actionOverride = 'auth.logout';
+  try {
+    await destroySession(sessionId);
+  } finally {
+    if (store) store.actionOverride = previous;
+  }
 }

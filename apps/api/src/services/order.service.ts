@@ -6,6 +6,7 @@ import {
   OrderTransitionError,
   ValidationFailedError,
 } from '../plugins/errorHandler.js';
+import { withActionOverride } from '../plugins/requestContext.js';
 import type {
   OrderResponse,
   OrderListItem,
@@ -454,14 +455,18 @@ export async function submitOrder(
     }
 
     // Step 5 — Atomic UPDATE with status precondition (D-54).
-    const updated = await tx.order.updateMany({
-      where: { id: orderId, careUnitId, status: 'utkast', deletedAt: null },
-      data: {
-        status: 'skickad',
-        submittedAt: new Date(),
-        submittedByUserId: actorUserId,
-      },
-    });
+    // Phase 5 D-94 — wrap the underlying Order update so the audit row
+    // records action = 'order.submit' rather than the generic 'update'.
+    const updated = await withActionOverride('order.submit', () =>
+      tx.order.updateMany({
+        where: { id: orderId, careUnitId, status: 'utkast', deletedAt: null },
+        data: {
+          status: 'skickad',
+          submittedAt: new Date(),
+          submittedByUserId: actorUserId,
+        },
+      }),
+    );
 
     // count === 0 means a race condition — another request submitted first.
     if (updated.count === 0) {
@@ -559,14 +564,18 @@ export async function confirmOrder(
     }
 
     // Step 5 — Atomic UPDATE with status precondition (D-54).
-    const updated = await tx.order.updateMany({
-      where: { id: orderId, careUnitId, status: 'skickad', deletedAt: null },
-      data: {
-        status: 'bekraftad',
-        confirmedAt: new Date(),
-        confirmedByUserId: actorUserId,
-      },
-    });
+    // Phase 5 D-94 — wrap the underlying Order update so the audit row
+    // records action = 'order.confirm' rather than the generic 'update'.
+    const updated = await withActionOverride('order.confirm', () =>
+      tx.order.updateMany({
+        where: { id: orderId, careUnitId, status: 'skickad', deletedAt: null },
+        data: {
+          status: 'bekraftad',
+          confirmedAt: new Date(),
+          confirmedByUserId: actorUserId,
+        },
+      }),
+    );
 
     // count === 0 means a race condition — another request confirmed first.
     // Reload the row to report the actual losing status (could be 'bekraftad',
@@ -708,23 +717,34 @@ export async function deliverOrder(
 
     // Step 8 — Per-CUM stock increment (one Prisma update per distinct CUM).
     // Prisma's { increment: N } generates SET "currentStock" = "currentStock" + $1 — atomic.
+    // Phase 5 D-94 — wrap each CUM update so the audit row records
+    // action = 'stock.increment' (the N sibling events of the 1+N
+    // deliver fan-out). All siblings share the request's requestId,
+    // which the admin UI uses for the "Del av begäran" group chip.
     for (const [cumId, qty] of byCum) {
-      await tx.careUnitMedication.update({
-        where: { id: cumId },
-        data: { currentStock: { increment: qty } },
-      });
+      await withActionOverride('stock.increment', () =>
+        tx.careUnitMedication.update({
+          where: { id: cumId },
+          data: { currentStock: { increment: qty } },
+        }),
+      );
     }
 
     // Step 9 — Atomic Order UPDATE with status precondition (D-54).
     // count === 0 means a race condition — another deliver landed between our load and our UPDATE.
-    const updated = await tx.order.updateMany({
-      where: { id: orderId, careUnitId, status: 'bekraftad', deletedAt: null },
-      data: {
-        status: 'levererad',
-        deliveredAt: new Date(),
-        deliveredByUserId: actorUserId,
-      },
-    });
+    // Phase 5 D-94 — wrap the Order status flip so the audit row
+    // records action = 'order.deliver'. This is the "1" of the 1+N
+    // sibling shape; the N stock.increment rows above complete it.
+    const updated = await withActionOverride('order.deliver', () =>
+      tx.order.updateMany({
+        where: { id: orderId, careUnitId, status: 'bekraftad', deletedAt: null },
+        data: {
+          status: 'levererad',
+          deliveredAt: new Date(),
+          deliveredByUserId: actorUserId,
+        },
+      }),
+    );
 
     if (updated.count === 0) {
       // Race: another transition won. Reload the row to report the actual
@@ -793,15 +813,19 @@ export async function softDeleteOrder(
   // CR-03 / D-54: single atomic UPDATE with status precondition. If no row
   // matches (count === 0) we reload to disambiguate not-found from
   // status-changed and throw the correct error.
-  const result = await prisma.order.updateMany({
-    where: {
-      id: orderId,
-      careUnitId,
-      status: 'utkast',
-      deletedAt: null,
-    },
-    data: { deletedAt: new Date() },
-  });
+  // Phase 5 D-94 — wrap so the audit row records action = 'order.softDelete'
+  // rather than the generic 'update'. This is the "discard draft" path.
+  const result = await withActionOverride('order.softDelete', () =>
+    prisma.order.updateMany({
+      where: {
+        id: orderId,
+        careUnitId,
+        status: 'utkast',
+        deletedAt: null,
+      },
+      data: { deletedAt: new Date() },
+    }),
+  );
 
   if (result.count === 0) {
     const reload = await prisma.order.findUnique({ where: { id: orderId } });

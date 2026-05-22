@@ -7,6 +7,13 @@ import { defaultLowStockThreshold, ORDER_STATUS_LABELS } from '@meditrack/shared
 import { hashPassword } from '../src/auth/password.js';
 
 /**
+ * Phase 5 D-92 — Seed runs OUTSIDE the AsyncLocalStorage request context,
+ * so the Prisma audit extension (apps/api/src/db/auditExtension.ts) naturally
+ * skips audit-row creation during seed. The audit log starts EMPTY on a
+ * fresh `docker compose up`; rows appear only after the first real HTTP
+ * request (login, mutation, etc.). This is the deliberate "seeds don't
+ * pollute the forensic trail" contract.
+ *
  * Phase 1 demo seed (Plan 05) — three roles on one shared vårdenhet.
  * Phase 2 extension — 43 538 NPL Medication rows + matching CareUnitMedication
  * rows for the seeded vårdenhet with deterministic stock/threshold (D-23..D-25).

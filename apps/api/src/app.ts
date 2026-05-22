@@ -6,6 +6,7 @@ import {
 import { env } from './env.js';
 import { cookiesPlugin } from './plugins/cookies.js';
 import { errorHandlerPlugin } from './plugins/errorHandler.js';
+import { requestContextPlugin } from './plugins/requestContext.js';
 import { authRoutes } from './routes/auth.js';
 import { meRoutes } from './routes/me.js';
 import { adminPingRoutes } from './routes/adminPing.js';
@@ -48,6 +49,13 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // Cookie signing — needed by `requireSession` (`req.unsignCookie`).
   await app.register(cookiesPlugin);
+
+  // Phase 5 D-92 — AsyncLocalStorage request-context plugin. Registered
+  // AFTER cookies (so the requireSession hook on protected routes can
+  // call setActor() once cookie verification resolves) and BEFORE the
+  // routes (so the ALS scope exists for the whole request lifecycle —
+  // including any auth.login_failed audit writes that need requestId).
+  await app.register(requestContextPlugin);
 
   // Routes.
   await app.register(authRoutes);
