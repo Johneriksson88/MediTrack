@@ -27,17 +27,31 @@ export function AuditCardList({
   onToggleExpand,
   className,
 }: AuditCardListProps) {
+  // Pre-compute requestId → sibling count (mirrors AuditTable).
+  // O(N) per page-set is acceptable for v1's page-size 50 (D-104).
+  const siblingCounts = new Map<string, number>();
+  for (const ev of events) {
+    if (!ev.requestId) continue;
+    siblingCounts.set(ev.requestId, (siblingCounts.get(ev.requestId) ?? 0) + 1);
+  }
+
   return (
     <TooltipProvider>
       <div className={cn('grid gap-3', className)}>
-        {events.map((event) => (
-          <AuditEventCard
-            key={event.id}
-            event={event}
-            isExpanded={expandedIds.has(event.id)}
-            onToggle={() => onToggleExpand(event.id)}
-          />
-        ))}
+        {events.map((event) => {
+          const siblingCount = event.requestId
+            ? siblingCounts.get(event.requestId) ?? 1
+            : 1;
+          return (
+            <AuditEventCard
+              key={event.id}
+              event={event}
+              isExpanded={expandedIds.has(event.id)}
+              onToggle={() => onToggleExpand(event.id)}
+              siblingCount={siblingCount}
+            />
+          );
+        })}
       </div>
     </TooltipProvider>
   );

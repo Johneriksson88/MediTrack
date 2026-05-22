@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/tooltip';
 import { AuditActionChip } from '@/components/AuditActionChip';
 import { AuditEntityTypeChip } from '@/components/AuditEntityTypeChip';
+import { AuditDiffPanel } from './AuditDiffPanel';
 import { formatRelative } from '../bestallningar/DraftCard';
 import { diffSummary } from './auditDiffSummary';
 import { cn } from '@/lib/utils';
@@ -50,6 +51,14 @@ export function AuditTable({
   onToggleExpand,
   className,
 }: AuditTableProps) {
+  // Pre-compute requestId → sibling count for the loaded events.
+  // O(N) scan per page-set; acceptable for v1's page-size 50 (D-104).
+  const siblingCounts = new Map<string, number>();
+  for (const ev of events) {
+    if (!ev.requestId) continue;
+    siblingCounts.set(ev.requestId, (siblingCounts.get(ev.requestId) ?? 0) + 1);
+  }
+
   return (
     <div className={cn('overflow-x-auto', className)}>
       <TooltipProvider>
@@ -80,6 +89,9 @@ export function AuditTable({
             {events.map((event) => {
               const isExpanded = expandedIds.has(event.id);
               const diffPanelId = `audit-diff-${event.id}`;
+              const siblingCount = event.requestId
+                ? siblingCounts.get(event.requestId) ?? 1
+                : 1;
               const ariaLabel = isExpanded
                 ? `Dölj detaljer för ${event.action} på ${event.entityType} ${formatRelative(event.createdAt)}`
                 : `Visa detaljer för ${event.action} på ${event.entityType} ${formatRelative(event.createdAt)}`;
@@ -157,8 +169,11 @@ export function AuditTable({
                         colSpan={6}
                         className="bg-muted/30 px-4 py-4 border-b border-border"
                       >
-                        <div id={diffPanelId} role="region" aria-label="Detaljer för händelse">
-                          {/* Task 3 — wires <AuditDiffPanel event={event} siblingCount={...} /> here */}
+                        <div id={diffPanelId}>
+                          <AuditDiffPanel
+                            event={event}
+                            siblingCount={siblingCount}
+                          />
                         </div>
                       </TableCell>
                     </TableRow>
