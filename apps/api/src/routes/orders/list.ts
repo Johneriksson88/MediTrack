@@ -48,18 +48,29 @@ export async function listOrdersRoute(app: FastifyInstance) {
         //   'a,b,c' → ['a', 'b', 'c'] (each token trimmed; Zod validates each)
         //   single valid value → pass through unchanged
         //   absent → Zod applies default 'utkast'
+        // Case-sensitivity: tokens are matched as-is (lowercase). Uppercase
+        // variants like '?status=ALLA' are passed through to Zod and rejected
+        // with HTTP 400. Mixed-case is intentionally unsupported.
         const rawQuery = req.query as Record<string, unknown>;
         const rawStatus = rawQuery['status'];
 
         if (typeof rawStatus === 'string') {
-          if (rawStatus === 'alla') {
+          // Single-pass normalization: always split on comma (no-op for a
+          // single token), trim each, and only THEN check for the 'alla'
+          // shorthand. Mixed inputs like 'alla,foo' fall through to Zod with
+          // the array shape, producing a coherent multi-token validation
+          // error instead of a single-token-with-comma surprise.
+          const tokens = rawStatus.includes(',')
+            ? rawStatus.split(',').map((s) => s.trim())
+            : [rawStatus.trim()];
+
+          if (tokens.length === 1 && tokens[0] === 'alla') {
             // Expand 'alla' to the full status array — Zod union accepts string[].
             rawQuery['status'] = [...ORDER_STATUSES];
-          } else if (rawStatus.includes(',')) {
-            // Split comma-list, trim whitespace from each token.
-            rawQuery['status'] = rawStatus.split(',').map((s) => s.trim());
+          } else if (tokens.length > 1) {
+            rawQuery['status'] = tokens;
           }
-          // Single valid token (e.g. 'skickad') → pass through; Zod validates.
+          // Single non-'alla' token: leave raw string in place for Zod to validate.
         }
       },
       preHandler: [requireSession, requirePermission('order:read')],
