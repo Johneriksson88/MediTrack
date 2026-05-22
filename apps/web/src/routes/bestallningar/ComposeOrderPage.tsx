@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, ClipboardList } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -8,6 +8,7 @@ import { OrderStatusPill } from '@/components/OrderStatusPill';
 import { Can } from '@/auth/Can';
 import { useOrderQuery } from '@/features/orders/useOrderQueries';
 import { useSubmitOrder, useDiscardOrder } from '@/features/orders/useOrderMutations';
+import { useDocumentTitle } from '@/lib/useDocumentTitle';
 import { OrderLineTable } from './OrderLineTable';
 import { OrderLineCardList } from './OrderLineCardList';
 import { MedicationPickerSheet } from './MedicationPickerSheet';
@@ -61,18 +62,18 @@ export function ComposeOrderPage() {
   const isError = orderQuery.isError;
   const is404 = isError && orderQuery.error?.envelope?.error?.code === 'not_found';
 
-  // Document title
-  useEffect(() => {
-    if (!order) return;
-    if (order.status === 'utkast') {
-      document.title = 'Nytt utkast — MediTrack';
-    } else {
-      document.title = 'Beställning · Skickad — MediTrack';
-    }
-    return () => {
-      document.title = 'MediTrack';
-    };
-  }, [order?.status]);
+  // Document title — WR-05: use save/restore hook so SPA navigation
+  // restores the previous route's title instead of hard-coding 'MediTrack'.
+  // Default title while loading mirrors the loading-state copy direction;
+  // it switches once the order resolves. The hook itself takes care of
+  // capturing/restoring the *previous* document.title on each transition.
+  const titleForOrder =
+    order?.status === 'utkast'
+      ? 'Nytt utkast — MediTrack'
+      : order
+        ? 'Beställning · Skickad — MediTrack'
+        : 'Beställning — MediTrack';
+  useDocumentTitle(titleForOrder);
 
   // ── Loading state ──────────────────────────────────────────────────────────
   if (isLoading) {
