@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { orderResponse } from '@meditrack/shared';
+import { orderResponse, confirmOrderRequest } from '@meditrack/shared';
 import { requireSession } from '../../auth/requireSession.js';
 import { requirePermission } from '../../auth/requirePermission.js';
 import { confirmOrder } from '../../services/order.service.js';
@@ -28,6 +28,7 @@ export async function confirmOrderRoute(app: FastifyInstance) {
       preHandler: [requireSession, requirePermission('order:confirm')],
       schema: {
         params: z.object({ id: z.string().min(1) }),
+        body: confirmOrderRequest,
         response: { 200: orderResponse },
       },
     },
