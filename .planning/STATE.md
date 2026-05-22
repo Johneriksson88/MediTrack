@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 05
 status: in_progress
-last_updated: "2026-05-22T20:35:00.000Z"
+last_updated: "2026-05-22T18:49:00.000Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 18
-  completed_plans: 16
-  percent: 61
+  completed_plans: 17
+  percent: 67
 ---
 
 # State: MediTrack
@@ -87,8 +87,8 @@ Run `/gsd:discuss-phase 1` to gather context for Phase 1 before planning, or `/g
 | # | Plan | Status | Commits |
 |---|------|--------|---------|
 | 05-01 | Audit Foundation (schema + extension + ALS) | Complete | 9bffbaa, a7dae03, 55afe79 |
-| 05-02 | Read API (audit.service + routes) | Pending | — |
-| 05-03 | Admin UI + integration tests + ESLint | Pending | — |
+| 05-02 | Read API + Admin UI (audit.service + routes + page) | Complete | f2f5473, c3651a5, 3b3de1a |
+| 05-03 | Integration tests + ESLint + final hardening | Pending | — |
 
 ## Decisions Made
 
@@ -111,8 +111,15 @@ Run `/gsd:discuss-phase 1` to gather context for Phase 1 before planning, or `/g
 - D-92 confirmed live: AsyncLocalStorage seeded by Fastify onRequest hook via als.enterWith; seed scripts run outside the scope → middleware skips audit row creation
 - D-97 + T-05-03 closed: resolveEntityId(Session, row) returns row.userId (the actor User.id), NEVER row.id (the raw signed session token); AUDIT_ALLOWLIST drops User.passwordHash and Session.id from the after JSON
 - D-94 live: order.submit / order.confirm / order.deliver / stock.increment / order.softDelete / auth.login / auth.logout overrides thread through ALS, all sibling events of one HTTP request share the same UUID requestId
+- D-105 live: cursor-paginated GET /api/audit/events with base64-encoded {createdAt, id} payload + deterministic OR-pair WHERE clause for same-millisecond tiebreak; take: limit+1 detects hasMore without a COUNT query
+- D-103 live: three-combobox URL-as-state filter bar on /admin/audit (Användare / Entitetstyp / Åtgärd); 60s module-scope memo on BE + TanStack staleTime 60_000 on FE for T-05-10 DoS mitigation
+- D-95 live: diff computed at READ time inside AuditDiffPanel — full before/after stored at write time, FE intersects keys with JSON.stringify equality and renders only changes; survives Phase 6+ schema additions
+- D-104 live: requestId-group chip on the diff panel surfaces the 1+N sibling cohort via /admin/audit?requestId= deep-link; Kopiera permalink button writes a filter-coordinate-only URL (no before/after payload — T-05-09 disposition: accept)
+- D-16 EXCEPTION documented in audit.service.ts header: admin reads cross-tenant; no careUnitId-first arg; carve-out justified verbatim against AUD-02
+- EmptyStateCard widened with optional body? prop (defaults to Phase 1 stub copy) — Phase 5 AuditPage passes "Händelser visas här när någon ändrar något i systemet." for the "no events ever" empty state
+- First useInfiniteQuery in repo: useAuditEventsQuery establishes the cursor-pagination pattern for any future paginated list
 
 Last activity: 2026-05-22
 
 ---
-*Last updated: 2026-05-22 after 05-01-audit-foundation*
+*Last updated: 2026-05-22 after 05-02-read-api-and-admin-ui*

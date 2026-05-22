@@ -22,7 +22,7 @@
 | 2 | Medication Catalog | 4/4 | Complete   | 2026-05-21 |
 | 3 | Draft Orders | 4/4 | Complete | 2026-05-22 |
 | 4 | Confirm, Deliver & Stock | 3/3 | Complete   | 2026-05-22 |
-| 5 | Audit Log | 1/3 | In Progress | 2026-05-22 |
+| 5 | Audit Log | 2/3 | In Progress | 2026-05-22 |
 | 6 | AI Categorization & Low-Stock Notifications | LLM suggests therapeutic class on medication save; dashboard banner surfaces low-stock items live | AI-01, AI-02, AI-03, NTF-01, NTF-02 | yes |
 | 7 | Ops & Submission Polish | One-command Docker Compose runs the full stack with seed data; README explains decisions; git history is review-ready | OPS-01, OPS-02, OPS-04 | no |
 
@@ -101,7 +101,7 @@
 **Requirements:** AUD-01, AUD-02, AUD-03
 **Plans:** 3 plans
   - [x] 05-01-PLAN.md — Slice 1 (Wave 1): AuditEvent schema + REVOKE migration + Prisma $extends middleware + AsyncLocalStorage plugin + auditAllowlist + permission key + shared contracts + auth.login_failed write (AUD-01 infrastructure)
-  - [ ] 05-02-PLAN.md — Slice 2 (Wave 2): audit.service.ts (cross-tenant D-16 exception) + GET /api/audit/events (cursor-paginated) + GET /api/audit/filters + AuditPage replaces stub + AuditFilterBar (3 comboboxes URL-as-state) + responsive AuditTable/AuditCardList + AuditDiffPanel + Kopiera permalink (AUD-02)
+  - [x] 05-02-PLAN.md — Slice 2 (Wave 2): audit.service.ts (cross-tenant D-16 exception) + GET /api/audit/events (cursor-paginated) + GET /api/audit/filters + AuditPage replaces stub + AuditFilterBar (3 comboboxes URL-as-state) + responsive AuditTable/AuditCardList + AuditDiffPanel + Kopiera permalink (AUD-02)
   - [ ] 05-03-PLAN.md — Slice 3 (Wave 3): ESLint no-restricted-syntax rule + 5 integration tests (full pipeline coverage, rollback-leaves-no-audit, grep, REVOKE rejection, passwordHash redaction, admin-only 403/403/200) + README audit-log section with §6 prep (AUD-03)
 **Success Criteria:**
 1. Every successful POST/PATCH/DELETE on medications and orders writes an `audit_events` row with `(actor_user_id, entity_type, entity_id, action, before, after, timestamp)`.
