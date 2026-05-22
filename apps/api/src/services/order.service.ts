@@ -564,9 +564,16 @@ export async function confirmOrder(
     });
 
     // count === 0 means a race condition — another request confirmed first.
+    // Reload the row to report the actual losing status (could be 'bekraftad',
+    // 'levererad', or even reverted to 'utkast'). Falling back to 'bekraftad'
+    // preserves the previous behavior only if the row vanished mid-tx.
     if (updated.count === 0) {
+      const actual = await tx.order.findUnique({
+        where: { id: orderId },
+        select: { status: true },
+      });
       throw new OrderTransitionError({
-        from: 'bekraftad',
+        from: actual?.status ?? 'bekraftad',
         to: 'bekraftad',
         expected: 'skickad',
       });
@@ -715,9 +722,15 @@ export async function deliverOrder(
     });
 
     if (updated.count === 0) {
-      // Race: another delivery won. The order is now 'levererad' from the other tx.
+      // Race: another transition won. Reload the row to report the actual
+      // losing status (typically 'levererad', but defensively could be any
+      // post-bekraftad value). Fall back to 'levererad' if the row vanished.
+      const actual = await tx.order.findUnique({
+        where: { id: orderId },
+        select: { status: true },
+      });
       throw new OrderTransitionError({
-        from: 'levererad',
+        from: actual?.status ?? 'levererad',
         to: 'levererad',
         expected: 'bekraftad',
       });
