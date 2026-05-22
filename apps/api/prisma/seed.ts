@@ -536,24 +536,32 @@ async function seedOrderInStatus(
     data.deliveredByUserId = apotekare.id;
   }
 
+  // D-85: for the Levererad order, atomically create the order AND apply
+  // per-CUM stock increments in one transaction. Without this, a crash
+  // between the two non-transactional steps would leave the order in
+  // 'levererad' status with no stock change — and the idempotency guard
+  // above would prevent recovery on the next seed run.
+  if (status === 'levererad') {
+    await prisma.$transaction(async (tx) => {
+      await tx.order.create({ data });
+      for (const cumId of ids) {
+        await tx.careUnitMedication.update({
+          where: { id: cumId },
+          data: { currentStock: { increment: 5 } }, // mirrors the line quantity above
+        });
+      }
+    });
+    // eslint-disable-next-line no-console
+    console.log(`[seed] ${statusLabel} order created.`);
+    // eslint-disable-next-line no-console
+    console.log(`[seed] Levererad order stock incremented for ${ids.length} CUM(s).`);
+    return;
+  }
+
   await prisma.order.create({ data });
 
   // eslint-disable-next-line no-console
   console.log(`[seed] ${statusLabel} order created.`);
-
-  // D-85 post-step: for the Levererad order, apply stock increments per line
-  // so /lakemedel reflects the historic delivery. This block is INSIDE the
-  // idempotency guard (early-return above prevents re-applying on re-runs).
-  if (status === 'levererad') {
-    for (const cumId of ids) {
-      await prisma.careUnitMedication.update({
-        where: { id: cumId },
-        data: { currentStock: { increment: 5 } }, // mirrors the line quantity above
-      });
-    }
-    // eslint-disable-next-line no-console
-    console.log(`[seed] Levererad order stock incremented for ${ids.length} CUM(s).`);
-  }
 }
 
 /**
