@@ -80,8 +80,19 @@ function decodeCursor(raw: string): CursorPayload {
     const { createdAt, id } = parsed as CursorPayload;
     // Validate the ISO timestamp parses to a real Date — Date.parse
     // returning NaN for garbage input is the standard guard.
-    if (Number.isNaN(Date.parse(createdAt))) {
+    const parsedMs = Date.parse(createdAt);
+    if (Number.isNaN(parsedMs)) {
       throw new Error('cursor.createdAt is not a valid ISO timestamp');
+    }
+    // WR-03 — reject cursors with createdAt > now + 60s. The page-zero
+    // restart attack: an admin (or anyone replaying an admin cookie) can
+    // hand-craft a base64 cursor with createdAt=year-3000, which would
+    // otherwise pass and trivially restart pagination at the newest row.
+    // 60-second tolerance absorbs reasonable client/server clock skew
+    // without opening the attack window. Pairs with the unsigned-cursor
+    // caveat — full HMAC signing remains a follow-up (D-105).
+    if (parsedMs > Date.now() + 60_000) {
+      throw new Error('cursor.createdAt is too far in the future');
     }
     return { createdAt, id };
   } catch {
