@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 05
 status: in_progress
-last_updated: "2026-05-22T18:49:00.000Z"
+last_updated: "2026-05-22T19:10:45.383Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 7
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 18
-  completed_plans: 17
-  percent: 67
+  completed_plans: 18
+  percent: 71
 ---
 
 # State: MediTrack
@@ -41,7 +41,7 @@ See: [.planning/ROADMAP.md](ROADMAP.md) (created 2026-05-19)
 | 2 | Medication Catalog | Pending |
 | 3 | Draft Orders | Complete |
 | 4 | Confirm, Deliver & Stock | Pending |
-| 5 | Audit Log | Pending |
+| 5 | Audit Log | Complete |
 | 6 | AI Categorization & Low-Stock Notifications | Pending |
 | 7 | Ops & Submission Polish | Pending |
 
@@ -60,7 +60,7 @@ See: [.planning/config.json](config.json)
 
 ## Next Action
 
-Run `/gsd:discuss-phase 1` to gather context for Phase 1 before planning, or `/gsd:plan-phase 1` to skip discussion and plan directly.
+Phase 5 complete. Run `/gsd:discuss-phase 6` to gather context for Phase 6 (AI categorization + low-stock notifications) before planning, or `/gsd:plan-phase 6` to skip discussion and plan directly.
 
 ### Quick Tasks Completed
 
@@ -88,7 +88,7 @@ Run `/gsd:discuss-phase 1` to gather context for Phase 1 before planning, or `/g
 |---|------|--------|---------|
 | 05-01 | Audit Foundation (schema + extension + ALS) | Complete | 9bffbaa, a7dae03, 55afe79 |
 | 05-02 | Read API + Admin UI (audit.service + routes + page) | Complete | f2f5473, c3651a5, 3b3de1a |
-| 05-03 | Integration tests + ESLint + final hardening | Pending | — |
+| 05-03 | Integration tests + ESLint + final hardening | Complete | 72b52e4, 045bdc4, edbcc5b |
 
 ## Decisions Made
 
@@ -118,8 +118,13 @@ Run `/gsd:discuss-phase 1` to gather context for Phase 1 before planning, or `/g
 - D-16 EXCEPTION documented in audit.service.ts header: admin reads cross-tenant; no careUnitId-first arg; carve-out justified verbatim against AUD-02
 - EmptyStateCard widened with optional body? prop (defaults to Phase 1 stub copy) — Phase 5 AuditPage passes "Händelser visas här när någon ändrar något i systemet." for the "no events ever" empty state
 - First useInfiniteQuery in repo: useAuditEventsQuery establishes the cursor-pagination pattern for any future paginated list
+- D-99 live: root .eslintrc.cjs with `no-restricted-syntax` MemberExpression selector banning `prisma.auditEvent.update/updateMany/delete/deleteMany/upsert`; pnpm lint workspace script asserts exit 0 on the codebase and exit 1 on a scratch-file containing the banned pattern
+- D-98 closed at both layers AND asserted by tests in the same suite (`apps/api/test/audit.integration.test.ts`): test #3 git-greps for the banned pattern (architectural absence), test #4 issues raw-SQL UPDATE against a real audit row id (Postgres BEFORE-trigger rejects with `permission denied`)
+- T-05-03 closed in lockstep by AUDIT_ALLOWLIST (drops Session.id from after JSON) + resolveEntityId (returns row.userId, NOT row.id, for entityId column); test #7 asserts both for auth.login AND auth.logout
+- Five composite test helpers (loginAs, captureSessionCookie, createEmptyOrder, findTestCareUnitMedication, progressOrderToBekraftad) promoted to apps/api/test/helpers/buildTestApp.ts; six existing test files migrated; loginAs canonicalized to `(app, user)` signature; no duplicate helper bodies remain outside the helpers directory
+- Phase 5 complete: AUD-01 + AUD-02 + AUD-03 all mechanically asserted by tests AND documented in README.md `## Audit log` with §6 interview prep (five labelled phrasings: concurrency, scale-to-50, retrofitting auth, what I'm proud of, what I'm least proud of)
 
 Last activity: 2026-05-22
 
 ---
-*Last updated: 2026-05-22 after 05-02-read-api-and-admin-ui*
+*Last updated: 2026-05-22 after 05-03-integration-tests-eslint-hardening*
