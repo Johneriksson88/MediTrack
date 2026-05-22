@@ -36,6 +36,8 @@ export const ACTION_KEYS = [
   // Phase 4 D-15 — confirm/deliver restricted to apotekare+admin.
   'order:confirm',
   'order:deliver',
+  // Phase 5 D-15 — admin-only audit log read.
+  'audit:read',
 ] as const;
 export type ActionKey = (typeof ACTION_KEYS)[number];
 

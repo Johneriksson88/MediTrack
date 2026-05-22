@@ -63,6 +63,17 @@ export {
   pickerOptionsResponse,
   type PickerOptionsResponse,
 } from './contracts/order.js';
+// Audit contracts — Phase 5 D-08 / D-97 / D-103 / D-105 (FE↔BE audit log read API)
+export {
+  auditEventResponse,
+  type AuditEventResponse,
+  auditEventListQuery,
+  type AuditEventListQuery,
+  auditEventListResponse,
+  type AuditEventListResponse,
+  auditFiltersResponse,
+  type AuditFiltersResponse,
+} from './contracts/audit.js';
 
 // Constants — locked vocabularies shared FE+BE
 export { ROLES, roleEnum, type Role } from './constants/roles.js';
@@ -78,3 +89,16 @@ export {
   OVRIGA_FILTER_VALUE,
 } from './constants/medicationForms.js';
 export { defaultLowStockThreshold } from './constants/medicationDefaults.js';
+// Phase 5 D-94 / D-96 / D-104 — audit action + entity-type vocabularies.
+export {
+  AUDIT_ACTIONS,
+  AUDIT_ACTION_LABELS,
+  auditActionEnum,
+  type AuditAction,
+} from './constants/auditAction.js';
+export {
+  AUDIT_ENTITY_TYPES,
+  AUDIT_ENTITY_TYPE_LABELS,
+  auditEntityTypeEnum,
+  type AuditEntityType,
+} from './constants/auditEntityType.js';
