@@ -300,8 +300,11 @@ export function useConfirmOrder() {
       // 409 order_transition_invalid — the order status has changed since load.
       if (err.envelope.error.code === 'order_transition_invalid') {
         const details = err.envelope.error.details as { from: OrderStatus };
+        // ORDER_STATUS_LABELS values are nouns/participles ("Skickad",
+        // "Bekräftad", "Levererad"); "Beställningen är redan {label}." reads
+        // naturally in Swedish where "har redan {label}" did not.
         toast.error(
-          `Beställningen har redan ${ORDER_STATUS_LABELS[details.from]}.`,
+          `Beställningen är redan ${ORDER_STATUS_LABELS[details.from].toLowerCase()}.`,
         );
         // Invalidate so the page re-renders with the current server status.
         void queryClient.invalidateQueries({ queryKey: ['order', vars.orderId] });
@@ -359,8 +362,11 @@ export function useDeliverOrder() {
       // 409 order_transition_invalid — the order status has changed since load.
       if (err.envelope.error.code === 'order_transition_invalid') {
         const details = err.envelope.error.details as { from: OrderStatus };
+        // ORDER_STATUS_LABELS values are nouns/participles ("Skickad",
+        // "Bekräftad", "Levererad"); "Beställningen är redan {label}." reads
+        // naturally in Swedish where "har redan {label}" did not.
         toast.error(
-          `Beställningen har redan ${ORDER_STATUS_LABELS[details.from]}.`,
+          `Beställningen är redan ${ORDER_STATUS_LABELS[details.from].toLowerCase()}.`,
         );
         void queryClient.invalidateQueries({ queryKey: ['order', vars.orderId] });
         return;
