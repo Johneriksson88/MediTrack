@@ -96,10 +96,32 @@ export class ValidationFailedError extends Error {
   readonly code = 'validation_failed' as const;
   constructor(
     message: string,
-    public readonly details?: { reason: 'empty_order' | 'invalid_quantity'; lineId?: string },
+    public readonly details?: {
+      reason: 'empty_order' | 'invalid_quantity' | 'medication_removed';
+      lineId?: string;
+      medicationName?: string; // populated when reason === 'medication_removed' (UI toast uses this)
+    },
   ) {
     super(message);
     this.name = 'ValidationFailedError';
+  }
+}
+
+/**
+ * Phase 4 D-74 — thrown when a status transition is attempted from the wrong
+ * source state (e.g., Utkast → Bekräftad, or double-confirm). Mapped to HTTP
+ * 409 with code 'order_transition_invalid' and a structured details payload
+ * carrying {from, to, expected} so the FE can produce a localized toast.
+ *
+ * The MUST appear BEFORE the Zod branch in setErrorHandler (D-56 precedent).
+ */
+export class OrderTransitionError extends Error {
+  readonly code = 'order_transition_invalid' as const;
+  readonly details: { from: OrderStatus; to: OrderStatus; expected: OrderStatus };
+  constructor(details: { from: OrderStatus; to: OrderStatus; expected: OrderStatus }) {
+    super(`Beställningen kan inte gå från ${details.from} till ${details.to}.`);
+    this.name = 'OrderTransitionError';
+    this.details = details;
   }
 }
 
@@ -147,6 +169,12 @@ export const errorHandlerPlugin = fp(async (app: FastifyInstance) => {
 
     if (err instanceof ValidationFailedError) {
       return send(reply, 422, envelope('validation_failed', err.message, err.details));
+    }
+
+    // Phase 4 D-74 — OrderTransitionError (409) MUST be checked BEFORE the Zod
+    // branch so it is not swallowed by the generic 400 validation_failed fallthrough.
+    if (err instanceof OrderTransitionError) {
+      return send(reply, 409, envelope('order_transition_invalid', err.message, err.details));
     }
 
     // Fastify normalizes the body-schema ZodError into `err.validation` only

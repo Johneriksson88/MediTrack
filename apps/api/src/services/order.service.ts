@@ -48,11 +48,18 @@ type OrderWithRelations = Order & {
   })[];
   createdBy: Pick<User, 'id' | 'name'>;
   submittedBy: Pick<User, 'id' | 'name'> | null;
+  // Phase 4 D-84 — actor fields for confirm/deliver transitions.
+  confirmedBy: Pick<User, 'id' | 'name'> | null;
+  deliveredBy: Pick<User, 'id' | 'name'> | null;
 };
 
 type OrderForList = Order & {
   lines: Pick<OrderLine, 'id' | 'quantity'>[];
   createdBy: Pick<User, 'id' | 'name'>;
+  // Phase 4 — actor fields for non-utkast tabs.
+  submittedBy: Pick<User, 'id' | 'name'> | null;
+  confirmedBy: Pick<User, 'id' | 'name'> | null;
+  deliveredBy: Pick<User, 'id' | 'name'> | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -71,6 +78,17 @@ export function toOrderResponse(row: OrderWithRelations): OrderResponse {
     status: row.status as OrderResponse['status'],
     submittedAt: row.submittedAt ? row.submittedAt.toISOString() : null,
     submittedByUserId: row.submittedByUserId,
+    // Phase 4 D-84 — confirm/deliver actor trios.
+    confirmedAt: row.confirmedAt ? row.confirmedAt.toISOString() : null,
+    confirmedByUserId: row.confirmedByUserId ?? null,
+    confirmedBy: row.confirmedBy
+      ? { id: row.confirmedBy.id, name: row.confirmedBy.name }
+      : null,
+    deliveredAt: row.deliveredAt ? row.deliveredAt.toISOString() : null,
+    deliveredByUserId: row.deliveredByUserId ?? null,
+    deliveredBy: row.deliveredBy
+      ? { id: row.deliveredBy.id, name: row.deliveredBy.name }
+      : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     lines: row.lines.map(toOrderLineResponse),
@@ -117,6 +135,19 @@ export function toOrderListItem(row: OrderForList): OrderListItem {
     lineCount: row.lines.length,
     totalQuantity: row.lines.reduce((s, l) => s + l.quantity, 0),
     createdBy: { id: row.createdBy.id, name: row.createdBy.name },
+    // Phase 4 — actor fields for non-utkast tab columns.
+    submittedAt: row.submittedAt ? row.submittedAt.toISOString() : null,
+    submittedBy: row.submittedBy
+      ? { id: row.submittedBy.id, name: row.submittedBy.name }
+      : null,
+    confirmedAt: row.confirmedAt ? row.confirmedAt.toISOString() : null,
+    confirmedBy: row.confirmedBy
+      ? { id: row.confirmedBy.id, name: row.confirmedBy.name }
+      : null,
+    deliveredAt: row.deliveredAt ? row.deliveredAt.toISOString() : null,
+    deliveredBy: row.deliveredBy
+      ? { id: row.deliveredBy.id, name: row.deliveredBy.name }
+      : null,
   };
 }
 
@@ -153,6 +184,9 @@ export async function createDraftOrder(
       },
       createdBy: { select: { id: true, name: true } },
       submittedBy: { select: { id: true, name: true } },
+      // Phase 4 D-84 — actor include widening.
+      confirmedBy: { select: { id: true, name: true } },
+      deliveredBy: { select: { id: true, name: true } },
     },
   });
 
@@ -185,12 +219,17 @@ export async function listOrdersForUnit(
   const rows = await prisma.order.findMany({
     where: {
       careUnitId,
-      status: filters.status,
+      // Phase 4 — accept single status OR array (e.g. ['skickad','bekraftad']).
+      status: Array.isArray(filters.status) ? { in: filters.status } : filters.status,
       deletedAt: null,
     },
     include: {
       lines: { select: { id: true, quantity: true } },
       createdBy: { select: { id: true, name: true } },
+      // Phase 4 D-84 — actor fields for non-utkast tab columns.
+      submittedBy: { select: { id: true, name: true } },
+      confirmedBy: { select: { id: true, name: true } },
+      deliveredBy: { select: { id: true, name: true } },
     },
     orderBy: { createdAt: 'desc' },
   });
@@ -228,6 +267,9 @@ export async function getOrderForUnit(
       },
       createdBy: { select: { id: true, name: true } },
       submittedBy: { select: { id: true, name: true } },
+      // Phase 4 D-84 — actor include widening.
+      confirmedBy: { select: { id: true, name: true } },
+      deliveredBy: { select: { id: true, name: true } },
     },
   });
 
@@ -436,6 +478,9 @@ export async function submitOrder(
         },
         createdBy: { select: { id: true, name: true } },
         submittedBy: { select: { id: true, name: true } },
+        // Phase 4 D-84 — actor include widening.
+        confirmedBy: { select: { id: true, name: true } },
+        deliveredBy: { select: { id: true, name: true } },
       },
     });
 

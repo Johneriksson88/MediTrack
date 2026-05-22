@@ -34,6 +34,9 @@ export const PERMISSIONS: Record<ActionKey, Role[]> = {
   'order:update': ['apotekare', 'sjukskoterska', 'admin'],
   'order:submit': ['apotekare', 'sjukskoterska', 'admin'],
   'order:delete': ['apotekare', 'sjukskoterska', 'admin'],
+  // Phase 4 D-15 / D-75 — apotekare workflow transitions; sjuksköterska is read-only on these.
+  'order:confirm': ['apotekare', 'admin'],
+  'order:deliver': ['apotekare', 'admin'],
 };
 
 /**
