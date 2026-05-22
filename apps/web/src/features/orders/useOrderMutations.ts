@@ -2,7 +2,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type {
   OrderResponse,
+  OrderStatus,
 } from '@meditrack/shared';
+import { ORDER_STATUS_LABELS } from '@meditrack/shared';
 import { fetchJson, type ApiError } from '@/lib/api';
 
 /**
@@ -257,6 +259,60 @@ export function useSubmitOrder() {
         return;
       }
       // 422 validation_failed (belt-and-suspenders — the disabled predicate normally catches this).
+      toast.error('Kunde inte spara — försök igen.');
+    },
+  });
+}
+
+/**
+ * Confirms a Skickad order (Skickad → Bekräftad).
+ *
+ * PESSIMISTIC (D-52): waits for server response before updating UI.
+ * D-57: On success, hydrates ['order', orderId] cache with the full updated Order
+ * (including status: 'bekraftad', confirmedAt, confirmedBy) + invalidates both
+ * ['orders', { status: 'skickad' }] (source tab loses a row) and
+ * ['orders', { status: 'bekraftad' }] (destination gains one).
+ *
+ * Toast policy (UI-SPEC §Toast Feedback):
+ *   - Success: toast.success('Bekräftad') (D-83)
+ *   - 409 order_transition_invalid: localized toast via ORDER_STATUS_LABELS[details.from] +
+ *     invalidate ['order', orderId] so page re-renders with current server state.
+ *   - 404 not_found: 'Beställning hittades inte.' toast.
+ *   - Other error: 'Kunde inte spara — försök igen.'
+ */
+export function useConfirmOrder() {
+  const queryClient = useQueryClient();
+
+  return useMutation<OrderResponse, ApiError, { orderId: string }>({
+    mutationFn: ({ orderId }) =>
+      fetchJson<OrderResponse>(`/api/orders/${orderId}/confirm`, {
+        method: 'POST',
+      }),
+    onSuccess: (response, vars) => {
+      // D-57: cache hydration — response is the full updated bekraftad Order.
+      queryClient.setQueryData(['order', vars.orderId], response);
+      // Invalidate both status lists (source tab loses, destination gains).
+      void queryClient.invalidateQueries({ queryKey: ['orders', { status: 'skickad' }] });
+      void queryClient.invalidateQueries({ queryKey: ['orders', { status: 'bekraftad' }] });
+      toast.success('Bekräftad');
+    },
+    onError: (err, vars) => {
+      // 409 order_transition_invalid — the order status has changed since load.
+      if (err.envelope.error.code === 'order_transition_invalid') {
+        const details = err.envelope.error.details as { from: OrderStatus };
+        toast.error(
+          `Beställningen har redan ${ORDER_STATUS_LABELS[details.from]}.`,
+        );
+        // Invalidate so the page re-renders with the current server status.
+        void queryClient.invalidateQueries({ queryKey: ['order', vars.orderId] });
+        return;
+      }
+      // 404 not_found
+      if (err.envelope.error.code === 'not_found') {
+        toast.error('Beställning hittades inte.');
+        return;
+      }
+      // Other errors
       toast.error('Kunde inte spara — försök igen.');
     },
   });

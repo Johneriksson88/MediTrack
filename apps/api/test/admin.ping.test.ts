@@ -127,7 +127,8 @@ describe('GET /api/me — permissions[] regression (D-18)', () => {
       headers: { cookie },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().permissions).toEqual(['admin:ping', 'medication:read', 'medication:create', 'medication:update', 'medication:delete', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete']);
+    // Phase 4 D-15: admin gains order:confirm + order:deliver
+    expect(res.json().permissions).toEqual(['admin:ping', 'medication:read', 'medication:create', 'medication:update', 'medication:delete', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete', 'order:confirm', 'order:deliver']);
   });
 
   it("returns medication:read + order:* permissions for a sjuksköterska session", async () => {
@@ -149,6 +150,7 @@ describe('GET /api/me — permissions[] regression (D-18)', () => {
       headers: { cookie },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().permissions).toEqual(['medication:read', 'medication:create', 'medication:update', 'medication:delete', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete']);
+    // Phase 4 D-15: apotekare gains order:confirm + order:deliver
+    expect(res.json().permissions).toEqual(['medication:read', 'medication:create', 'medication:update', 'medication:delete', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete', 'order:confirm', 'order:deliver']);
   });
 });

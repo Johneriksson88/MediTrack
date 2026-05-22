@@ -33,6 +33,9 @@ export const ACTION_KEYS = [
   'order:update',
   'order:submit',
   'order:delete',
+  // Phase 4 D-15 — confirm/deliver restricted to apotekare+admin.
+  'order:confirm',
+  'order:deliver',
 ] as const;
 export type ActionKey = (typeof ACTION_KEYS)[number];
 

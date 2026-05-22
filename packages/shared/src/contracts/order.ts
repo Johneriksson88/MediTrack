@@ -72,11 +72,19 @@ export const orderResponse = z.object({
   status: orderStatusEnum,
   submittedAt: z.string().datetime().nullable(),
   submittedByUserId: z.string().nullable(),
+  // Phase 4 D-84 — confirm/deliver actor trios; null until the respective transition.
+  confirmedAt: z.string().datetime().nullable(),
+  confirmedByUserId: z.string().nullable(),
+  deliveredAt: z.string().datetime().nullable(),
+  deliveredByUserId: z.string().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lines: z.array(orderLineResponse),
   createdBy: z.object({ id: z.string(), name: z.string() }),
   submittedBy: z.object({ id: z.string(), name: z.string() }).nullable(),
+  // Phase 4 D-84 — denormalized actor names for the audit trail.
+  confirmedBy: z.object({ id: z.string(), name: z.string() }).nullable(),
+  deliveredBy: z.object({ id: z.string(), name: z.string() }).nullable(),
 });
 export type OrderResponse = z.infer<typeof orderResponse>;
 
@@ -96,6 +104,13 @@ export const orderListItem = z.object({
   lineCount: z.number().int().nonnegative(),
   totalQuantity: z.number().int().nonnegative(),
   createdBy: z.object({ id: z.string(), name: z.string() }),
+  // Phase 4 — actor + timestamp for the relevant transition's column (tab-dependent).
+  submittedAt: z.string().datetime().nullable().optional(),
+  submittedBy: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
+  confirmedAt: z.string().datetime().nullable().optional(),
+  confirmedBy: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
+  deliveredAt: z.string().datetime().nullable().optional(),
+  deliveredBy: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
 });
 export type OrderListItem = z.infer<typeof orderListItem>;
 
@@ -105,7 +120,9 @@ export type OrderListItem = z.infer<typeof orderListItem>;
  * Phase 7 will add richer pagination; stubs included with sensible defaults.
  */
 export const orderListQuery = z.object({
-  status: orderStatusEnum.default('utkast'),
+  // Phase 4 — accept single status, comma-list ('skickad,bekraftad'), or array.
+  // The route parses ?status=skickad,bekraftad into ['skickad','bekraftad'] before validation.
+  status: z.union([orderStatusEnum, z.array(orderStatusEnum)]).default('utkast'),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50),
 });
@@ -131,6 +148,22 @@ export type OrderListResponse = z.infer<typeof orderListResponse>;
  */
 export const createOrderRequest = z.object({}).strict();
 export type CreateOrderRequest = z.infer<typeof createOrderRequest>;
+
+/**
+ * POST /api/orders/:id/confirm body — intentionally empty (D-75). All context
+ * (careUnitId, actorUserId) comes from req.user; the body must be empty.
+ * .strict() rejects stray fields (T-04-02 mass-assignment mitigation).
+ */
+export const confirmOrderRequest = z.object({}).strict();
+export type ConfirmOrderRequest = z.infer<typeof confirmOrderRequest>;
+
+/**
+ * POST /api/orders/:id/deliver body — intentionally empty (D-75). All context
+ * (careUnitId, actorUserId) comes from req.user; the body must be empty.
+ * .strict() rejects stray fields (T-04-02 mass-assignment mitigation).
+ */
+export const deliverOrderRequest = z.object({}).strict();
+export type DeliverOrderRequest = z.infer<typeof deliverOrderRequest>;
 
 /**
  * POST /api/orders/:id/lines body — adds one line to a draft.

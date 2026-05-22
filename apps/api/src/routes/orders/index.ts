@@ -4,6 +4,7 @@ import { listOrdersRoute } from './list.js';
 import { getOrderRoute } from './get.js';
 import { linesRoute } from './lines.js';
 import { submitOrderRoute } from './submit.js';
+import { confirmOrderRoute } from './confirm.js';
 import { deleteOrderRoute } from './delete.js';
 import { pickerOptionsRoute } from './pickerOptions.js';
 
@@ -31,5 +32,6 @@ export async function orderRoutes(app: FastifyInstance) {
   await app.register(getOrderRoute);
   await app.register(linesRoute);
   await app.register(submitOrderRoute);
+  await app.register(confirmOrderRoute);
   await app.register(deleteOrderRoute);
 }

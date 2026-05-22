@@ -61,12 +61,13 @@ vi.mock('@/features/orders/useOrderMutations', () => ({
   useRemoveOrderLine: vi.fn(),
   useSubmitOrder: vi.fn(),
   useDiscardOrder: vi.fn(),
+  useConfirmOrder: vi.fn(),
 }));
 
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/auth/useAuth';
 import { useOrderQuery, usePickerOptionsQuery } from '@/features/orders/useOrderQueries';
-import { useAddOrderLine, useUpdateOrderLineQuantity, useRemoveOrderLine, useSubmitOrder, useDiscardOrder } from '@/features/orders/useOrderMutations';
+import { useAddOrderLine, useUpdateOrderLineQuantity, useRemoveOrderLine, useSubmitOrder, useDiscardOrder, useConfirmOrder } from '@/features/orders/useOrderMutations';
 
 const mockUseNavigate = vi.mocked(useNavigate);
 const mockUseAuth = vi.mocked(useAuth);
@@ -77,6 +78,7 @@ const mockUseUpdateOrderLineQuantity = vi.mocked(useUpdateOrderLineQuantity);
 const mockUseRemoveOrderLine = vi.mocked(useRemoveOrderLine);
 const mockUseSubmitOrder = vi.mocked(useSubmitOrder);
 const mockUseDiscardOrder = vi.mocked(useDiscardOrder);
+const mockUseConfirmOrder = vi.mocked(useConfirmOrder);
 
 /** Nurse with all order:* permissions */
 function setupNurseAuth() {
@@ -182,6 +184,7 @@ function setupMutations(
     ...makeIdleMutation(),
     mutateAsync: discardFn,
   } as unknown as ReturnType<typeof useDiscardOrder>);
+  mockUseConfirmOrder.mockReturnValue(makeIdleMutation() as unknown as ReturnType<typeof useConfirmOrder>);
 }
 
 function setupPickerQuery() {

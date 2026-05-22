@@ -75,6 +75,10 @@ model User {
   createdOrders   Order[] @relation("OrderCreatedBy")
   submittedOrders Order[] @relation("OrderSubmittedBy")
 
+  /// Phase 4 D-84 — back-relations for orders confirmed / delivered by this user.
+  confirmedOrders Order[] @relation("OrderConfirmedBy")
+  deliveredOrders Order[] @relation("OrderDeliveredBy")
+
   @@index([careUnitId])
 }
 
@@ -192,6 +196,21 @@ model Order {
   /// disambiguate from createdBy (two FKs to User on the same model).
   submittedByUserId String?
   submittedBy       User?  @relation(name: "OrderSubmittedBy", fields: [submittedByUserId], references: [id], onDelete: Restrict)
+
+  /// Phase 4 D-84 — stamped by the confirm transition; null while in utkast/skickad.
+  confirmedAt DateTime?
+
+  /// Phase 4 D-84 — FK to the user who confirmed; Restrict preserves history.
+  /// Named relation disambiguates from createdBy/submittedBy/deliveredBy.
+  confirmedByUserId String?
+  confirmedBy       User?  @relation(name: "OrderConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: Restrict)
+
+  /// Phase 4 D-84 — stamped by the deliver transition; null until levererad.
+  deliveredAt DateTime?
+
+  /// Phase 4 D-84 — FK to the user who delivered; Restrict preserves history.
+  deliveredByUserId String?
+  deliveredBy       User?  @relation(name: "OrderDeliveredBy", fields: [deliveredByUserId], references: [id], onDelete: Restrict)
 
   /// D-62 / D-33 — soft-delete flag for the Discard affordance (D-67).
   /// Lists always filter deletedAt: null.
