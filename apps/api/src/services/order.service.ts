@@ -595,6 +595,157 @@ export async function confirmOrder(
 }
 
 // ---------------------------------------------------------------------------
+// Deliver — POST /api/orders/:id/deliver (D-78, D-79, D-81, D-84)
+// ---------------------------------------------------------------------------
+
+/**
+ * Delivers a Bekräftad order atomically — flips status from 'bekraftad' to 'levererad'
+ * and increments stock for each affected CareUnitMedication.
+ *
+ * D-78: Delivery is replenishment — line quantities are ADDED to currentStock.
+ * D-79: CUM batch lock with sorted-id ordering (deadlock prevention).
+ *       Steps: (1) Order-row FOR UPDATE, (2) load order+lines+CUMs,
+ *              (3) existence+scope check, (4) status precondition,
+ *              (5) D-81 soft-deleted CUM check, (6) aggregate by CUM,
+ *              (7) sorted CUM ids FOR UPDATE batch lock, (8) per-CUM increment,
+ *              (9) atomic Order UPDATE with status precondition, (10) reload+return.
+ * D-81: Soft-deleted CUM at deliver time → 422 validation_failed reason='medication_removed'.
+ *       Checked BEFORE any UPDATE — entire tx rolls back on failure.
+ * D-84: Stamps deliveredAt + deliveredByUserId.
+ * D-73: 404 (not 403) on cross-careUnit to hide order existence.
+ * D-54: Atomic updateMany with WHERE status = 'bekraftad' precondition.
+ * D-57: Returns full updated OrderResponse; FE cache hydrates atomically.
+ * OPS-03/D-88: The concurrency test in orders.deliver.integration.test.ts
+ *              proves two concurrent deliverOrder calls serialize on this lock.
+ */
+export async function deliverOrder(
+  careUnitId: string,
+  orderId: string,
+  actorUserId: string,
+): Promise<OrderResponse> {
+  const result = await prisma.$transaction(async (tx) => {
+    // Step 1 — CR-02: lock the Order row FOR UPDATE (same pattern as submitOrder + confirmOrder).
+    // Serializes concurrent delivers on the same order (OPS-03 / D-88).
+    await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`;
+
+    // Step 2 — Load order with lines + nested CUMs (need CUM deletedAt for D-81 and medication.name for toast).
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: {
+        lines: {
+          include: {
+            careUnitMedication: { include: { medication: true } },
+          },
+        },
+        createdBy: { select: { id: true, name: true } },
+        submittedBy: { select: { id: true, name: true } },
+        confirmedBy: { select: { id: true, name: true } },
+        deliveredBy: { select: { id: true, name: true } },
+      },
+    });
+
+    // Step 3 — Existence + scope check (D-73).
+    if (!order || order.deletedAt !== null || order.careUnitId !== careUnitId) {
+      throw new NotFoundError('Beställningen hittades inte.');
+    }
+
+    // Step 4 — Status precondition: must be 'bekraftad' to deliver.
+    if (order.status !== 'bekraftad') {
+      throw new OrderTransitionError({
+        from: order.status,
+        to: 'levererad',
+        expected: 'bekraftad',
+      });
+    }
+
+    // Step 5 — D-81: 422 medication_removed if any CUM is soft-deleted.
+    // MUST happen BEFORE any UPDATE so the entire tx rolls back on failure.
+    for (const line of order.lines) {
+      if (line.careUnitMedication.deletedAt !== null) {
+        throw new ValidationFailedError(
+          'Läkemedlet har tagits bort.',
+          {
+            reason: 'medication_removed',
+            medicationName: line.careUnitMedication.medication.name,
+          },
+        );
+      }
+    }
+
+    // Step 6 — D-79: aggregate same-CUM lines into a Map<cumId, totalQty>.
+    // keyed on careUnitMedicationId (NOT line.id — that would skip aggregation).
+    const byCum = new Map<string, number>();
+    for (const line of order.lines) {
+      byCum.set(
+        line.careUnitMedicationId,
+        (byCum.get(line.careUnitMedicationId) ?? 0) + line.quantity,
+      );
+    }
+
+    // Step 7 — D-79: SELECT FOR UPDATE on ALL affected CUMs in sorted-id order.
+    // Sorted-id ordering prevents deadlocks when two concurrent deliveries
+    // across different orders share the same CUM rows (D-89 story).
+    // The ::text[] cast is REQUIRED because Prisma interpolates as text[], not String[].
+    const sortedCumIds = [...byCum.keys()].sort();
+    await tx.$queryRaw`
+      SELECT id FROM "CareUnitMedication"
+      WHERE id = ANY(${sortedCumIds}::text[])
+      ORDER BY id
+      FOR UPDATE
+    `;
+
+    // Step 8 — Per-CUM stock increment (one Prisma update per distinct CUM).
+    // Prisma's { increment: N } generates SET "currentStock" = "currentStock" + $1 — atomic.
+    for (const [cumId, qty] of byCum) {
+      await tx.careUnitMedication.update({
+        where: { id: cumId },
+        data: { currentStock: { increment: qty } },
+      });
+    }
+
+    // Step 9 — Atomic Order UPDATE with status precondition (D-54).
+    // count === 0 means a race condition — another deliver landed between our load and our UPDATE.
+    const updated = await tx.order.updateMany({
+      where: { id: orderId, careUnitId, status: 'bekraftad', deletedAt: null },
+      data: {
+        status: 'levererad',
+        deliveredAt: new Date(),
+        deliveredByUserId: actorUserId,
+      },
+    });
+
+    if (updated.count === 0) {
+      // Race: another delivery won. The order is now 'levererad' from the other tx.
+      throw new OrderTransitionError({
+        from: 'levererad',
+        to: 'levererad',
+        expected: 'bekraftad',
+      });
+    }
+
+    // Step 10 — Reload + return the full updated order (D-57: FE cache hydrates atomically).
+    const final = await tx.order.findUnique({
+      where: { id: orderId },
+      include: {
+        lines: {
+          include: {
+            careUnitMedication: { include: { medication: true } },
+          },
+        },
+        createdBy: { select: { id: true, name: true } },
+        submittedBy: { select: { id: true, name: true } },
+        confirmedBy: { select: { id: true, name: true } },
+        deliveredBy: { select: { id: true, name: true } },
+      },
+    });
+
+    return final!;
+  });
+
+  return toOrderResponse(result);
+}
+
+// ---------------------------------------------------------------------------
 // Delete — soft-delete (D-33, D-67)
 // ---------------------------------------------------------------------------
 
