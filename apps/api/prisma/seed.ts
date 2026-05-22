@@ -273,10 +273,12 @@ async function seedCareUnitMedications(prisma: PrismaClient): Promise<{ total: n
 const prisma = new PrismaClient();
 
 async function main() {
-  // One care unit. Fixed id so re-runs match the same row.
+  // One care unit. Fixed id so re-runs match the same row. `update: {}` keeps
+  // the existing row unchanged on re-run, matching the User upsert idiom and
+  // the file-header idempotency contract ('re-running does not rewrite').
   await prisma.careUnit.upsert({
     where: { id: CARE_UNIT_ID },
-    update: { name: CARE_UNIT_NAME },
+    update: {},
     create: { id: CARE_UNIT_ID, name: CARE_UNIT_NAME },
   });
 
