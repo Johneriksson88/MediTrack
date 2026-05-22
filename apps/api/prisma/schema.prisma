@@ -227,8 +227,10 @@ model OrderLine {
   careUnitMedicationId String
   careUnitMedication   CareUnitMedication @relation(fields: [careUnitMedicationId], references: [id], onDelete: Restrict)
 
-  /// Positive integer validated at the Zod boundary (D-63); no DB-level check
-  /// constraint in Phase 3 (the submit endpoint rejects quantity <= 0 via D-56).
+  /// Positive integer validated at the Zod boundary (D-63) AND enforced by a
+  /// DB-level CHECK constraint added in migration 0005 (WR-01 fix). The
+  /// orderLineResponse contract asserts positive(); the check keeps the row
+  /// shape drift-proof against direct writes that bypass the route layer.
   quantity Int
 
   createdAt DateTime @default(now())

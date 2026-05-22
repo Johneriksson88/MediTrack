@@ -730,7 +730,11 @@ describe('Draft orders integration', () => {
     // Cleanup A
     await prisma.order.delete({ where: { id: orderIdA } });
 
-    // Sub-test (b): create draft, add line, poison quantity to 0 via prisma, submit → 422 invalid_quantity
+    // Sub-test (b): WR-01 — the DB CHECK constraint blocks quantity = 0 at write
+    // time, so a "poisoned" line cannot exist in the first place. The submit
+    // endpoint's invalid_quantity branch is now defense-in-depth. Verify both
+    // layers: (i) Prisma direct write rejected by the CHECK constraint, and
+    // (ii) the public PATCH route still rejects quantity = 0 at the Zod boundary.
     const createResB = await app.inject({ method: 'POST', url: '/api/orders', headers: { cookie }, payload: {} });
     expect(createResB.statusCode).toBe(201);
     const orderIdB = (createResB.json() as { id: string }).id;
@@ -745,15 +749,21 @@ describe('Draft orders integration', () => {
     expect(addRes.statusCode).toBe(200);
     const lineId = (addRes.json() as { lines: Array<{ id: string }> }).lines[0]!.id;
 
-    // Poison: directly set quantity = 0 via prisma (the public PATCH route uses .positive() which rejects this)
-    await prisma.orderLine.update({ where: { id: lineId }, data: { quantity: 0 } });
+    // (i) DB-level: direct prisma update to quantity = 0 must be rejected by
+    // the OrderLine_quantity_positive_check constraint (migration 0005, WR-01).
+    await expect(
+      prisma.orderLine.update({ where: { id: lineId }, data: { quantity: 0 } }),
+    ).rejects.toThrow();
 
-    const submitPoisonedRes = await app.inject({ method: 'POST', url: `/api/orders/${orderIdB}/submit`, headers: { cookie } });
-    expect(submitPoisonedRes.statusCode).toBe(422);
-    const poisonBody = submitPoisonedRes.json() as { error: { code: string; details: { reason: string; lineId: string } } };
-    expect(poisonBody.error.code).toBe('validation_failed');
-    expect(poisonBody.error.details.reason).toBe('invalid_quantity');
-    expect(poisonBody.error.details.lineId).toBe(lineId);
+    // (ii) Route-level: PATCH with quantity = 0 hits Zod .positive() and 400s.
+    const patchBadRes = await app.inject({
+      method: 'PATCH',
+      url: `/api/orders/${orderIdB}/lines/${lineId}`,
+      headers: { cookie },
+      payload: { quantity: 0 },
+    });
+    expect(patchBadRes.statusCode).toBe(400);
+    expect((patchBadRes.json() as { error: { code: string } }).error.code).toBe('validation_failed');
 
     // Cleanup B
     await prisma.orderLine.deleteMany({ where: { orderId: orderIdB } });
