@@ -110,9 +110,11 @@ export function OrdersTable({ rows, tab, className }: OrdersTableProps) {
             <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide w-[80px]">
               Rader
             </TableHead>
-            <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide w-[80px]">
-              Total
-            </TableHead>
+            {tab !== 'alla' && (
+              <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide w-[80px]">
+                Total
+              </TableHead>
+            )}
             <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               {actorHeader}
             </TableHead>
@@ -151,9 +153,11 @@ export function OrdersTable({ rows, tab, className }: OrdersTableProps) {
                 <TableCell className="px-4 py-3 text-sm">
                   {row.lineCount}
                 </TableCell>
-                <TableCell className="px-4 py-3 text-sm">
-                  {row.totalQuantity}
-                </TableCell>
+                {tab !== 'alla' && (
+                  <TableCell className="px-4 py-3 text-sm">
+                    {row.totalQuantity}
+                  </TableCell>
+                )}
                 <TableCell className="px-4 py-3 text-sm text-muted-foreground">
                   {actorName}
                 </TableCell>
