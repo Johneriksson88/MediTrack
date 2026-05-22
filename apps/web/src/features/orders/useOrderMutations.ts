@@ -319,6 +319,74 @@ export function useConfirmOrder() {
 }
 
 /**
+ * Delivers a Bekräftad order (Bekräftad → Levererad).
+ *
+ * PESSIMISTIC (D-52): waits for server response before updating UI.
+ * D-57: On success, hydrates ['order', orderId] cache with the full updated Order
+ * (including status: 'levererad', deliveredAt, deliveredByUserId, deliveredBy) +
+ * invalidates ['orders', { status: 'bekraftad' }] (source tab loses a row) and
+ * ['orders', { status: 'levererad' }] (destination gains one).
+ * Phase 6 NTF-01 hook: also invalidates ['medications'] so the future low-stock
+ * dashboard banner refetches on every delivery without Phase 4 needing to know about it.
+ *
+ * Toast policy (UI-SPEC §Toast Feedback):
+ *   - Success: toast.success('Levererad — lagret uppdaterat') (D-83)
+ *   - 409 order_transition_invalid: localized toast via ORDER_STATUS_LABELS[details.from] +
+ *     invalidate ['order', orderId] so page re-renders with current server state.
+ *   - 422 validation_failed reason=medication_removed: named-medication toast + invalidate.
+ *   - 404 not_found: 'Beställning hittades inte.' toast.
+ *   - Other error: 'Kunde inte spara — försök igen.'
+ */
+export function useDeliverOrder() {
+  const queryClient = useQueryClient();
+
+  return useMutation<OrderResponse, ApiError, { orderId: string }>({
+    mutationFn: ({ orderId }) =>
+      fetchJson<OrderResponse>(`/api/orders/${orderId}/deliver`, {
+        method: 'POST',
+      }),
+    onSuccess: (response, vars) => {
+      // D-57: cache hydration — response is the full updated levererad Order.
+      queryClient.setQueryData(['order', vars.orderId], response);
+      // Invalidate both status lists (source tab loses, destination gains).
+      void queryClient.invalidateQueries({ queryKey: ['orders', { status: 'bekraftad' }] });
+      void queryClient.invalidateQueries({ queryKey: ['orders', { status: 'levererad' }] });
+      // Phase 6 NTF-01 hook: broad invalidation so the dashboard banner refetches.
+      void queryClient.invalidateQueries({ queryKey: ['medications'] });
+      toast.success('Levererad — lagret uppdaterat');
+    },
+    onError: (err, vars) => {
+      // 409 order_transition_invalid — the order status has changed since load.
+      if (err.envelope.error.code === 'order_transition_invalid') {
+        const details = err.envelope.error.details as { from: OrderStatus };
+        toast.error(
+          `Beställningen har redan ${ORDER_STATUS_LABELS[details.from]}.`,
+        );
+        void queryClient.invalidateQueries({ queryKey: ['order', vars.orderId] });
+        return;
+      }
+      // 422 validation_failed reason=medication_removed
+      if (err.envelope.error.code === 'validation_failed') {
+        const details = err.envelope.error.details as { reason: string; medicationName?: string };
+        if (details.reason === 'medication_removed' && details.medicationName) {
+          toast.error(
+            `${details.medicationName} har tagits bort — återställ läkemedlet i registret innan leverans.`,
+          );
+          return;
+        }
+      }
+      // 404 not_found
+      if (err.envelope.error.code === 'not_found') {
+        toast.error('Beställning hittades inte.');
+        return;
+      }
+      // Other errors
+      toast.error('Kunde inte spara — försök igen.');
+    },
+  });
+}
+
+/**
  * Soft-deletes a draft order (Kasta utkast, D-67).
  *
  * PESSIMISTIC (D-52): waits for the 204 response before navigating.

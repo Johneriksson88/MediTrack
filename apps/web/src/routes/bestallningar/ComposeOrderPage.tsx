@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, ClipboardList } from 'lucide-react';
+import { ChevronLeft, ClipboardList, Clock, CheckCircle2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { EmptyStateCard } from '@/components/EmptyStateCard';
@@ -8,7 +8,7 @@ import { OrderStatusPill } from '@/components/OrderStatusPill';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Can } from '@/auth/Can';
 import { useOrderQuery } from '@/features/orders/useOrderQueries';
-import { useSubmitOrder, useDiscardOrder, useConfirmOrder } from '@/features/orders/useOrderMutations';
+import { useSubmitOrder, useDiscardOrder, useConfirmOrder, useDeliverOrder } from '@/features/orders/useOrderMutations';
 import { useCan } from '@/auth/useCan';
 import { useDocumentTitle } from '@/lib/useDocumentTitle';
 import { OrderLineTable } from './OrderLineTable';
@@ -17,7 +17,9 @@ import { MedicationPickerSheet } from './MedicationPickerSheet';
 import { ComposeStickyFooter } from './ComposeStickyFooter';
 import { SubmitConfirmationBanner } from './SubmitConfirmationBanner';
 import { DiscardDraftDialog } from './DiscardDraftDialog';
+import { DeliverConfirmDialog } from './DeliverConfirmDialog';
 import { ApotekareActionFooter } from './ApotekareActionFooter';
+import { OrderActorTrail } from './OrderActorTrail';
 
 /**
  * Phase 3 D-50 / D-67 / D-68 / D-71 / UI-SPEC §4 — Compose Order page.
@@ -56,11 +58,14 @@ export function ComposeOrderPage() {
   const orderQuery = useOrderQuery(id);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
+  const [deliverDialogOpen, setDeliverDialogOpen] = useState(false);
 
   const submitMutation = useSubmitOrder();
   const discardMutation = useDiscardOrder();
   const confirmMutation = useConfirmOrder();
+  const deliverMutation = useDeliverOrder();
   const canConfirm = useCan('order:confirm');
+  const canDeliver = useCan('order:deliver');
 
   const order = orderQuery.data;
   const isLoading = orderQuery.isLoading;
@@ -174,6 +179,140 @@ export function ComposeOrderPage() {
   // inside this tree get the provider for free.
   // ── Mode B/C/D/E — non-utkast (locked, read-only + optional action) ─────────
   if (isLocked) {
+    // Shared read-only line list used by all locked modes
+    const readOnlyLines = (
+      <>
+        <OrderLineTable
+          items={order.lines}
+          orderId={order.id}
+          isLocked={true}
+          className="hidden md:block"
+        />
+        <OrderLineCardList
+          items={order.lines}
+          orderId={order.id}
+          isLocked={true}
+          className="block md:hidden"
+        />
+      </>
+    );
+
+    // ── Mode D: Bekräftad ──────────────────────────────────────────────────────
+    if (isBekraftad) {
+      return (
+        <TooltipProvider>
+          <div className="flex flex-col gap-4 p-4 md:p-6 lg:p-8 pb-[calc(var(--mode-d-padding,0px)+1rem)]">
+            {header}
+
+            {/* Mode D status banner (Clock icon, blue tint) */}
+            <div
+              className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30"
+              role="status"
+            >
+              <Clock className="mt-0.5 h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400" aria-hidden="true" />
+              <p className="text-sm text-blue-800 dark:text-blue-200">
+                Beställningen är bekräftad — väntar på leverans.
+              </p>
+            </div>
+
+            {readOnlyLines}
+
+            {/* Mode D action: Markera som levererad (apotekare/admin only) */}
+            {canDeliver && (
+              <Can action="order:deliver">
+                <ApotekareActionFooter
+                  label="Markera som levererad"
+                  onClick={() => setDeliverDialogOpen(true)}
+                  isPending={deliverMutation.isPending}
+                  loadingLabel="Levererar…"
+                />
+              </Can>
+            )}
+
+            {/* Actor trail — partial (deliveredBy is null in Mode D) */}
+            <OrderActorTrail
+              createdBy={order.createdBy}
+              createdAt={order.createdAt}
+              submittedBy={order.submittedBy}
+              submittedAt={order.submittedAt}
+              confirmedBy={order.confirmedBy ?? null}
+              confirmedAt={order.confirmedAt ?? null}
+              deliveredBy={order.deliveredBy ?? null}
+              deliveredAt={order.deliveredAt ?? null}
+            />
+
+            {/* DeliverConfirmDialog — only mounted when canDeliver (sjuksköterska sees no dialog) */}
+            {canDeliver && (
+              <DeliverConfirmDialog
+                open={deliverDialogOpen}
+                onOpenChange={setDeliverDialogOpen}
+                isDelivering={deliverMutation.isPending}
+                onConfirm={async () => {
+                  try {
+                    await deliverMutation.mutateAsync({ orderId: order.id });
+                    // Success: cache hydration flips page to Mode E; close dialog.
+                    setDeliverDialogOpen(false);
+                  } catch (err: unknown) {
+                    // Determine if this is an expected error (409/422/404) or generic.
+                    const apiErr = err as { envelope?: { error?: { code?: string } } };
+                    const code = apiErr?.envelope?.error?.code;
+                    if (
+                      code === 'order_transition_invalid' ||
+                      code === 'validation_failed' ||
+                      code === 'not_found'
+                    ) {
+                      // Expected errors: close dialog (toast already fired in mutation hook).
+                      setDeliverDialogOpen(false);
+                    }
+                    // Generic errors: dialog stays open so user can retry (UI-SPEC §3 step 5).
+                    // The mutation hook already fired a generic toast.
+                  }
+                }}
+              />
+            )}
+          </div>
+        </TooltipProvider>
+      );
+    }
+
+    // ── Mode E: Levererad (terminal, read-only) ────────────────────────────────
+    if (isLevererad) {
+      return (
+        <TooltipProvider>
+          <div className="flex flex-col gap-4 p-4 md:p-6 lg:p-8">
+            {header}
+
+            {/* Mode E status banner (CheckCircle2 icon, emerald palette) */}
+            <div
+              className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-950/30"
+              role="status"
+            >
+              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+              <p className="text-sm text-emerald-800 dark:text-emerald-200">
+                Beställningen är levererad — lagret uppdaterat.
+              </p>
+            </div>
+
+            {readOnlyLines}
+
+            {/* Full actor trail (all four segments) */}
+            <OrderActorTrail
+              createdBy={order.createdBy}
+              createdAt={order.createdAt}
+              submittedBy={order.submittedBy}
+              submittedAt={order.submittedAt}
+              confirmedBy={order.confirmedBy ?? null}
+              confirmedAt={order.confirmedAt ?? null}
+              deliveredBy={order.deliveredBy ?? null}
+              deliveredAt={order.deliveredAt ?? null}
+            />
+            {/* Mode E is terminal — NO action button, NO DeliverConfirmDialog (D-76, D-83). */}
+          </div>
+        </TooltipProvider>
+      );
+    }
+
+    // ── Mode B (Skickad) / Mode C (Skickad + apotekare) ───────────────────────
     return (
       <TooltipProvider>
         <div className="flex flex-col gap-4 p-4 md:p-6 lg:p-8 pb-[calc(var(--mode-c-padding,0px)+1rem)]">
@@ -188,18 +327,7 @@ export function ComposeOrderPage() {
           />
 
           {/* Read-only line list (isLocked=true: no trash, QuantityStepper shows static span) */}
-          <OrderLineTable
-            items={order.lines}
-            orderId={order.id}
-            isLocked={true}
-            className="hidden md:block"
-          />
-          <OrderLineCardList
-            items={order.lines}
-            orderId={order.id}
-            isLocked={true}
-            className="block md:hidden"
-          />
+          {readOnlyLines}
 
           {/* Mode C — Skickad order + apotekare/admin: show Bekräfta beställning button.
               <Can> is the FE UX gate (defense in depth); requirePermission on the BE
