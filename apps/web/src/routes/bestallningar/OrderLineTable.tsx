@@ -10,7 +10,6 @@ import {
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
@@ -45,8 +44,11 @@ interface OrderLineTableProps {
 export function OrderLineTable({ items, orderId, isLocked, className }: OrderLineTableProps) {
   const removeLineMutation = useRemoveOrderLine();
 
+  // WR-06: TooltipProvider is hoisted to ComposeOrderPage (the route wrapper)
+  // so this component and ComposeStickyFooter share a single provider instead
+  // of stacking two tooltip portals + scroll-lock observers per render.
   return (
-    <TooltipProvider>
+    <>
       <div className={`overflow-x-auto ${className ?? ''}`}>
         <Table>
           <TableHeader>
@@ -140,6 +142,6 @@ export function OrderLineTable({ items, orderId, isLocked, className }: OrderLin
           </TableBody>
         </Table>
       </div>
-    </TooltipProvider>
+    </>
   );
 }

@@ -5,6 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { EmptyStateCard } from '@/components/EmptyStateCard';
 import { OrderStatusPill } from '@/components/OrderStatusPill';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { Can } from '@/auth/Can';
 import { useOrderQuery } from '@/features/orders/useOrderQueries';
 import { useSubmitOrder, useDiscardOrder } from '@/features/orders/useOrderMutations';
@@ -154,39 +155,46 @@ export function ComposeOrderPage() {
     </>
   );
 
+  // WR-06: hoist a single TooltipProvider for the whole route so OrderLineTable
+  // and ComposeStickyFooter share one provider context (one tooltip portal +
+  // one scroll-lock observer instead of two stacked). Phase 4 components added
+  // inside this tree get the provider for free.
   // ── Mode B — non-utkast (locked, read-only) ────────────────────────────────
   if (isLocked) {
     return (
-      <div className="flex flex-col gap-4 p-4 md:p-6 lg:p-8">
-        {header}
+      <TooltipProvider>
+        <div className="flex flex-col gap-4 p-4 md:p-6 lg:p-8">
+          {header}
 
-        {/* SubmitConfirmationBanner: role="status" announces on mount (D-68 / UI-SPEC §12) */}
-        <SubmitConfirmationBanner />
+          {/* SubmitConfirmationBanner: role="status" announces on mount (D-68 / UI-SPEC §12) */}
+          <SubmitConfirmationBanner />
 
-        {/* Read-only line list (isLocked=true: no trash, QuantityStepper shows static span) */}
-        <OrderLineTable
-          items={order.lines}
-          orderId={order.id}
-          isLocked={true}
-          className="hidden md:block"
-        />
-        <OrderLineCardList
-          items={order.lines}
-          orderId={order.id}
-          isLocked={true}
-          className="block md:hidden"
-        />
-      </div>
+          {/* Read-only line list (isLocked=true: no trash, QuantityStepper shows static span) */}
+          <OrderLineTable
+            items={order.lines}
+            orderId={order.id}
+            isLocked={true}
+            className="hidden md:block"
+          />
+          <OrderLineCardList
+            items={order.lines}
+            orderId={order.id}
+            isLocked={true}
+            className="block md:hidden"
+          />
+        </div>
+      </TooltipProvider>
     );
   }
 
   // ── Mode A — utkast (editable) ─────────────────────────────────────────────
   return (
-    <div
-      className="flex flex-col gap-4 p-4 md:p-6 lg:p-8
-                 pb-[calc(56px+56px+env(safe-area-inset-bottom))] md:pb-8"
-    >
-      {header}
+    <TooltipProvider>
+      <div
+        className="flex flex-col gap-4 p-4 md:p-6 lg:p-8
+                   pb-[calc(56px+56px+env(safe-area-inset-bottom))] md:pb-8"
+      >
+        {header}
 
       {/* Line list */}
       <OrderLineTable
@@ -260,6 +268,7 @@ export function ComposeOrderPage() {
         }}
         isSubmitting={submitMutation.isPending}
       />
-    </div>
+      </div>
+    </TooltipProvider>
   );
 }

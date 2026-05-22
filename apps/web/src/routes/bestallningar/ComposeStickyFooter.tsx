@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Can } from '@/auth/Can';
@@ -68,8 +67,11 @@ export function ComposeStickyFooter({
     </Button>
   );
 
+  // WR-06: TooltipProvider is hoisted to ComposeOrderPage (the route wrapper)
+  // so this component and OrderLineTable share a single provider instead of
+  // stacking two tooltip portals + scroll-lock observers per render.
   return (
-    <TooltipProvider>
+    <>
       {/* ── Mobile footer (<md) ── */}
       <footer
         className="fixed bottom-0 left-0 right-0 z-40 bg-background border-t border-border shadow-[0_-1px_3px_rgba(0,0,0,0.05)] p-4 pb-[calc(1rem+56px+env(safe-area-inset-bottom))] md:hidden"
@@ -154,6 +156,6 @@ export function ComposeStickyFooter({
           </Can>
         </div>
       </footer>
-    </TooltipProvider>
+    </>
   );
 }
