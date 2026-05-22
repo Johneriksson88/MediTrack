@@ -520,6 +520,69 @@ describe('Draft orders — Slice 3 API contracts', () => {
     expect(res.statusCode).toBe(401);
     expect(res.json().error.code).toBe('unauthenticated');
   });
+
+  it('(i) CR-01: POST /api/orders/:id/lines with a CareUnitMedication id from another vårdenhet returns 404 (not 403) — never inserts the line', async () => {
+    // Seed a second CareUnit B with at least one CareUnitMedication
+    // distinct from CareUnit A's set.
+    const CARE_UNIT_B_ID = 'careunit-test-b-cr01';
+    const USER_B_EMAIL = 'sjukskoterska-b-cr01@example.test';
+    const { hashPassword } = await import('../src/auth/password.js');
+    const passwordHash = await hashPassword('demo1234');
+
+    await prisma.careUnit.upsert({
+      where: { id: CARE_UNIT_B_ID },
+      update: { name: 'Test Unit B (CR-01)' },
+      create: { id: CARE_UNIT_B_ID, name: 'Test Unit B (CR-01)' },
+    });
+    await prisma.user.upsert({
+      where: { email: USER_B_EMAIL },
+      update: { name: 'User B CR01', role: 'sjukskoterska', careUnitId: CARE_UNIT_B_ID, passwordHash },
+      create: { email: USER_B_EMAIL, name: 'User B CR01', role: 'sjukskoterska', careUnitId: CARE_UNIT_B_ID, passwordHash },
+    });
+
+    // Create a CareUnitMedication owned by CareUnit B. Reuses any existing
+    // Medication so we don't need to seed a new NPL row.
+    const anyMedication = await prisma.medication.findFirst();
+    if (!anyMedication) throw new Error('No Medication seeded — run seed first');
+    const cumB = await prisma.careUnitMedication.upsert({
+      where: { careUnitId_medicationId: { careUnitId: CARE_UNIT_B_ID, medicationId: anyMedication.id } },
+      update: { deletedAt: null },
+      create: {
+        careUnitId: CARE_UNIT_B_ID,
+        medicationId: anyMedication.id,
+        currentStock: 10,
+        lowStockThreshold: 1,
+      },
+    });
+
+    // User A creates a draft order in CareUnit A and attempts to add a line
+    // referencing CareUnit B's CUM id. The FK accepts it; the service must reject.
+    const cookieA = await loginAs(TEST_SJUKSKOTERSKA);
+    const orderA = await createEmptyOrder(cookieA);
+
+    const addRes = await app.inject({
+      method: 'POST',
+      url: `/api/orders/${orderA.id}/lines`,
+      headers: { cookie: cookieA },
+      payload: { careUnitMedicationId: cumB.id, quantity: 1 },
+    });
+
+    // D-73: 404 (not 403) to avoid existence-probing across tenants.
+    expect(addRes.statusCode).toBe(404);
+    const body = addRes.json() as { error: { code: string } };
+    expect(body.error.code).toBe('not_found');
+    expect(body.error.code).not.toBe('forbidden');
+
+    // Verify NO line was created — the order must still have 0 lines.
+    const reloaded = await prisma.order.findUnique({
+      where: { id: orderA.id },
+      include: { lines: true },
+    });
+    expect(reloaded?.lines).toHaveLength(0);
+
+    // Cleanup
+    await prisma.order.delete({ where: { id: orderA.id } });
+  });
 });
 
 // ---------------------------------------------------------------------------

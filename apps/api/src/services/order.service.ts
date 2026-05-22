@@ -250,6 +250,14 @@ export async function getOrderForUnit(
  * locked (non-utkast) orders. If count === 0, reloads to distinguish
  * NotFoundError from OrderLockedError.
  *
+ * CR-01 / T-03-01: Validates that the requested CareUnitMedication belongs
+ * to the caller's careUnit before insert. The FK constraint alone is
+ * insufficient — it accepts any CareUnitMedication id, including rows owned
+ * by other vårdenheter, which would (a) leak cross-tenant medication metadata
+ * via the denormalized GET response and (b) break Phase 4's stock-decrement
+ * by pointing the line at the wrong stock row. D-73: returns 404 (not 403)
+ * to avoid existence-probing across tenants.
+ *
  * Returns the full updated Order (D-57 pattern — FE cache hydrates atomically).
  */
 export async function addLineToOrder(
@@ -258,6 +266,18 @@ export async function addLineToOrder(
   lineData: { careUnitMedicationId: string; quantity: number },
 ): Promise<OrderResponse> {
   await assertOrderEditable(careUnitId, orderId);
+
+  // CR-01: scope-check the CareUnitMedication before insert. The FK accepts
+  // any existing CUM id; we must enforce careUnitId equality at the service
+  // boundary (D-16 last-line-of-defense pattern). D-73: 404 on cross-tenant
+  // (and on soft-deleted / missing) so we don't leak existence.
+  const cum = await prisma.careUnitMedication.findUnique({
+    where: { id: lineData.careUnitMedicationId },
+    select: { careUnitId: true, deletedAt: true },
+  });
+  if (!cum || cum.deletedAt !== null || cum.careUnitId !== careUnitId) {
+    throw new NotFoundError('Läkemedlet hittades inte i din vårdenhets register.');
+  }
 
   await prisma.orderLine.create({
     data: {
