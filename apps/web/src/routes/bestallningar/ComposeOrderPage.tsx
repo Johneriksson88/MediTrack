@@ -166,8 +166,13 @@ export function ComposeOrderPage() {
         <div className="flex flex-col gap-4 p-4 md:p-6 lg:p-8">
           {header}
 
-          {/* SubmitConfirmationBanner: role="status" announces on mount (D-68 / UI-SPEC §12) */}
-          <SubmitConfirmationBanner />
+          {/* SubmitConfirmationBanner: role="status" announces on the
+              in-session submit transition only (WR-08 — submitMutation.isSuccess
+              distinguishes "just submitted" from "loaded a skickad order"). */}
+          <SubmitConfirmationBanner
+            status={order.status}
+            justSubmitted={submitMutation.isSuccess}
+          />
 
           {/* Read-only line list (isLocked=true: no trash, QuantityStepper shows static span) */}
           <OrderLineTable

@@ -157,16 +157,26 @@ function makeIdleMutation() {
   };
 }
 
-function setupMutations(removeFn = vi.fn(), submitFn = vi.fn(), discardFn = vi.fn()) {
+function setupMutations(
+  removeFn = vi.fn(),
+  submitFn = vi.fn(),
+  discardFn = vi.fn(),
+  submitIsSuccess = false,
+) {
   mockUseAddOrderLine.mockReturnValue(makeIdleMutation() as unknown as ReturnType<typeof useAddOrderLine>);
   mockUseUpdateOrderLineQuantity.mockReturnValue(makeIdleMutation() as unknown as ReturnType<typeof useUpdateOrderLineQuantity>);
   mockUseRemoveOrderLine.mockReturnValue({
     ...makeIdleMutation(),
     mutate: removeFn,
   } as unknown as ReturnType<typeof useRemoveOrderLine>);
+  // WR-08: submit mutation's isSuccess flag drives SubmitConfirmationBanner
+  // visibility. Tests that simulate "user just submitted" pass submitIsSuccess=true.
   mockUseSubmitOrder.mockReturnValue({
     ...makeIdleMutation(),
     mutateAsync: submitFn,
+    isSuccess: submitIsSuccess,
+    isIdle: !submitIsSuccess,
+    status: submitIsSuccess ? 'success' : 'idle',
   } as unknown as ReturnType<typeof useSubmitOrder>);
   mockUseDiscardOrder.mockReturnValue({
     ...makeIdleMutation(),
@@ -315,8 +325,10 @@ describe('ComposeOrderPage', () => {
     });
   });
 
-  describe('(7) Mode B placeholder when order.status === "skickad"', () => {
-    it('renders "Beställningen är skickad" banner and hides sticky footer', () => {
+  describe('(7) Mode B placeholder when order.status === "skickad" (post-submit)', () => {
+    it('renders "Beställningen är skickad" banner + hides sticky footer when submit just succeeded', () => {
+      // WR-08: pass submitIsSuccess=true so SubmitConfirmationBanner renders.
+      setupMutations(vi.fn(), vi.fn(), vi.fn(), /* submitIsSuccess */ true);
       setupOrderQuery(MOCK_ORDER_SKICKAD);
 
       renderComposeOrderPage();
@@ -333,12 +345,30 @@ describe('ComposeOrderPage', () => {
     });
   });
 
+  describe('(7b) WR-08 — deep-link to a Skickad order does NOT show the role=status banner', () => {
+    it('omits SubmitConfirmationBanner when submitMutation.isSuccess is false (page load case)', () => {
+      // Default setupMutations passes submitIsSuccess=false — the page-load case.
+      setupOrderQuery(MOCK_ORDER_SKICKAD);
+
+      renderComposeOrderPage();
+
+      // The banner role="status" must NOT be in the DOM — otherwise ATs that
+      // skip role=status on initial render would silently drop the announcement.
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      expect(screen.queryByText(/beställningen är skickad till apotekare/i)).not.toBeInTheDocument();
+
+      // Status pill should still appear (Mode B layout otherwise unchanged).
+      expect(screen.getByText('Skickad')).toBeInTheDocument();
+    });
+  });
+
   // ---------------------------------------------------------------------------
   // Slice 4 tests
   // ---------------------------------------------------------------------------
 
-  describe('(8) Mode B renders with SubmitConfirmationBanner + OrderStatusPill + no footer', () => {
+  describe('(8) Mode B renders with SubmitConfirmationBanner + OrderStatusPill + no footer (post-submit)', () => {
     it('shows banner, "Skickad" pill, read-only lines, and hides sticky footer', () => {
+      setupMutations(vi.fn(), vi.fn(), vi.fn(), /* submitIsSuccess */ true);
       setupOrderQuery(MOCK_ORDER_SKICKAD);
 
       renderComposeOrderPage();
