@@ -1,3 +1,4 @@
+import type { Session } from '@prisma/client';
 import type { LoginResponse } from '@meditrack/shared';
 import { prisma } from '../db/client.js';
 import { verifyPassword } from '../auth/password.js';
@@ -117,12 +118,18 @@ export async function login(
     store.actionOverride = 'auth.login';
   }
 
-  const session = await createSession(user.id, user.careUnitId);
-
-  // Clear the override so it doesn't bleed into any subsequent mutation
-  // in this same request.
-  if (store) {
-    store.actionOverride = undefined;
+  // WR-05 — wrap createSession in try/finally so actionOverride is cleared
+  // even if it throws (DB error, unique constraint, etc.). Mirrors the
+  // logout() pattern below and the withActionOverride helper convention.
+  let session: Session;
+  try {
+    session = await createSession(user.id, user.careUnitId);
+  } finally {
+    // Clear the override so it doesn't bleed into any subsequent mutation
+    // in this same request.
+    if (store) {
+      store.actionOverride = undefined;
+    }
   }
 
   // Shape strips passwordHash explicitly (T-01-07) and matches loginResponse.
