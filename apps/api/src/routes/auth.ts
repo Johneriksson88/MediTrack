@@ -88,6 +88,18 @@ export async function authRoutes(app: FastifyInstance) {
         // is fully preserved.
         const session = await findSessionById(unsigned.value);
         if (session !== null) {
+          // WR-02 — relying on the Session.userId → User.id ON DELETE CASCADE
+          // invariant (see apps/api/prisma/schema.prisma). The lighter path
+          // taken here trusts the FK: we do NOT issue a second findUnique on
+          // User to verify session.userId still resolves (that would compound
+          // WR-01's 1-read + 1-write into 2-reads + 1-write per logout). If a
+          // future schema change loosens this FK (e.g., ON DELETE SET NULL or
+          // dropping the constraint), setActor here would attribute the
+          // auth.logout audit row to a non-existent User.id — the audit
+          // table's actor JOIN would silently return null with no diagnostic.
+          // TODO: assert the FK CASCADE policy in a startup health check so
+          // a schema regression fails loudly at boot rather than silently
+          // corrupting audit attribution.
           setActor(session.userId, session.careUnitId, req.ip ?? null);
         }
         await logout(unsigned.value);
