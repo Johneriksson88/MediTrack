@@ -1,465 +1,594 @@
 ---
-phase: 05-audit-log
-reviewed: 2026-05-22T18:30:00Z
+phase: 05-audit-log-gap-closure
+reviewed: 2026-05-22T21:00:00Z
 depth: standard
-files_reviewed: 39
+files_reviewed: 10
 files_reviewed_list:
-  - apps/api/prisma/migrations/20260522181022_0007_audit_events/migration.sql
-  - apps/api/prisma/migrations/20260522181023_0008_audit_events_revoke_grants/migration.sql
-  - apps/api/prisma/schema.prisma
-  - apps/api/prisma/seed.ts
-  - apps/api/src/app.ts
-  - apps/api/src/auth/permissions.ts
-  - apps/api/src/auth/requireSession.ts
-  - apps/api/src/db/auditAllowlist.ts
+  - README.md
+  - apps/api/prisma/migrations/20260522210000_0009_audit_events_purge_orphans/migration.sql
   - apps/api/src/db/auditExtension.ts
+  - apps/api/src/db/client.ts
+  - apps/api/src/plugins/errorHandler.ts
   - apps/api/src/plugins/requestContext.ts
-  - apps/api/src/routes/audit/filters.ts
-  - apps/api/src/routes/audit/index.ts
-  - apps/api/src/routes/audit/list.ts
+  - apps/api/src/routes/auth.ts
   - apps/api/src/services/audit.service.ts
   - apps/api/src/services/auth.service.ts
-  - apps/api/src/services/order.service.ts
   - apps/api/test/audit.integration.test.ts
-  - apps/api/test/auth.flow.smoke.test.ts
-  - apps/api/test/helpers/buildTestApp.ts
-  - apps/api/test/orders.confirm.integration.test.ts
-  - apps/api/test/orders.integration.test.ts
-  - apps/api/test/orders.list.integration.test.ts
-  - apps/web/src/components/AuditActionChip.tsx
-  - apps/web/src/components/AuditEntityTypeChip.tsx
-  - apps/web/src/components/EmptyStateCard.tsx
-  - apps/web/src/components/RequestIdGroupChip.tsx
-  - apps/web/src/routes/admin/AuditCardList.tsx
-  - apps/web/src/routes/admin/AuditDiffPanel.tsx
-  - apps/web/src/routes/admin/AuditEventCard.tsx
-  - apps/web/src/routes/admin/AuditFilterBar.tsx
-  - apps/web/src/routes/admin/AuditPage.tsx
-  - apps/web/src/routes/admin/AuditTable.tsx
-  - apps/web/src/routes/admin/auditDiffSummary.ts
-  - apps/web/src/routes/admin/useAuditEventsQuery.ts
-  - apps/web/src/routes/admin/useAuditFiltersQuery.ts
-  - packages/shared/src/constants/auditAction.ts
   - packages/shared/src/constants/auditEntityType.ts
-  - packages/shared/src/contracts/audit.ts
-  - packages/shared/src/contracts/permissions.ts
-  - packages/shared/src/index.ts
 findings:
   critical: 4
-  warning: 10
-  info: 7
-  total: 21
+  warning: 9
+  info: 5
+  total: 18
 status: issues_found
 ---
 
-# Phase 5: Code Review Report
+# Phase 5 Gap Closure: Code Review Report (Plans 05-04 + 05-05)
 
-**Reviewed:** 2026-05-22T18:30:00Z
+**Reviewed:** 2026-05-22T21:00:00Z
 **Depth:** standard
-**Files Reviewed:** 39
+**Files Reviewed:** 10 (gap-closure diff vs base `5dd2015`)
 **Status:** issues_found
 
 ## Summary
 
-Phase 5 (audit log) is a feature-complete, well-documented implementation with strong threat-model intent: a Prisma `$extends` middleware feeds an append-only audit table, the schema/migrations enforce append-only at the DB role layer, an allowlist scrubs `passwordHash` and `Session.id` from snapshots, and an admin-only `/api/audit/events` endpoint exposes cursor-paginated reads with redaction-asserting integration tests.
+Plans 05-04 + 05-05 set out to close CR-01 (D-91 same-tx audit contract), CR-02
+(cursor error taxonomy), CR-04 (logout actor attribution), and WR-07 (failed-login
+entityType). The executor closed the surface symptom of CR-01 with a real
+regression test, fixed CR-02 and CR-04 cleanly, and addressed WR-07 partially.
 
-Adversarial review surfaces four BLOCKER issues that defeat key Phase 5 contracts:
+**However, the deviation from the planned `Prisma.getExtensionContext(this)`
+approach to an "activeTx ALS slot + runtime `patchTransactionForAudit`" pattern
+introduces new race + nesting hazards that the regression test does not cover.**
+The current single-threaded happy path passes; nested or concurrent
+`prisma.$transaction(...)` calls within the same request will corrupt audit
+attribution and re-introduce the very orphan-row class of bug that 05-04
+purportedly closes. Migration 0009 also documents itself as idempotent when
+it is in fact destructive on re-run, and WR-07's fix only updated one of the
+two failed-login branches, leaving the audit taxonomy internally inconsistent.
 
-1. **The "same transaction" guarantee (D-91) does not actually hold.** The `$extends` audit extension writes audit rows via the captured base `client.auditEvent.create(...)` and reads `before`/`after` snapshots via `client.<model>.findUnique(...)`. None of these calls receive the transactional client; they execute outside any `prisma.$transaction` block the caller is in. A failed deliver after a successful stock.increment will commit orphan audit rows, and the audit row for an updateMany may capture stale `before`/`after` data. Tests do not catch this — the one "rolled-back" test fails before any audit-write is attempted.
-2. **Audit row inserts are NOT intercepted, so the trigger never fires on the create path** — that part is fine, but the `prisma.auditEvent.create({...})` calls in `auth.service.ts` bypass the extension entirely (they are intercepted only if `auditEvent` were in `AUDITED_MODELS`, which it is not). Acceptable. However, the explicit `prisma.auditEvent.create` calls in `auth.service.ts` go through the audit extension's lifecycle interceptors as a side-effect: a `create` against `auditEvent` is never registered (it's not an audited model), so the call is direct. OK.
-3. **Cursor-decode error reports the wrong reason code** (`invalid_quantity`) to clients, leaking a copy-paste from order validation and breaking any FE that switches on `details.reason`.
-4. **`resetSessions()` in test setup is a `prisma.session.deleteMany({})` call that runs through the audit extension.** Because the test's `beforeEach` is not wrapped in `als.run(...)` and the test imports `prisma` directly (no HTTP onRequest hook), `als.getStore()` returns undefined and the audit middleware skips, which is correct — but the deleteMany handler still runs a `findMany({})` on the entire Session table before delegating. For the audit integration test, that's a per-test full Session scan (cheap today; surprising). More importantly, the actual app code path `destroySession(id)` uses `deleteMany` instead of `delete`, which means logout audit rows have to be written by the `deleteMany` handler iterating beforeRows. That part works in HTTP context, but breaks the `entityId` for logout in a subtle way (see CR-04).
+Four BLOCKERs, nine WARNINGs, five INFOs.
 
 ## Critical Issues
 
-### CR-01: Audit extension does NOT run inside the caller's transaction — D-91 rollback contract is broken
+### CR-01: `patchTransactionForAudit` does not save/restore `activeTx` — nested or sibling transactions corrupt audit attribution
 
-**File:** `apps/api/src/db/auditExtension.ts:90-256` (entire factory) and `apps/api/src/db/auditExtension.ts:299` (`client.auditEvent.create`)
+**File:** `apps/api/src/db/auditExtension.ts:344-385` (the `$transaction` patch)
 
-**Issue:** `buildAuditExtension()` captures the base `client` argument from `Prisma.defineExtension((client) => ...)`. Inside the per-model handler, both the `before`/`after` row loads (`client.<model>.findUnique`, `client.<model>.findMany`) AND the audit-row insert (`client.auditEvent.create({ data })`) are made against this captured base client — NOT against the transactional client that the wrapping `prisma.$transaction(async (tx) => tx.x.y(...))` provides. The Prisma extension API only routes the user-facing `query(args)` callable through the active tx; sibling client.* calls inside an extension handler run on the root connection pool.
+**Issue:** The runtime patch sets `store.activeTx = tx` before the user callback
+and clears it with `store.activeTx = undefined` in `finally`. This is asymmetric
+with the proven `withActionOverride` pattern in the same codebase
+(`requestContext.ts:118-126`), which saves `previous = store.actionOverride`
+and restores it in `finally`. The asymmetry creates two real failure modes:
 
-Consequences:
-- **Orphan audit rows on rollback.** If a `tx.careUnitMedication.update(...)` inside `deliverOrder` succeeds but a later step (e.g. the `tx.order.updateMany` race-loss branch on line 749-762) throws, the wrapping tx rolls back the CUM update — but the audit row written via `client.auditEvent.create` was committed on a separate connection and is now an orphan claiming a stock change that never happened. This is the exact opposite of D-91's stated promise ("the audit log doesn't lie").
-- **Stale `before` snapshot for `update` inside an active tx.** If a row has already been modified earlier in the same tx (e.g., `tx.order.update` followed by `tx.order.update`), the second handler's `client.order.findUnique({where})` reads from a separate connection and sees the pre-tx state, NOT the in-tx intermediate state. `before`/`after` end up describing the wrong delta.
-- **Test coverage gap.** `audit.integration.test.ts:129-153` claims to verify D-91 by checking that an empty submit (422) produces zero `order.submit` audit rows. But the empty-submit path throws `ValidationFailedError` BEFORE reaching `withActionOverride('order.submit', () => tx.order.updateMany(...))` — no audit-write is attempted at all, so the test passes vacuously regardless of whether the extension is transactional.
+1. **Nested `$transaction` clobbers the outer tx slot.** If any service ever
+   does `prisma.$transaction(async (outer) => { ... await prisma.$transaction(async (inner) => {...}); ... })`,
+   the inner patch invocation overwrites `store.activeTx = inner`, then on
+   inner-finally sets `store.activeTx = undefined`. The outer block's
+   *remaining* mutations (the `... ` after the inner finishes) then resolve
+   `activeClient = store.activeTx ?? client === client` — back to the **root
+   pool**. We have just re-introduced the original CR-01 orphan-audit-row
+   bug for the outer tx's tail mutations.
 
-**Fix:** Prisma query extensions cannot natively access the active tx client from sibling calls. The supported patterns are:
-1. Use the `$allOperations` middleware-style hook with `Prisma.getExtensionContext(this)` to discover the current tx client (Prisma 5.x), OR
-2. Switch from `$extends({query})` to the deprecated `$use` middleware (which DOES receive the tx context), OR
-3. Refactor so all audit writes happen inside a wrapper that takes an explicit `tx`:
-```typescript
-// In services that need audit guarantees:
-await prisma.$transaction(async (tx) => {
-  const before = await tx.order.findUnique({where});
-  const updated = await tx.order.updateMany({where, data});
-  await tx.auditEvent.create({data: {...filterAllowlist('Order', before), ...}});
-});
-```
-At minimum, add a regression test that performs a mutation inside a tx that THROWS AFTER the mutation has run (not before), then asserts zero audit rows survived. The current test does not exercise this path.
+2. **Concurrent sibling `$transaction` calls within the same request share
+   one slot.** `als.enterWith` produces a single mutable store per request
+   (see also CR-04 below). If any code does
+   `await Promise.all([prisma.$transaction(fnA), prisma.$transaction(fnB)])`,
+   both patches race on the same `store.activeTx` slot. The second push
+   clobbers the first, then either finally sets it back to `undefined`,
+   pulling the rug out from under audit writes that are still in flight
+   in the other branch.
 
----
-
-### CR-02: Cursor decode error returns misleading `reason: 'invalid_quantity'`
-
-**File:** `apps/api/src/services/audit.service.ts:84-88`
-
-**Issue:** When `decodeCursor` fails (bad base64, malformed JSON, missing fields, invalid date), the catch handler throws:
-```typescript
-throw new ValidationFailedError('Ogiltig cursor.', {
-  reason: 'invalid_quantity',
-});
-```
-`invalid_quantity` is the canonical reason code for order-line validation failures (`order.service.ts:451`). A client that branches on `details.reason` to choose a Swedish error toast (mirroring the pattern Phase 3 set for `empty_order` / `invalid_quantity`) will render the wrong message. This is a copy-paste bug that leaks order-validation taxonomy into the audit subsystem and confuses any future structured error handling.
+The fix exposes the design flaw the executor's SUMMARY admits: D-91 spec'd a
+**per-call-bound** context (`Prisma.getExtensionContext(this)`); the
+implementation substitutes a **shared mutable slot**. These are not
+"functionally equivalent" — they have different concurrency contracts. Today
+no service nests transactions or runs them in parallel, so the contract
+violation is latent — but the Plan 05-04 SUMMARY claims D-91 "now holds in
+code", which is only true under the unverified assumption that no future
+caller nests or parallelizes.
 
 **Fix:**
+1. Save/restore symmetrically:
 ```typescript
-throw new ValidationFailedError('Ogiltig cursor.', {
-  reason: 'invalid_cursor',
-});
+const previous = store.activeTx;
+store.activeTx = tx;
+try {
+  return await fnOrOps(tx);
+} finally {
+  store.activeTx = previous;
+}
 ```
-Add `invalid_cursor` to the documented `details.reason` taxonomy (or the appropriate equivalent), and add a test that asserts the reason is NOT `invalid_quantity`.
+2. Add a regression test that nests `prisma.$transaction` inside another
+`prisma.$transaction` and asserts the outer's tail mutation writes its audit
+row through the OUTER tx (verify by forcing an outer-tail rollback after
+inner-success and asserting zero audit rows for the outer tail).
+3. Add a second test running two `prisma.$transaction` calls via `Promise.all`
+inside one `als.run` and asserting each tx's audit rows belong to its own
+mutation (no cross-attribution).
 
 ---
 
-### CR-03: Audit extension's `delete` handler silently mis-attributes payload on missing pre-load
+### CR-02: Migration 0009 self-describes as "idempotent re-run safe" but is destructive on every re-run
 
-**File:** `apps/api/src/db/auditExtension.ts:185-213` (delete handler)
+**File:** `apps/api/prisma/migrations/20260522210000_0009_audit_events_purge_orphans/migration.sql:46-52, 66-69`
 
-**Issue:** The delete handler computes `entityId` via `resolveEntityId(model, row)` where `row` is:
-```typescript
-const row = (result as Record<string, unknown>) ?? beforeRow ?? {};
+**Issue:** Step 2 executes:
+```sql
+DELETE FROM "AuditEvent" WHERE "createdAt" < CURRENT_TIMESTAMP;
 ```
-If `beforeRow` is null (e.g., the where-clause didn't match any existing row, but Prisma still completed the delete returning a row) and `result` is null/undefined (Prisma `delete` throws on no-match, but if upstream caller swallows or for non-existent path), `row` becomes `{}`. `resolveEntityId('Session', {})` throws — but it throws from inside the extension after the delete has already committed. The error reaches the caller AS IF the delete failed, but the delete already succeeded on the DB. This is a partial-commit window that surfaces as a misleading 500. The same risk applies to `delete` handlers on other models when `result` is unexpectedly null.
+The header comment at lines 46-52 claims:
+> Re-running this migration is a no-op: the second run's DELETE targets rows
+> older than the re-run timestamp, which will be the post-fix rows (if any) —
+> in practice zero rows because the fixed extension only writes correct rows.
 
-Additionally, line 207: `before: beforeRow ?? (result as Record<string, unknown>)` — for delete, the canonical "before" is `beforeRow` (loaded pre-mutation) and `after` is null. Using `result` (which IS the just-deleted row) as a fallback for `before` is correct semantically only because `result` reflects the state at delete time. But the `filterAllowlist` call then receives an object that may include keys the schema doesn't have (e.g., if the `delete` returned a row from a model with relations that aren't part of `AUDIT_ALLOWLIST`). Today this is benign — `filterAllowlist` only copies allowlisted keys — but the code is harder to reason about than necessary.
+This is wrong. `CURRENT_TIMESTAMP` is **the moment of execution**, not the
+moment of original migration apply. Every row written between the first
+apply and any second apply has `createdAt < CURRENT_TIMESTAMP-on-re-run`, so
+the second apply **deletes them all** — including all correct, post-fix
+audit history. Step 1 disables the trigger before the DELETE, so there is
+no DB-layer guard.
 
-**Fix:** Tighten the delete handler:
-```typescript
-const beforeForAudit = beforeRow ?? (result as Record<string, unknown> | null);
-if (!beforeForAudit) {
-  // Cannot construct a meaningful audit row — skip rather than throw post-commit.
-  return result;
-}
-await writeAuditRow(client, store, model, {
-  before: beforeForAudit,
-  after: null,
-  row: beforeForAudit,
-  defaultAction: 'delete',
-});
+Prisma's migration system prevents re-application by default, but operators
+hit this in practice via:
+- `prisma migrate resolve --rolled-back <name>` followed by `migrate deploy`
+  (a documented recovery workflow);
+- manual application via raw `psql` (the file is checked-in SQL);
+- `prisma migrate reset` in non-prod (intentional wipe — but the comments
+  give the impression this is also safe in prod);
+- any future automated migration replay (audit replicas, DR drills).
+
+The comment "in practice zero rows because the fixed extension only writes
+correct rows" conflates "the post-fix extension doesn't write orphans" with
+"the migration only deletes orphans." The migration does not distinguish
+orphans from history; it deletes by timestamp.
+
+**Fix:** Either gate the DELETE on a marker (`pg_advisory_lock` + a row in a
+`schema_migrations_audit_purge` table that records the cutoff timestamp from
+first apply), OR change the DELETE to an explicit one-shot:
+```sql
+-- Bound to the FIRST apply: load cutoff from a metadata row created during
+-- this migration's own DDL prologue, NOT CURRENT_TIMESTAMP at each re-run.
+DELETE FROM "AuditEvent" WHERE "createdAt" < <first_apply_cutoff>;
 ```
-And add a test that calls `prisma.session.delete({where:{id:'nonexistent'}})` to verify the extension doesn't throw post-commit.
+At minimum, rewrite the comment block to read:
+> WARNING: re-running this migration deletes ALL existing audit rows. It is
+> meant to be applied once. Operators triggering re-application must
+> understand the data loss implications.
+
+The Step 4 trigger-state guard does NOT protect against this — by the time
+Step 4 runs, the DELETE has already obliterated history.
 
 ---
 
-### CR-04: `auth.logout` audit row's `actorUserId` is null because logout has no `requireSession` preHandler
+### CR-03: `auth.login_failed` taxonomy is internally inconsistent — WR-07 only fixed one of two failure branches
 
-**File:** `apps/api/src/services/auth.service.ts:137-149` and the logout route handler (not in scope but referenced by `audit.integration.test.ts:267-294`)
+**File:** `apps/api/src/services/auth.service.ts:60-73` (unknown-email branch, FIXED)
+and `apps/api/src/services/auth.service.ts:85-98` (known-user-wrong-password
+branch, UNCHANGED)
 
-**Issue:** The test file admits this explicitly at line 274-277:
-```typescript
-// Note: DELETE /api/auth/session has no requireSession preHandler
-// (idempotent logout works without a cookie). So the ALS store's
-// actorUserId may be null at the moment the Session is deleted —
-// we do NOT filter on actorUserId here, only on action+timestamp.
-```
-This means every `auth.logout` audit row in production has `actorUserId: null`. The audit log records "someone logged out a session whose entityId (User.id) is X" — but the `actor` field on the read endpoint will return `null`, the `actorUserId` filter on `/admin/audit?actor=X` will NOT find the logout event, and `careUnitId` will also be null. The "who did this" question — the entire point of an audit log — is unanswerable for logout events.
+**Issue:** Plan 05-05's WR-07 fix updated the unknown-email branch to write
+`entityType: 'auth_attempt', entityId: email`, but left the
+known-user-wrong-password branch at `entityType: 'session', entityId: user.id`.
+Both branches write the **same `action: 'auth.login_failed'`**. Net effect:
 
-Worse: any user who knows another user's session id can hit `DELETE /api/auth/session` with that cookie and force-logout the victim. The audit row records the victim's `entityId` but no actor — leaving forensics blind to the attacker. (This is a separate session-fixation/CSRF concern that predates Phase 5, but Phase 5 was the chance to record the actor and missed it.)
+- Admin filter `?entityType=auth_attempt&action=auth.login_failed` surfaces
+  ONLY the unknown-email failures.
+- Admin filter `?entityType=session&action=auth.login_failed` surfaces ONLY
+  the known-user-wrong-password failures.
+- The "brute force against alice@example.test" forensic question (the
+  motivating use case quoted in the WR-07 fix's comment block at
+  `auth.service.ts:55-59`) is answerable only for unknown emails — by
+  definition the LESS interesting case, since unknown emails are likely
+  enumeration probes, while known-user-wrong-password is the actual
+  credential-stuffing signal.
 
-**Fix:** The logout flow already has the session cookie in hand; resolve actor BEFORE calling `destroySession`:
-```typescript
-// In the logout route handler:
-const sessionId = unsignedCookie.value;
-const session = await prisma.session.findUnique({where: {id: sessionId}});
-if (session) {
-  setActor(session.userId, session.careUnitId);
-}
-await logout(sessionId);
-```
-Then the `auth.logout` audit row attributes correctly. Add a test:
-```typescript
-it('auth.logout audit row carries actorUserId of the session owner', async () => {
-  const cookie = await loginAs(app, TEST_APOTEKARE);
-  const user = await prisma.user.findUniqueOrThrow({where: {email: TEST_APOTEKARE.email}});
-  await app.inject({method:'DELETE', url:'/api/auth/session', headers:{cookie}});
-  const row = await prisma.auditEvent.findFirst({
-    where: {action: 'auth.logout'},
-    orderBy: {createdAt: 'desc'},
-  });
-  expect(row!.actorUserId).toBe(user.id);
-});
-```
+The test suite enshrines this inconsistency: Test 11
+(`audit.integration.test.ts:432-460`) explicitly asserts
+`entityType === 'session'` for the known-user branch under the banner
+"protects the unchanged convention." Anyone who later fixes the
+inconsistency will have to update this test, which the comment frames as
+"accidental regression."
+
+Worse, the known-user branch comment block (`auth.service.ts:80-84`)
+explicitly invokes `resolveEntityId` semantics ("for Session writes
+entityId is the User.id per resolveEntityId — we mirror that convention
+here even though the `$extends` path isn't involved") — but no Session row
+exists for a wrong-password attempt. The entityType label is factually
+wrong: there is no session.
+
+**Fix:** Use `entityType: 'auth_attempt'` for both branches; pick `entityId`
+consistently (the attempted email is forensically richest; `user.id` if you
+prefer the database key for known users). Then either:
+- a single value: always email → admin filters get one consistent
+  taxonomy and the brute-force banner v2 (mentioned in README at line 350)
+  has a single index dimension; OR
+- two related values: `entityId: user.id` for known-user, `entityId: email`
+  for unknown — but document this disambiguation in the entityType label
+  ("auth_attempt:user_id" vs "auth_attempt:email") OR via a new column /
+  `before` JSON field; do not silently reuse the same entityType with
+  different entityId semantics.
+
+Update Test 11 to assert the new contract.
+
+---
+
+### CR-04: `als.enterWith` cross-request leakage now has materially worse blast radius
+
+**File:** `apps/api/src/plugins/requestContext.ts:135-159` (still `als.enterWith`)
+and `apps/api/src/db/auditExtension.ts:369-377` (the new `activeTx` write into
+the shared store)
+
+**Issue:** The prior 05-REVIEW.md flagged `als.enterWith` (vs `als.run`) as a
+WARNING-level cross-request leak risk (WR-01). Plan 05-04 did not address this
+and instead added a NEW mutable slot (`activeTx`) to the same shared-store
+design. The pre-existing leak risk now carries a much sharper consequence: a
+keep-alive HTTP request that escapes the original `enterWith` scope will,
+mid-async-tail, observe a *subsequent* request's `activeTx` value and route
+its audit-row INSERT through the wrong transaction client.
+
+Concretely, in Fastify's keep-alive connection model:
+1. Request A's onRequest enters the ALS store with A's actor + requestId.
+2. Request A starts a slow `prisma.$transaction(...)` — `store.activeTx = txA`.
+3. Request A is still resolving its tx callback when Request B arrives on
+   the same TCP connection. B's onRequest calls `als.enterWith({...B values})`
+   — but because A's async chain has not yielded back to the event loop in
+   a way that creates a new async resource boundary, A's continuation may
+   resolve into B's store.
+4. A's audit handler reads `store.activeTx` and finds — at best `undefined`
+   (B has not opened a tx), at worst `txB` (B has). The audit row is
+   written through the wrong tx or against the root pool.
+
+The single-store mutable-slot design makes this risk severe for D-91: it is
+no longer "the actor label is wrong"; it is "the audit row may commit or
+roll back with a different mutation than the one it claims to describe."
+
+This combines with CR-01 and CR-03 to make the D-91 guarantee unprovable
+under load — exactly the property the §6 interview answer ("the audit log
+doesn't lie") depends on.
+
+**Fix:** Switch from `enterWith` to `als.run` and wrap the entire route
+handler dispatch in the `run` callback. The Fastify pattern is to register
+the ALS scope at the `onRequest` hook with a `done()` continuation that
+runs the rest of the lifecycle inside `als.run`. The README "what I'm
+proud of" passage at line 309-316 lists "Postgres GRANTs + BEFORE-trigger"
+as the append-only proof; that proof remains valid, but the D-91 claim
+("the audit log doesn't lie about what actually happened") at line 286-290
+requires fixing this concurrency contract before it can be defended in
+the interview.
+
+The fix is non-trivial — Fastify's `onRequest` hooks don't naturally wrap
+the rest of the pipeline in a continuation. The two options are:
+1. Use `app.addHook('onRequest', (req, reply, done) => als.run(scope, done))`
+   and verify Fastify's done-callback contract preserves the ALS frame
+   through subsequent hooks (preHandler, handler, onSend);
+2. Document this as a known v1 gap matching the §"What I'm least proud
+   of" pattern, mention it explicitly in README, and add a concurrency
+   smoke test that fires N parallel requests through the same keep-alive
+   connection and asserts no cross-request audit-row contamination.
 
 ---
 
 ## Warnings
 
-### WR-01: `als.enterWith` leaks store across requests when Fastify recycles event-loop ticks
+### WR-01: `auth.ts` doubles logout DB load (now read + write per logout) without performance disclosure
 
-**File:** `apps/api/src/plugins/requestContext.ts:135-152`
+**File:** `apps/api/src/routes/auth.ts:60-88`
 
-**Issue:** `als.enterWith(...)` (vs. `als.run(scope, fn)`) sets the store for the current async resource and all downstream resources from that point on the same event-loop "branch." The Node.js docs explicitly warn:
+**Issue:** Pre-CR-04 logout was one DB write (`session.deleteMany`). Post-fix
+logout is `findSessionById` (read) + `destroySession` (`deleteMany`). On every
+logout, regardless of whether the cookie is valid. For a session-fixation
+attacker spamming `DELETE /api/auth/session` with random cookies, each request
+now performs a DB roundtrip even though the result is the same 204. This is
+a DoS amplification factor of 2x with no rate-limit guard.
 
-> The `asyncLocalStorage.enterWith(store)` method [...] transitions into the context for the remainder of the current synchronous execution and then persists the store through any following asynchronous calls. [...] It's easy to leak the store [...]; use `asyncLocalStorage.run()` if possible.
+The cost is also paid by legitimate clients (every logout button click).
 
-In Fastify's `onRequest` hook, two requests arriving on the same TCP keep-alive connection in rapid succession can share an async resource boundary; the second request's `enterWith` will overwrite the first's store, but if the first request's async chain hasn't finished yet (e.g., a slow Prisma query), its remaining work runs under the SECOND request's store — leaking `actorUserId`, `careUnitId`, and `requestId` across requests.
-
-The header comment line 124-127 acknowledges that `als.run` was rejected for ergonomic reasons but doesn't address the leak risk.
-
-**Fix:** Switch to `als.run` by wrapping the request lifecycle in `onRequest`/`preHandler`/`onSend` callbacks, OR wrap the route handler dispatch. Fastify v4+ supports `app.addHook('onRequest', (req, reply, done) => { als.run(scope, done); })`. Alternatively, document this is acceptable for the v1 demo and add a test that fires N concurrent requests and asserts no cross-contamination of audit rows.
+**Fix:** Make the lookup conditional on at least the basic cookie shape
+validation already in place (line 63: `unsigned.valid && unsigned.value`).
+That is already done — so this is a known cost. Document the trade-off in
+the route header comment: "logout costs 1 read + 1 deleteMany; the read is
+required to attribute the auth.logout audit row." Consider rate-limiting
+logout at the Fastify layer if the audit log shows high-volume probes.
 
 ---
 
-### WR-02: Audit-extension `update` handler skips beforeRow load when `where` is missing or matches no row
+### WR-02: `auth.ts` calls `setActor` with possibly-orphaned `session.userId` when User row was deleted out-of-band
 
-**File:** `apps/api/src/db/auditExtension.ts:131-148`
+**File:** `apps/api/src/routes/auth.ts:75-78`
 
-**Issue:** The update handler:
+**Issue:** `findSessionById` returns a Session row regardless of whether
+its `userId` foreign key still points at an existing User. (The schema's
+FK is `ON DELETE CASCADE` — see `schema.prisma` — so this is usually
+prevented, but if a future change loosens that to `SET NULL` or if a
+stale Session row survives a DB recovery, `setActor` will populate the
+ALS store with a non-existent `actorUserId`.) The `$extends` middleware
+then writes an `auth.logout` audit row with a dangling foreign-key
+`actorUserId`. The audit row's `actor` JOIN on the read endpoint will
+return null with no diagnostic, masking the data inconsistency.
+
+**Fix:** Defensive sanity check before `setActor`:
 ```typescript
-if (where) {
-  beforeRow = await modelClient.findUnique({where});
+const session = await findSessionById(unsigned.value);
+if (session !== null) {
+  // Verify the user still exists before attributing the audit row.
+  // A dangling session.userId reference is an invariant violation we
+  // want to surface, not silently absorb.
+  const user = await prisma.user.findUnique({
+    where: { id: session.userId },
+    select: { id: true },
+  });
+  if (user) {
+    setActor(session.userId, session.careUnitId, req.ip ?? null);
+  } else {
+    req.log.warn({ sessionId: unsigned.value, userId: session.userId },
+      'logout: session.userId points at non-existent User');
+  }
 }
 ```
-If `where` is undefined (Prisma will reject this at the query level anyway, so unreachable) the audit row gets `before: null` even though there IS a real before-state. More importantly, `findUnique({where})` requires `where` to be a unique selector — but `update` accepts non-unique selectors too in some cases. A non-unique where would cause `findUnique` to throw, surfacing as a confusing extension error.
-
-The `delete` handler has the same `if (where)` guard (line 197), with the same issue.
-
-**Fix:** Document the contract that callers must pass a unique `where`. Add a defensive fallback: if `findUnique` throws or returns null, set `beforeRow = null` and log a warning rather than letting the error propagate post-mutation.
+Or rely on the FK CASCADE invariant and assert it in a startup health check.
 
 ---
 
-### WR-03: `updateMany` audit fan-out re-queries each row separately — N+1 in a fast path
+### WR-03: `decodeCursor` still ignores upper-bound on `createdAt` (WR-06 from prior review carried over)
 
-**File:** `apps/api/src/db/auditExtension.ts:150-182`
+**File:** `apps/api/src/services/audit.service.ts:68-92`
 
-**Issue:** For every row in `beforeRows`, the handler does `await modelClient.findUnique({where:{id}})` to load `afterRow`. For an `updateMany` matching 1000 rows, that's 1000 sequential extra queries on top of the original. The header documentation doesn't mention this; the deliver path keeps fan-out small (one CUM per line) but a future bulk mutation will explode latency.
+**Issue:** Plan 05-05 fixed the reason-code copy-paste (CR-02) but did not
+address the pre-existing WR-06: an admin can supply a cursor with
+`createdAt = year-3000`, which passes `Date.parse(createdAt)` (not NaN),
+constructs `{createdAt: {lt: futureDate}}`, and trivially page-zero-restarts.
+The cursor is also unsigned — any admin can edit the base64 to skip arbitrary
+pages, leaking nothing they couldn't otherwise see, but enabling
+test-suite forgery and obscuring intent in audit logs.
 
-Out of scope for v1 by reviewer guidance, but worth flagging because: (a) it's a correctness risk too — between the `query(args)` completing and each `findUnique` for `afterRow`, another tx could modify the row, capturing a phantom delta in the audit log; (b) the same-tx issue from CR-01 makes this worse since the findUnique runs outside the wrapping tx.
-
-**Fix:** After the `updateMany` runs, do ONE `findMany({where: {id: {in: beforeRowIds}}})` and build a Map. Then iterate beforeRows zipping against afterMap.
-
----
-
-### WR-04: `listAuditFilters` 60-second module-scope cache is not invalidated across replicas
-
-**File:** `apps/api/src/services/audit.service.ts:200-258`
-
-**Issue:** The cache is `let filtersCache: FiltersCacheEntry | null = null` at module scope. In a multi-process / multi-replica deploy (which the README hints at via "compose `api` ENTRYPOINT"), each process has its own cache; a user filter chip can show stale data for up to 60 seconds per replica. The `_resetAuditFiltersCache` test helper resets only the in-process cache.
-
-Today this is benign because v1 runs a single API container. But the comment at line 36-37 ("even with admin credentials an attacker can't exceed ~1 DB hit per minute per app instance") understates the per-instance scope.
-
-**Fix:** Add a comment to `listAuditFilters` clarifying the per-process scope, and either (a) document the v2 plan to move to Redis/MemoryStore, or (b) accept it explicitly. Also, the cache currently keys on nothing — if a new admin lookup adds a careUnitId scope dimension, this becomes a security cache-key bug. Document the cache-key invariant.
-
----
-
-### WR-05: Filter cache invalidation never fires after a new audit-action category appears
-
-**File:** `apps/api/src/services/audit.service.ts:220-258`
-
-**Issue:** When a brand new action category is recorded (e.g., the first `auth.login_failed` ever), it won't appear in the `actions` combobox for up to 60 seconds. For a first-time-admin loading `/admin/audit` after a failed-login event arrives, the dropdown won't include the action they need to filter on. Worse, there's no test asserting that newly-recorded distinct values appear after expiry.
-
-**Fix:** Add a brief comment explaining the cache-staleness trade-off (admin sees a "fresh" view at most 60 s old) and add a smoke test:
+**Fix:** Either HMAC-sign the cursor against `COOKIE_SECRET`, or reject
+cursors with `createdAt > Date.now() + 60_000`:
 ```typescript
-it('newly-seen action category appears in filter list after cache expiry', async () => {
-  _resetAuditFiltersCache();
-  // ... record an action that wasn't in the previous filter snapshot
-  // ... expect filter list to include the new action
-});
-```
-
----
-
-### WR-06: `decodeCursor` accepts any timestamp string but doesn't validate ordering
-
-**File:** `apps/api/src/services/audit.service.ts:65-89`
-
-**Issue:** A client-supplied cursor with `createdAt` set to a year-3000 date will:
-1. Pass `Date.parse(createdAt)` → not NaN.
-2. Construct a `where` clause `{createdAt: {lt: futureDate}}` → matches all rows.
-3. Return the first 50 audit events as if it were "the next page after end of time."
-
-This isn't a security vulnerability (admin can already see everything), but it lets a client forge cursors and observe data anomalously. There's also no signature/HMAC on the cursor — anyone with admin credentials can edit the base64 to skip forward or backward arbitrarily.
-
-**Fix:** Either sign the cursor (HMAC with `COOKIE_SECRET`-equivalent), or reject cursors with `createdAt > Date.now()`. The latter is simpler:
-```typescript
-if (Date.parse(createdAt) > Date.now() + 60_000 /* 1 min skew */) {
-  throw new ValidationFailedError('Ogiltig cursor.', {reason: 'invalid_cursor'});
+if (Date.parse(createdAt) > Date.now() + 60_000) {
+  throw new ValidationFailedError('Ogiltig cursor.', { reason: 'invalid_cursor' });
 }
 ```
 
 ---
 
-### WR-07: `auth.login_failed` audit insert uses `prisma.auditEvent.create` outside any tx — orphan if subsequent throw
+### WR-04: `patchTransactionForAudit` accepts overly permissive generic bound
 
-**File:** `apps/api/src/services/auth.service.ts:59-72` and `83-96`
-
-**Issue:** Both failed-login branches call `prisma.auditEvent.create({data:...})` directly, then `throw new InvalidCredentialsError()`. Between those two statements no rollback boundary exists; the audit row commits unconditionally. That's fine semantically (we WANT to record failed logins even when the request fails). But this pattern bypasses the extension's allowlist/resolveEntityId guarantees — the `entityId: ''` and `after: { email }` shapes are hard-coded in two places, with no enforcement that they match the rest of the schema's invariants.
-
-Specifically, `entityId: ''` is a sentinel empty string. The schema declares `entityId String NOT NULL` — empty is valid but semantically wrong. A naive admin filter `?entityType=session&entityId=` would match all failed-login rows AND any other row missing entityId.
-
-**Fix:** Either (a) extend `AUDIT_ENTITY_TYPES` with a `'auth_attempt'` value and use it for `auth.login_failed`, with `entityId` being the attempted email (recorded structurally), OR (b) document the `entityId: ''` sentinel in `auditAllowlist.ts` header and add a Zod refinement on the contract rejecting it from the FE filter. Today, neither is done.
-
----
-
-### WR-08: Session `entityId` resolves to `userId`, but Session model has `userId` filtered out of the allowlist — circular reference
-
-**File:** `apps/api/src/db/auditAllowlist.ts:108-118`
-
-**Issue:** The Session allowlist includes `userId` (line 112), and `resolveEntityId('Session', row)` uses `row.userId` as the entityId. So userId appears TWICE in the audit row: once as the resolved `entityId` and once as the `userId` field inside the `after` JSON. This is internally consistent — but the comment on lines 109-111 says "id excluded: id IS the raw signed session token" without flagging that the userId field is redundantly stored in two places. A reviewer skimming might mistake one occurrence for a bug.
-
-**Fix:** Either drop `userId` from the Session allowlist (entityId already carries it via resolveEntityId), or add a comment justifying the duplication ("entityId is the search key; userId in after-json keeps the snapshot self-describing").
-
----
-
-### WR-09: `AuditDiffPanel.copyPermalink` swallows clipboard rejection in unhandled promise
-
-**File:** `apps/web/src/routes/admin/AuditDiffPanel.tsx:127-149`
+**File:** `apps/api/src/db/auditExtension.ts:344-345`
 
 **Issue:**
 ```typescript
-// eslint-disable-next-line @typescript-eslint/no-floating-promises
-const p = navigator.clipboard.writeText(url);
-p.then(() => toast.success('Permalink kopierad.'))
-  .catch(() => toast.error('Kunde inte kopiera permalink.'));
+export function patchTransactionForAudit<T extends { $transaction: unknown }>(
+  extendedClient: T,
+): T {
+  const original$transaction = (extendedClient as any).$transaction.bind(extendedClient);
 ```
-This works, but the variable `p` is unused after the `.then().catch()` chain (the result of the chain is discarded). Also, `navigator.clipboard.writeText` is rejected in non-secure contexts (http://) and in some embedded WebViews — the user sees only "Kunde inte kopiera permalink" with no diagnostic. The eslint-disable for `no-floating-promises` is masking the fact that the chain itself is floating (the comment is misleading; `p.then().catch()` returns a new promise that IS being discarded).
+`{ $transaction: unknown }` accepts ANY object where `$transaction` is any
+type — including `null`, `undefined`, or a non-function value. The
+`.bind(extendedClient)` call will crash with `TypeError: Cannot read
+properties of null (reading 'bind')` at runtime instead of failing at
+compile time. Mocks and tests that pass partial Prisma stubs will hit this.
 
-**Fix:**
+**Fix:** Narrow the bound:
 ```typescript
-async function copyPermalink() {
-  // ... build URL ...
-  if (!navigator.clipboard) {
-    toast.error('Kunde inte kopiera permalink.');
-    return;
-  }
-  try {
-    await navigator.clipboard.writeText(url);
-    toast.success('Permalink kopierad.');
-  } catch {
-    toast.error('Kunde inte kopiera permalink.');
-  }
+export function patchTransactionForAudit<
+  T extends { $transaction: (...args: any[]) => Promise<any> }
+>(extendedClient: T): T {
+```
+
+---
+
+### WR-05: `auth.service.ts` action override leak path on throw between login set/clear
+
+**File:** `apps/api/src/services/auth.service.ts:109-122`
+
+**Issue:** The login flow sets `store.actionOverride = 'auth.login'`
+(line 113) and clears it after `createSession` (line 121). If
+`createSession` throws (DB error, unique constraint, etc.), the
+`actionOverride` is NOT cleared — control returns up the stack with the
+override still set on the ALS store. Subsequent operations in the same
+request (none expected, since login throws on failure) inherit the
+`auth.login` override. The risk is small in practice (the same request
+would terminate), but the pattern is inconsistent with
+`withActionOverride` (which uses try/finally) and the new `logout`
+function (which DOES use try/finally — `auth.service.ts:144-150`).
+
+**Fix:** Wrap in try/finally:
+```typescript
+if (store) {
+  store.actionOverride = 'auth.login';
+}
+let session: Session;
+try {
+  session = await createSession(user.id, user.careUnitId);
+} finally {
+  if (store) store.actionOverride = undefined;
 }
 ```
 
 ---
 
-### WR-10: `AuditTable` and `AuditCardList` rebuild siblingCounts on every render
+### WR-06: README documentation drift — `patchTransactionForAudit` location misstated
 
-**File:** `apps/web/src/routes/admin/AuditTable.tsx:54-60` and `apps/web/src/routes/admin/AuditCardList.tsx:31-36`
+**File:** `README.md:201-204`
 
-**Issue:** Both components compute `siblingCounts` outside `useMemo`. On every parent re-render (filter change, expand toggle, fetch), the Map is rebuilt. For 50 events per page, this is cheap — but every `toggleExpand` triggers a full re-render of the table, which re-allocates this Map for no reason. Acceptable for v1, but the comment "O(N) per page-set is acceptable for v1's page-size 50" assumes ONE pass per page-load, which isn't true.
+**Issue:** README states: "The extension intercepts `$transaction` calls
+at runtime (via `patchTransactionForAudit` in
+`apps/api/src/db/client.ts`)" — but `patchTransactionForAudit` is
+defined in `apps/api/src/db/auditExtension.ts:344`. `client.ts` only
+*calls* it. The Plan 05-04 commit message and SUMMARY mention this
+relocation but the README's pointer was not updated.
 
-**Fix:** Wrap in `useMemo`:
-```typescript
-const siblingCounts = useMemo(() => {
-  const m = new Map<string, number>();
-  for (const ev of events) {
-    if (!ev.requestId) continue;
-    m.set(ev.requestId, (m.get(ev.requestId) ?? 0) + 1);
-  }
-  return m;
-}, [events]);
+**Fix:** Replace "in `apps/api/src/db/client.ts`" with "defined in
+`apps/api/src/db/auditExtension.ts`, applied once in `apps/api/src/db/client.ts`".
+
+---
+
+### WR-07: Migration 0009's `WHEN OTHERS THEN NULL` blocks swallow all exception classes, not just "trigger absent"
+
+**File:** `apps/api/prisma/migrations/.../migration.sql:57-64, 73-79`
+
+**Issue:** Both DO-blocks catch `WHEN OTHERS THEN NULL`, with inline
+comments framing this as "swallow: trigger absent, already disabled, or
+table missing." But `WHEN OTHERS` in plpgsql catches **everything** —
+permission errors, lock timeouts, connection failures, anything that
+isn't a `RAISE` from `RAISE EXCEPTION`. If a privilege error prevents
+DISABLE TRIGGER on Step 1, the DELETE then proceeds anyway, only to fail
+or succeed with the trigger still active (in the failure case, it
+silently does nothing useful and Step 4 catches that). In the rarer
+case where Step 3's re-enable fails for any reason other than
+"already enabled," Step 4's gate fires and rolls back — good — but only
+if `pg_trigger.tgenabled <> 'D'` correctly captures the failure mode.
+
+The Step 4 gate is the saving grace, but the catch-all `WHEN OTHERS`
+makes the migration's failure mode opaque to operators.
+
+**Fix:** Narrow the EXCEPTION blocks to specific SQLSTATE classes:
+```sql
+EXCEPTION
+  WHEN object_not_in_prerequisite_state THEN NULL; -- trigger absent / already disabled
+  WHEN undefined_table THEN NULL; -- table missing on fresh DB
+  -- All other exceptions propagate up; migration transaction aborts.
+END $$;
 ```
-Out-of-scope under v1 perf guidance, but worth fixing while the file is open.
+
+---
+
+### WR-08: `audit.service.ts` cursor decode bypasses Zod refinement on `requestId` filter
+
+**File:** `apps/api/src/services/audit.service.ts:130-136` and contract
+`packages/shared/src/contracts/audit.ts:90`
+
+**Issue:** `auditEventListQuery` declares `requestId: z.string().optional()`
+(open), so a client can supply `?requestId=' OR 1=1 --`. Prisma parameterizes
+the value safely against SQL injection, but the filter is unbounded —
+any string value is accepted and round-trips through the `where AND`
+clause. An admin scanning by requestId could be tricked into rendering
+poisoned values (the FE displays the requestId in the chip primitive
+`RequestIdGroupChip.tsx` per AUDIT-02 spec). XSS risk depends on FE
+sanitization which is out of this review scope.
+
+**Fix:** Tighten the schema to a UUID shape (which is what
+`requestContext.ts:144` emits via `randomUUID`):
+```typescript
+requestId: z.string().uuid().optional(),
+```
+This both rejects garbage and prevents future misuse.
+
+---
+
+### WR-09: Test suite enshrines the WR-07 inconsistency as a "regression protection" test
+
+**File:** `apps/api/test/audit.integration.test.ts:432-460` (Test 11)
+
+**Issue:** See CR-03 above. Test 11's header comment says it "guards
+against accidental regression" of the known-user-wrong-password branch
+keeping `entityType: 'session'`. This is back-projecting; the test
+should instead be marked with a `// TODO: align with WR-07 — see CR-03
+in 05-gap-closure REVIEW` comment so future readers understand the
+inconsistency was knowingly preserved by Plan 05-05's reading of WR-07.
+
+**Fix:** Add the TODO comment with a link to this review, OR fix
+the underlying inconsistency per CR-03 and update Test 11 to assert
+the new contract.
 
 ---
 
 ## Info
 
-### IN-01: Dead/unused import — `void AUDIT_ALLOWLIST` workaround
+### IN-01: Initialization of `activeTx` is implicit / undocumented in `enterWith`
 
-**File:** `apps/api/src/db/auditExtension.ts:302-306`
+**File:** `apps/api/src/plugins/requestContext.ts:152-158`
 
-**Issue:** `void AUDIT_ALLOWLIST` at the bottom of the file suppresses an unused-import warning. But `AUDIT_ALLOWLIST` IS imported at line 5 and IS used indirectly through `filterAllowlist` — which is itself imported. The `void` statement is misleading; the symbol could simply be removed from the import list since `filterAllowlist` is the actual entry point.
+**Issue:** The `als.enterWith({...})` literal does not include `activeTx`
+— relying on TypeScript's optional-field semantics and the per-handler
+`store.activeTx ?? client` nullish coalescing. Functionally correct, but
+the omission means a reader skimming `enterWith` does not see `activeTx`
+declared next to `actionOverride`, breaking grep-discoverability of the
+new D-91 design.
 
-**Fix:** Drop `AUDIT_ALLOWLIST` from the import on line 5 and remove the `void` statement entirely.
-
----
-
-### IN-02: `entityId` filter is documented but not exposed in the query schema
-
-**File:** `packages/shared/src/contracts/audit.ts:86-93` and `apps/api/src/routes/audit/list.ts:18`
-
-**Issue:** The route header (line 18) advertises `?actor=...&entity=...&action=...&requestId=...&cursor=...&limit=50`. The Zod schema accepts `actorUserId`, `entityType`, `action`, `requestId`. There's no `entity` parameter — the URL example in the route header uses a shortened name that doesn't match the schema. FE code (`useAuditEventsQuery.ts:31`) uses the correct names; the doc-comment is just out of sync.
-
-**Fix:** Update the doc comment to read `?actorUserId=...&entityType=...&action=...&requestId=...&cursor=...&limit=50`.
+**Fix:** Add `activeTx: undefined` to the literal so the contract is
+visible at the same level as `actionOverride`.
 
 ---
 
-### IN-03: Commented-out code in `seed.ts` — duplicate `// eslint-disable-next-line no-console` everywhere
+### IN-02: `void AUDIT_ALLOWLIST` workaround at end of `auditExtension.ts` is still present and still misleading
 
-**File:** `apps/api/prisma/seed.ts` (10+ occurrences)
+**File:** `apps/api/src/db/auditExtension.ts:387-391`
 
-**Issue:** Every `console.log` in seed.ts is preceded by an inline `// eslint-disable-next-line no-console`. The seed file is the right place to log progress; either disable the rule for the whole file once at the top (`/* eslint-disable no-console */`) or change the rule scope so seed scripts can log freely.
+**Issue:** Same as IN-01 in the prior 05-REVIEW.md — the `void
+AUDIT_ALLOWLIST` statement at the end of the file is a workaround for an
+unused-import warning, but `AUDIT_ALLOWLIST` is imported and indirectly
+used via `filterAllowlist`. The cleaner fix is to drop the import.
 
-**Fix:**
-```typescript
-/* eslint-disable no-console */
-import { createReadStream } from 'node:fs';
-// ... rest of file, drop all inline disables
-```
-
----
-
-### IN-04: `EmptyStateCard` body default leaks Phase 1 stub copy into Phase 5 callers that forget the body prop
-
-**File:** `apps/web/src/components/EmptyStateCard.tsx:32-35`
-
-**Issue:** The default `body = 'Den här vyn fylls i nästa fas.'` is correct for Phase 1 stub pages but wrong for any Phase 5+ caller that forgets to pass a body. A `<EmptyStateCard icon={X} heading="Inga händelser ännu" />` will render "Den här vyn fylls i nästa fas." — actively wrong for shipped Phase 5 features. Today's only Phase 5 caller (`AuditPage:128-132`) passes the body, but the default is a foot-gun.
-
-**Fix:** Make `body` required, or change the default to a non-Phase-1-specific generic string like `''`. If kept, document the trade-off explicitly.
+**Fix:** Drop `AUDIT_ALLOWLIST` from line 5's import and delete the
+`void` statement on line 391.
 
 ---
 
-### IN-05: Diff summary `pickPrimaryKey` non-null assertion is unguarded
+### IN-03: `writeAuditRow` filteredBefore/filteredAfter truthy gate fails for empty objects
 
-**File:** `apps/web/src/routes/admin/auditDiffSummary.ts:62-66`
+**File:** `apps/api/src/db/auditExtension.ts:317-318`
 
 **Issue:**
 ```typescript
-function pickPrimaryKey(changedKeys: string[]): string {
-  if (changedKeys.includes('status')) return 'status';
-  if (changedKeys.includes('currentStock')) return 'currentStock';
-  return [...changedKeys].sort()[0]!;
-}
+if (filteredBefore) data.before = filteredBefore;
+if (filteredAfter) data.after = filteredAfter;
 ```
-The `sort()[0]!` non-null assertion holds only if `changedKeys.length > 0` — which the caller (line 87-88) guards. But if `pickPrimaryKey` is ever called with an empty array directly, `sort()[0]` returns `undefined` and the `!` lies to TypeScript. The diff panel would then render `undefined: ...` to users.
-
-**Fix:** Add an explicit guard:
+The truthy-gate passes `{}` (an empty object is truthy). If a future
+allowlist tightening shrinks `AUDIT_ALLOWLIST[model]` to zero keys, the
+filter returns `{}` and the audit row stores `before: {}` rather than
+`before: null`. Harmless today (all models have non-empty allowlists),
+but the gate should be on emptiness:
 ```typescript
-function pickPrimaryKey(changedKeys: string[]): string {
-  if (changedKeys.length === 0) return '';
-  if (changedKeys.includes('status')) return 'status';
-  // ...
+if (filteredBefore && Object.keys(filteredBefore).length > 0) {
+  data.before = filteredBefore;
 }
 ```
 
 ---
 
-### IN-06: `audit.integration.test.ts` git-grep test does not exclude planning artifacts
+### IN-04: `audit.integration.test.ts` cleanup of audit rows is implicit, leaks across tests in non-isolated runs
 
-**File:** `apps/api/test/audit.integration.test.ts:157-180`
+**File:** `apps/api/test/audit.integration.test.ts:81-83`
 
-**Issue:** The grep command:
-```typescript
-['grep', '-nE', String.raw`prisma\.auditEvent\.(update|delete|deleteMany|updateMany|upsert)\b`, '--', 'apps', 'packages']
+**Issue:** `beforeEach(async () => { await resetSessions(); })` resets
+sessions but not audit rows. Each test relies on `where: { createdAt:
+{ gte: testStartedAt } }` filters to isolate its rows. This is fine for
+serial test runs but vulnerable to clock drift (`testStartedAt` captured
+in JS, audit row `createdAt` set by Postgres — different sources). The
+windowing also leaks across the file: a row from Test 1 created at
+T+50ms can be visible in Test 2 if `testStartedAt` for Test 2 is T+0ms
+(possible if Vitest reuses the JS clock too aggressively).
+
+**Fix:** Either capture `testStartedAt` from the DB (`SELECT
+CURRENT_TIMESTAMP`) or accept this as a known quirk and document the
+serial-runs assumption at the top of the file.
+
+---
+
+### IN-05: `auditEntityType.ts` enum widened without a matching DB CHECK constraint
+
+**File:** `packages/shared/src/constants/auditEntityType.ts:21-29`
+
+**Issue:** `AUDIT_ENTITY_TYPES` now includes `'auth_attempt'` (good for
+the FE label map). The DB schema `AuditEvent.entityType` is `String NOT
+NULL` with no CHECK constraint — any string can be written, so the
+shared constant is a one-sided contract. If a future code path writes
+`entityType: 'auth_atempt'` (typo), it persists silently and breaks
+admin filtering. The README at line 230-236 documents the audited model
+table but does not declare that `entityType` is a closed set.
+
+**Fix:** Add a CHECK constraint in a future migration:
+```sql
+ALTER TABLE "AuditEvent" ADD CONSTRAINT "AuditEvent_entityType_check"
+  CHECK ("entityType" IN ('medication', 'care_unit_medication', 'order',
+    'order_line', 'user', 'session', 'auth_attempt'));
 ```
-This DOES exclude `.planning/`, good. But it does NOT exclude test files themselves — if a future debug test directly uses `prisma.auditEvent.deleteMany` to clean up between tests, the test will fail. The current code has no such usage, but the lint surface is brittle.
-
-**Fix:** Document the test's contract explicitly in a header comment: "If you need to delete audit rows for test cleanup, use `$executeRawUnsafe` with a SECURITY DEFINER bypass, NOT `prisma.auditEvent.deleteMany`." Or scope the grep to `apps/api/src` + `apps/web/src` + `packages/*/src` (i.e., exclude tests).
+Or accept the open-string contract explicitly and document it.
 
 ---
 
-### IN-07: TypeScript `any` casts inside audit extension scatter type-safety holes
-
-**File:** `apps/api/src/db/auditExtension.ts:74, 134, 162, 198, 227, 264`
-
-**Issue:** Six `eslint-disable-next-line @typescript-eslint/no-explicit-any` markers, mostly to work around Prisma's strict typing for dynamic model access (`(client as any)[propName]`). Each one is justified individually, but the cumulative effect is a file where ~10% of the lines are `any`-related. The `LooseQueryHandlers = any` type alias makes the whole handler map untyped at the runtime contract. A typo in a model name (`carUnitMedication` instead of `careUnitMedication`) would compile and silently miss audit coverage.
-
-**Fix:** Build the handlers with explicit per-model types (Prisma exports `Prisma.MedicationDelegate` etc.) and use a typed registry. Out-of-scope for this fix-up but worth a follow-up issue.
-
----
-
-_Reviewed: 2026-05-22T18:30:00Z_
+_Reviewed: 2026-05-22T21:00:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
