@@ -362,6 +362,21 @@ export async function submitOrder(
   actorUserId: string,
 ): Promise<OrderResponse> {
   const result = await prisma.$transaction(async (tx) => {
+    // Step 0 — CR-02: lock the Order row FOR UPDATE so concurrent line
+    // mutations (which call assertOrderEditable() inside their own tx) wait
+    // until this submit commits. Without this, another tx in READ COMMITTED
+    // isolation could observe status='utkast' AFTER this tx already read
+    // the lines but BEFORE the UPDATE in step 5, attaching a line that
+    // bypassed step 4 validation to a freshly-Skickad order. The schema
+    // comment on Order (line 119, "Phase 4 adds SELECT … FOR UPDATE")
+    // promised this; CR-02 implements it ahead of Phase 4's stock-lock
+    // (STK-02), since the same race already affects Phase 3 submits.
+    //
+    // $queryRaw with a tagged template parameterises ${orderId} safely.
+    // If the row doesn't exist the SELECT returns 0 rows — step 2 below
+    // catches it and throws NotFoundError.
+    await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`;
+
     // Step 1 — Load the order with lines inside the transaction.
     const order = await tx.order.findUnique({
       where: { id: orderId },
