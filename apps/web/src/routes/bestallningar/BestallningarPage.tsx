@@ -84,7 +84,14 @@ export function BestallningarPage() {
   const isCreating = createMutation.isPending;
 
   function handleTabChange(value: string) {
-    setSearchParams({ status: value });
+    // Preserve other query params (deep-link filters, debug flags, Phase 7+
+    // pagination) — only update the status key. setSearchParams({ status })
+    // would replace the entire query string.
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('status', value);
+      return next;
+    });
   }
 
   function getEmptyStateText(): string | null {
