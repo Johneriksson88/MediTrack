@@ -331,7 +331,14 @@ export function ComposeOrderPage() {
 
           {/* Mode C — Skickad order + apotekare/admin: show Bekräfta beställning button.
               <Can> is the FE UX gate (defense in depth); requirePermission on the BE
-              is the security boundary. Sjuksköterska sees no button here (D-15 / T10). */}
+              is the security boundary. Sjuksköterska sees no button here (D-15 / T10).
+
+              Asymmetry vs the deliver path: confirm has NO dialog and NO local UI
+              state to manage on error — useConfirmOrder.onError handles every code
+              via toast and cache-invalidate. The `void` here just suppresses the
+              no-floating-promises lint; the rejection is observed by TanStack Query
+              internally. The deliver path needs try/catch because its AlertDialog
+              must close on expected errors (see Mode B below). */}
           {isSkickad && canConfirm && (
             <Can action="order:confirm">
               <ApotekareActionFooter
