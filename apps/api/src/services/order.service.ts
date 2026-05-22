@@ -455,27 +455,47 @@ export async function submitOrder(
  * D-67: Only Utkast orders can be discarded. Throws OrderLockedError if the
  * order is in any other status.
  * D-33: Always soft-delete — mirrors CareUnitMedication soft-delete pattern.
+ *
+ * CR-03 / D-54: Uses the atomic updateMany-with-precondition pattern
+ * (mirrors submitOrder step 5). The previous check-then-act sequence
+ * (findUnique → update) had a TOCTOU window: between the read and the
+ * write another request could submit the order (utkast → skickad), and
+ * the unconditional update with where: { id } only would still succeed
+ * and silently soft-delete a Skickad order — violating D-67.
+ *
+ * Phase 4's STK-02 concurrency test will exercise the true race; for
+ * Phase 3 the existing integration test relies on app.inject's sequential
+ * single-process semantics, which removes the race entirely. The atomic
+ * UPDATE here is the production-correct fix.
  */
 export async function softDeleteOrder(
   careUnitId: string,
   orderId: string,
 ): Promise<void> {
-  const order = await prisma.order.findUnique({ where: { id: orderId } });
-
-  // D-73 / D-19: 404 on cross-tenant or truly-not-found.
-  if (!order || order.deletedAt !== null || order.careUnitId !== careUnitId) {
-    throw new NotFoundError('Beställningen hittades inte.');
-  }
-
-  // D-67: Only utkast orders can be discarded.
-  if (order.status !== 'utkast') {
-    throw new OrderLockedError({ status: order.status as 'skickad' | 'bekraftad' | 'levererad' });
-  }
-
-  await prisma.order.update({
-    where: { id: orderId },
+  // CR-03 / D-54: single atomic UPDATE with status precondition. If no row
+  // matches (count === 0) we reload to disambiguate not-found from
+  // status-changed and throw the correct error.
+  const result = await prisma.order.updateMany({
+    where: {
+      id: orderId,
+      careUnitId,
+      status: 'utkast',
+      deletedAt: null,
+    },
     data: { deletedAt: new Date() },
   });
+
+  if (result.count === 0) {
+    const reload = await prisma.order.findUnique({ where: { id: orderId } });
+    // D-73 / D-19: 404 on cross-tenant, soft-deleted, or truly-not-found.
+    if (!reload || reload.deletedAt !== null || reload.careUnitId !== careUnitId) {
+      throw new NotFoundError('Beställningen hittades inte.');
+    }
+    // D-67: row exists in this careUnit but status is no longer utkast → 409.
+    throw new OrderLockedError({
+      status: reload.status as 'skickad' | 'bekraftad' | 'levererad',
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
