@@ -26,17 +26,15 @@ import { useIsDesktop } from '@/lib/useIsDesktop';
  *   Row 2: {atcCode} · {form} · Lager: {currentStock} + <LowStockBadge> if low
  *   min-h-[56px] touch target per UI-SPEC §A11y
  *
- * On row click:
- *   1. Call onOpenChange(false) (optimistic Sheet close — instant feedback)
- *   2. Call useAddOrderLine.mutate({ orderId, careUnitMedicationId, quantity: 1 })
- *   3. On error: the mutation calls onOpenChange(true) via the re-open callback
- *      because the hook's onError fires toast + invalidates; the Sheet parent
- *      (ComposeOrderPage) owns the open state, so the error re-open is
- *      communicated via onError → the parent's setPickerOpen(true) call.
- *      NOTE: this component calls onOpenChange(false) first; the hook cannot
- *      re-open it. ComposeOrderPage should observe mutation error state to
- *      conditionally re-open — left as a "fail silently" UX for Phase 3
- *      (the error toast is the feedback). This comment documents the limitation.
+ * On row click (WR-02 — pessimistic close):
+ *   1. Await useAddOrderLine.mutateAsync({ orderId, careUnitMedicationId, quantity: 1 })
+ *   2. On success: call onOpenChange(false) and clear the search query.
+ *   3. On error: stay open — the hook fires the toast (D-55 carve-out on 409;
+ *      generic 'Kunde inte spara — försök igen.' otherwise) and the user can
+ *      retry or pick a different row without losing their search context.
+ *      On a 409 order_locked, the hook invalidates ['order', orderId] which
+ *      re-renders ComposeOrderPage into Mode B; this component is conditionally
+ *      unmounted from the Mode A render branch, so the Sheet still closes.
  *
  * No "Skapa nytt" button (D-58 / D-70 — pick-only; create lives in Phase 2 flow).
  *
@@ -82,12 +80,20 @@ export function MedicationPickerSheet({
     onOpenChange(nextOpen);
   }
 
-  function handleRowClick(careUnitMedicationId: string) {
-    // Optimistic Sheet close — instant feedback per UI-SPEC §9.
-    onOpenChange(false);
-    setQ('');
-    // Fire add-line mutation with default quantity 1 (D-58).
-    addLineMutation.mutate({ orderId, careUnitMedicationId, quantity: 1 });
+  async function handleRowClick(careUnitMedicationId: string) {
+    // WR-02: pessimistic close — await the mutation before closing. On error
+    // the Sheet stays open (the hook's toast is the feedback) so the user
+    // can retry without losing their search context. D-58 default quantity = 1.
+    try {
+      await addLineMutation.mutateAsync({ orderId, careUnitMedicationId, quantity: 1 });
+      onOpenChange(false);
+      setQ('');
+    } catch {
+      // Stay open — useAddOrderLine.onError already fired toast / invalidated.
+      // On 409 order_locked the ['order', orderId] invalidation re-renders
+      // ComposeOrderPage into Mode B which unmounts this Sheet via conditional
+      // render — no explicit close needed here.
+    }
   }
 
   return (

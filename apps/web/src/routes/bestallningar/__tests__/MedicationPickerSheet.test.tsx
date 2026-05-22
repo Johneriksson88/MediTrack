@@ -54,10 +54,10 @@ function setupPickerQuery(results: typeof PICKER_ROW[], loading = false) {
   } as unknown as UseQueryResult<PickerOptionsResponse, ApiError>);
 }
 
-function setupAddMutation(mutateFn = vi.fn()) {
+function setupAddMutation(mutateAsyncFn = vi.fn().mockResolvedValue(undefined)) {
   mockUseAddOrderLine.mockReturnValue({
-    mutate: mutateFn,
-    mutateAsync: vi.fn(),
+    mutate: vi.fn(),
+    mutateAsync: mutateAsyncFn,
     isPending: false,
     isError: false,
     isSuccess: false,
@@ -141,10 +141,10 @@ describe('MedicationPickerSheet', () => {
     });
   });
 
-  describe('(c) clicking a row calls onOpenChange(false) and dispatches useAddOrderLine with quantity: 1', () => {
-    it('fires onOpenChange(false) and mutate with correct args when row clicked', () => {
-      const mutateFn = vi.fn();
-      setupAddMutation(mutateFn);
+  describe('(c) WR-02 pessimistic close — onOpenChange(false) fires AFTER mutateAsync resolves', () => {
+    it('awaits mutateAsync, then closes Sheet on success', async () => {
+      const mutateAsyncFn = vi.fn().mockResolvedValue(undefined);
+      setupAddMutation(mutateAsyncFn);
       setupPickerQuery([PICKER_ROW]);
 
       const onOpenChange = vi.fn();
@@ -152,24 +152,46 @@ describe('MedicationPickerSheet', () => {
         <MedicationPickerSheet open={true} onOpenChange={onOpenChange} orderId="order-3" />,
       );
 
-      // The row should be visible
       const rowBtn = screen.getByText('Paracetamol 500 mg').closest('button');
       expect(rowBtn).not.toBeNull();
 
-      act(() => {
+      // Use real timers so the awaited promise can flush.
+      vi.useRealTimers();
+      await act(async () => {
         fireEvent.click(rowBtn!);
       });
 
-      // Sheet should have been told to close (optimistic close)
-      expect(onOpenChange).toHaveBeenCalledWith(false);
-
-      // Add line should have been called with quantity 1
-      expect(mutateFn).toHaveBeenCalledTimes(1);
-      expect(mutateFn).toHaveBeenCalledWith({
+      // Add line should have been awaited with quantity 1 (D-58).
+      expect(mutateAsyncFn).toHaveBeenCalledTimes(1);
+      expect(mutateAsyncFn).toHaveBeenCalledWith({
         orderId: 'order-3',
         careUnitMedicationId: 'cum-abc-123',
         quantity: 1,
       });
+
+      // Sheet closes only AFTER the resolution.
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+
+    it('does NOT close the Sheet when mutateAsync rejects (WR-02)', async () => {
+      const mutateAsyncFn = vi.fn().mockRejectedValue(new Error('boom'));
+      setupAddMutation(mutateAsyncFn);
+      setupPickerQuery([PICKER_ROW]);
+
+      const onOpenChange = vi.fn();
+      renderWithProviders(
+        <MedicationPickerSheet open={true} onOpenChange={onOpenChange} orderId="order-3b" />,
+      );
+
+      const rowBtn = screen.getByText('Paracetamol 500 mg').closest('button');
+      vi.useRealTimers();
+      await act(async () => {
+        fireEvent.click(rowBtn!);
+      });
+
+      expect(mutateAsyncFn).toHaveBeenCalledTimes(1);
+      // Sheet must NOT close on error — onOpenChange(false) should not have been called.
+      expect(onOpenChange).not.toHaveBeenCalledWith(false);
     });
   });
 
