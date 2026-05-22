@@ -56,11 +56,13 @@ import {
  *             the session owner User.id (D-92 / CR-04). Pre-fix: the
  *             route never called setActor() before destroySession.
  *
- *   AUD-01 — failed-login entityType taxonomy (WR-07)
+ *   AUD-01 — failed-login entityType taxonomy (WR-07 + CR-03)
  *     Test 10: unknown-email failed-login writes entityType=auth_attempt
  *              with entityId=email (was entityType='session', entityId='').
- *     Test 11: known-user-wrong-password still writes entityType=session
- *              with entityId=user.id — protects the unchanged convention.
+ *     Test 11: known-user-wrong-password ALSO writes entityType=auth_attempt
+ *              with entityId=email (CR-03 unified taxonomy across both
+ *              failed-login branches); actorUserId distinguishes the two
+ *              cases (set for known-user, null for unknown-email).
  *
  *   AUD-02 — admin-only access
  *     Test 6: `GET /api/audit/events` returns 403 for sjuksköterska,
@@ -398,7 +400,7 @@ describe('AUD-01 — sensitive-field redaction (D-97 / T-05-03)', () => {
   });
 });
 
-describe('AUD-01 — failed-login entityType taxonomy (WR-07)', () => {
+describe('AUD-01 — failed-login entityType taxonomy (WR-07 + CR-03)', () => {
   it('unknown-email failed-login writes entityType=auth_attempt with entityId=email (WR-07)', async () => {
     // Test 10 — WR-07 regression: unknown-email branch in auth.service.ts
     // previously wrote entityType='session', entityId=''. Now writes
@@ -430,10 +432,14 @@ describe('AUD-01 — failed-login entityType taxonomy (WR-07)', () => {
     expect(after).toEqual({ email: attemptedEmail });
   });
 
-  it('known-user-wrong-password failed-login still writes entityType=session with entityId=user.id (D-96 unchanged)', async () => {
-    // Test 11 — protection test: the known-user-wrong-password branch
-    // (auth.service.ts lines 79-99) is unchanged by WR-07. This test
-    // guards against accidental regression.
+  it('known-user-wrong-password failed-login writes entityType=auth_attempt with entityId=email (CR-03 unified taxonomy)', async () => {
+    // Test 11 — CR-03 unified taxonomy: both failed-login branches in
+    // auth.service.ts now share entityType='auth_attempt' with
+    // entityId=email. The two branches remain distinguishable via the
+    // actorUserId column: known-user (this test) sets actorUserId=user.id;
+    // unknown-email (Test 10) leaves actorUserId null. This test asserts
+    // the unified contract — the prior "protect entityType='session'"
+    // framing is superseded by CR-03.
     const testStartedAt = new Date();
     const testUser = await prisma.user.findUniqueOrThrow({
       where: { email: TEST_SJUKSKOTERSKA.email },
@@ -452,9 +458,9 @@ describe('AUD-01 — failed-login entityType taxonomy (WR-07)', () => {
       orderBy: { createdAt: 'desc' },
     });
     expect(row).not.toBeNull();
-    // The known-user convention: entityType='session', entityId=user.id.
-    expect(row!.entityType).toBe('session');
-    expect(row!.entityId).toBe(testUser.id);
+    // CR-03 unified taxonomy: entityType='auth_attempt', entityId=email.
+    expect(row!.entityType).toBe('auth_attempt');
+    expect(row!.entityId).toBe(TEST_SJUKSKOTERSKA.email);
     // D-96: known user attempting → actorUserId is set (we know who tried).
     expect(row!.actorUserId).toBe(testUser.id);
   });

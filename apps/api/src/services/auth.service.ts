@@ -77,18 +77,22 @@ export async function login(
 
   const ok = await verifyPassword(user.passwordHash, password);
   if (!ok) {
-    // Phase 5 D-96 — explicit auth.login_failed write. We KNOW which
-    // user the attacker claimed to be (email matched), so we record
-    // user.id as both actorUserId and entityId (for Session writes
-    // entityId is the User.id per resolveEntityId — we mirror that
-    // convention here even though the $extends path isn't involved).
+    // Phase 5 D-96 + CR-03 — explicit auth.login_failed write. Both failed-login
+    // branches (unknown-email above and known-user-wrong-password here) share
+    // ONE taxonomy: entityType='auth_attempt', entityId=email. This makes the
+    // admin filter `?entityType=auth_attempt&entityId=alice@example.com`
+    // surface every failed attempt against that email regardless of whether
+    // the email maps to a real User — the credential-stuffing signal admins
+    // actually care about. actorUserId stays set when we know the user
+    // (this branch) and null when we don't (unknown-email branch above), so
+    // the two cases remain distinguishable via the actorUserId column.
     const store = als.getStore();
     await prisma.auditEvent.create({
       data: {
         actorUserId: user.id,
         careUnitId: user.careUnitId,
-        entityType: 'session',
-        entityId: user.id, // D-97 + T-05-03 — NEVER a Session id (no session exists).
+        entityType: 'auth_attempt',
+        entityId: email, // D-97 + T-05-03 — NEVER a Session id (no session exists).
         action: 'auth.login_failed',
         // before omitted (defaults to DB null).
         after: { email },
