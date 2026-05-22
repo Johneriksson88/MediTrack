@@ -8,7 +8,8 @@ import { OrderStatusPill } from '@/components/OrderStatusPill';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Can } from '@/auth/Can';
 import { useOrderQuery } from '@/features/orders/useOrderQueries';
-import { useSubmitOrder, useDiscardOrder } from '@/features/orders/useOrderMutations';
+import { useSubmitOrder, useDiscardOrder, useConfirmOrder } from '@/features/orders/useOrderMutations';
+import { useCan } from '@/auth/useCan';
 import { useDocumentTitle } from '@/lib/useDocumentTitle';
 import { OrderLineTable } from './OrderLineTable';
 import { OrderLineCardList } from './OrderLineCardList';
@@ -16,6 +17,7 @@ import { MedicationPickerSheet } from './MedicationPickerSheet';
 import { ComposeStickyFooter } from './ComposeStickyFooter';
 import { SubmitConfirmationBanner } from './SubmitConfirmationBanner';
 import { DiscardDraftDialog } from './DiscardDraftDialog';
+import { ApotekareActionFooter } from './ApotekareActionFooter';
 
 /**
  * Phase 3 D-50 / D-67 / D-68 / D-71 / UI-SPEC §4 — Compose Order page.
@@ -57,6 +59,8 @@ export function ComposeOrderPage() {
 
   const submitMutation = useSubmitOrder();
   const discardMutation = useDiscardOrder();
+  const confirmMutation = useConfirmOrder();
+  const canConfirm = useCan('order:confirm');
 
   const order = orderQuery.data;
   const isLoading = orderQuery.isLoading;
@@ -69,11 +73,12 @@ export function ComposeOrderPage() {
   // it switches once the order resolves. The hook itself takes care of
   // capturing/restoring the *previous* document.title on each transition.
   const titleForOrder =
-    order?.status === 'utkast'
-      ? 'Nytt utkast — MediTrack'
-      : order
-        ? 'Beställning · Skickad — MediTrack'
-        : 'Beställning — MediTrack';
+    order?.status === 'utkast'    ? 'Nytt utkast — MediTrack' :
+    order?.status === 'skickad'   ? 'Beställning · Skickad — MediTrack' :
+    order?.status === 'bekraftad' ? 'Beställning · Bekräftad — MediTrack' :
+    order?.status === 'levererad' ? 'Beställning · Levererad — MediTrack' :
+    order                         ? 'Beställning — MediTrack' :
+                                    'Beställning — MediTrack';
   useDocumentTitle(titleForOrder);
 
   // ── Loading state ──────────────────────────────────────────────────────────
@@ -132,10 +137,18 @@ export function ComposeOrderPage() {
   if (!order) return null;
 
   const isUtkast = order.status === 'utkast';
+  const isSkickad = order.status === 'skickad';
+  const isBekraftad = order.status === 'bekraftad';
+  const isLevererad = order.status === 'levererad';
   const isLocked = !isUtkast;
 
   // ── Shared header ──────────────────────────────────────────────────────────
-  const heading = isUtkast ? 'Nytt utkast' : 'Beställning · Skickad';
+  const heading =
+    isUtkast    ? 'Nytt utkast' :
+    isSkickad   ? 'Beställning · Skickad' :
+    isBekraftad ? 'Beställning · Bekräftad' :
+    isLevererad ? 'Beställning · Levererad' :
+                  'Beställning';
 
   const header = (
     <>
@@ -159,11 +172,11 @@ export function ComposeOrderPage() {
   // and ComposeStickyFooter share one provider context (one tooltip portal +
   // one scroll-lock observer instead of two stacked). Phase 4 components added
   // inside this tree get the provider for free.
-  // ── Mode B — non-utkast (locked, read-only) ────────────────────────────────
+  // ── Mode B/C/D/E — non-utkast (locked, read-only + optional action) ─────────
   if (isLocked) {
     return (
       <TooltipProvider>
-        <div className="flex flex-col gap-4 p-4 md:p-6 lg:p-8">
+        <div className="flex flex-col gap-4 p-4 md:p-6 lg:p-8 pb-[calc(var(--mode-c-padding,0px)+1rem)]">
           {header}
 
           {/* SubmitConfirmationBanner: role="status" announces on the
@@ -187,6 +200,20 @@ export function ComposeOrderPage() {
             isLocked={true}
             className="block md:hidden"
           />
+
+          {/* Mode C — Skickad order + apotekare/admin: show Bekräfta beställning button.
+              <Can> is the FE UX gate (defense in depth); requirePermission on the BE
+              is the security boundary. Sjuksköterska sees no button here (D-15 / T10). */}
+          {isSkickad && canConfirm && (
+            <Can action="order:confirm">
+              <ApotekareActionFooter
+                label="Bekräfta beställning"
+                onClick={() => void confirmMutation.mutateAsync({ orderId: order.id })}
+                isPending={confirmMutation.isPending}
+                loadingLabel="Bekräftar…"
+              />
+            </Can>
+          )}
         </div>
       </TooltipProvider>
     );
