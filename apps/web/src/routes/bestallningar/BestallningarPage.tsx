@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ClipboardList, Loader2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -6,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Can } from '@/auth/Can';
 import { useDraftsQuery } from '@/features/orders/useOrderQueries';
 import { useCreateDraftOrder } from '@/features/orders/useOrderMutations';
+import { useDocumentTitle } from '@/lib/useDocumentTitle';
 import { DraftsTable } from './DraftsTable';
 import { DraftsCardList } from './DraftsCardList';
 
@@ -34,13 +34,10 @@ export function BestallningarPage() {
   const { data, isLoading } = useDraftsQuery();
   const createMutation = useCreateDraftOrder();
 
-  // Set document title (UI-SPEC §Copywriting analog from LakemedelPage).
-  useEffect(() => {
-    document.title = 'Beställningar — MediTrack';
-    return () => {
-      document.title = 'MediTrack';
-    };
-  }, []);
+  // Set document title — WR-09: use save/restore hook so SPA navigation
+  // restores the previous route's title (e.g., 'Läkemedel — MediTrack')
+  // instead of hard-coding 'MediTrack' on unmount.
+  useDocumentTitle('Beställningar — MediTrack');
 
   const rows = data?.rows ?? [];
   const rowsEmpty = !isLoading && data !== undefined && rows.length === 0;
