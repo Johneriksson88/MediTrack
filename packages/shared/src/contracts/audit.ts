@@ -87,7 +87,12 @@ export const auditEventListQuery = z.object({
   actorUserId: z.string().cuid().optional(),
   entityType: z.string().optional(),
   action: z.string().optional(),
-  requestId: z.string().optional(),
+  // WR-08 — tightened from `z.string()` to `z.string().uuid()`. requestContext.ts
+  // emits requestId via crypto.randomUUID(), so the filter accepting any string
+  // was a one-sided contract that round-tripped garbage values through the
+  // where-AND clause (rendered in the admin UI via RequestIdGroupChip per
+  // AUDIT-02). UUID v4 shape is the documented producer contract.
+  requestId: z.string().uuid().optional(),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
