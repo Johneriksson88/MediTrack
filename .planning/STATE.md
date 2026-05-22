@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 5
-status: ready_to_plan
-last_updated: "2026-05-22T18:00:25.638Z"
+current_phase: 05
+status: in_progress
+last_updated: "2026-05-22T20:35:00.000Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 18
-  completed_plans: 15
-  percent: 57
+  completed_plans: 16
+  percent: 61
 ---
 
 # State: MediTrack
@@ -22,7 +22,7 @@ See: [.planning/PROJECT.md](PROJECT.md) (initialized 2026-05-19)
 
 **Core value:** A nurse can place an order for a low-stock medication and, when delivered, the stock balance and audit trail update atomically — reliably, with no manual reconciliation.
 
-**Current focus:** Phase 5 — audit log
+**Current focus:** Phase 05 — audit-log
 
 ## Roadmap Reference
 
@@ -31,7 +31,7 @@ See: [.planning/ROADMAP.md](ROADMAP.md) (created 2026-05-19)
 **Total phases:** 7
 **Phases complete:** 0
 **Phases in progress:** 0
-**Current phase:** 5
+**Current phase:** 05
 
 ## Phase Progress
 
@@ -82,6 +82,14 @@ Run `/gsd:discuss-phase 1` to gather context for Phase 1 before planning, or `/g
 | 03-03 | Frontend List + Compose | Complete | fb5820c, a3212c7, 627a7a8 |
 | 03-04 | Submit & Discard | Complete | cfa19c1, 5800a92, c79effa |
 
+## Phase 05 Progress
+
+| # | Plan | Status | Commits |
+|---|------|--------|---------|
+| 05-01 | Audit Foundation (schema + extension + ALS) | Complete | 9bffbaa, a7dae03, 55afe79 |
+| 05-02 | Read API (audit.service + routes) | Pending | — |
+| 05-03 | Admin UI + integration tests + ESLint | Pending | — |
+
 ## Decisions Made
 
 - D-46 confirmed: OrderStatus Postgres enum verbatim mirrors ORDER_STATUSES (utkast/skickad/bekraftad/levererad)
@@ -98,8 +106,13 @@ Run `/gsd:discuss-phase 1` to gather context for Phase 1 before planning, or `/g
 - Submit + Kasta inert in Slice 3 — Slice 4 wires useSubmitOrder + DiscardDraftDialog
 - ORD-03 complete: submitOrder (Utkast→Skickad) atomic updateMany, D-73 5-scenario integration suite, OrderStatusPill + SubmitConfirmationBanner + DiscardDraftDialog + wired ComposeOrderPage Mode B
 - Phase 3 complete: ORD-01/02/03 all demoable end-to-end
+- D-98 evolution: BEFORE-trigger raising SQLSTATE 42501 binds the table OWNER (REVOKE alone is bypassed by Postgres for owners); REVOKE kept as defense-in-depth for a future non-owner runtime role
+- D-90 confirmed live: Prisma $extends($extends({ query: ... })) intercepts create/update/updateMany/delete/deleteMany on the 6 audited models; query keys MUST be lowercase modelProps names (Prisma runtime type def), not PascalCase
+- D-92 confirmed live: AsyncLocalStorage seeded by Fastify onRequest hook via als.enterWith; seed scripts run outside the scope → middleware skips audit row creation
+- D-97 + T-05-03 closed: resolveEntityId(Session, row) returns row.userId (the actor User.id), NEVER row.id (the raw signed session token); AUDIT_ALLOWLIST drops User.passwordHash and Session.id from the after JSON
+- D-94 live: order.submit / order.confirm / order.deliver / stock.increment / order.softDelete / auth.login / auth.logout overrides thread through ALS, all sibling events of one HTTP request share the same UUID requestId
 
 Last activity: 2026-05-22
 
 ---
-*Last updated: 2026-05-22 after 03-04-submit-discard*
+*Last updated: 2026-05-22 after 05-01-audit-foundation*

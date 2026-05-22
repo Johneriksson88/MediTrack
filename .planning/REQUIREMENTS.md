@@ -52,7 +52,7 @@ Requirements for the Medovia interview submission. Each maps to exactly one road
 
 ### Audit Log
 
-- [ ] **AUD-01**: Every mutation (medication create/update/delete, order status transition, user-initiated action) writes a row to `audit_events` recording actor user_id, entity type + id, action, before/after diff, and ISO-8601 timestamp
+- [x] **AUD-01**: Every mutation (medication create/update/delete, order status transition, user-initiated action) writes a row to `audit_events` recording actor user_id, entity type + id, action, before/after diff, and ISO-8601 timestamp *(Phase 5 Plan 01: Prisma $extends middleware + ALS request context + same-tx audit write; AUDIT_ALLOWLIST + resolveEntityId close T-05-03; trigger-based DB enforcement raises permission denied)*
 - [ ] **AUD-02**: User with role `admin` can view the audit log in reverse-chronological order, filterable by user, entity type, and action
 - [ ] **AUD-03**: The audit table is append-only — no UPDATE or DELETE code paths exist; enforced architecturally (no API surface) and documented in the README
 
@@ -148,7 +148,7 @@ Updated during roadmap creation. Each v1 requirement maps to exactly one phase.
 | STK-01 | Phase 4 | Pending |
 | STK-02 | Phase 4 | Pending |
 | OPS-03 | Phase 4 | Pending |
-| AUD-01 | Phase 5 | Pending |
+| AUD-01 | Phase 5 | Complete (Plan 01) |
 | AUD-02 | Phase 5 | Pending |
 | AUD-03 | Phase 5 | Pending |
 | AI-01 | Phase 6 | Pending |
