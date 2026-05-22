@@ -1,57 +1,106 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ClipboardList, Loader2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Can } from '@/auth/Can';
-import { useDraftsQuery } from '@/features/orders/useOrderQueries';
+import { useDraftsQuery, useOrdersByStatusQuery } from '@/features/orders/useOrderQueries';
 import { useCreateDraftOrder } from '@/features/orders/useOrderMutations';
 import { useDocumentTitle } from '@/lib/useDocumentTitle';
 import { DraftsTable } from './DraftsTable';
 import { DraftsCardList } from './DraftsCardList';
+import { OrdersTable } from './OrdersTable';
+import { OrdersCardList } from './OrdersCardList';
 
 /**
- * Phase 3 D-50 / D-53 / D-70 / D-72 / UI-SPEC §1 — Beställningar drafts list.
+ * Phase 4 ORD-07 / D-82 — Beställningar history with status-tab filter.
  *
- * Replaces the Phase 1 stub (BestallningarPage was <EmptyStateCard>).
+ * Extends Phase 3 drafts-only listing to a per-vårdenhet order history with
+ * five URL-deep-linkable status tabs (Utkast | Skickade | Bekräftade | Levererade | Alla).
  *
- * State: loading → empty (rowsEmpty) → filled (rows.length > 0).
+ * URL state: ?status=utkast (default when param absent) drives tab value.
+ * onValueChange calls setSearchParams({ status: newValue }) — URL updates without reload.
  *
- * Loading: 5 skeleton rows (≥md) + 3 skeleton cards (<md) per UI-SPEC §1.
- * Empty:   inline card with ClipboardList icon, heading 'Inga utkast ännu',
- *          body 'Skapa en ny beställning för att komma igång.', CTA 'Ny beställning'
- *          gated by <Can action="order:create"> (D-70).
- * Filled:  <DraftsTable> (≥md, hidden md:block) + <DraftsCardList> (<md, block md:hidden).
+ * Query branching:
+ *   - Utkast tab → useDraftsQuery() (Phase 3 back-compat; cache key ['orders', {status:'utkast'}])
+ *   - All other tabs → useOrdersByStatusQuery(status) (Phase 4; status sent verbatim to API)
+ *     'alla' is sent as the string 'alla'; BE pre-parser expands to all four statuses.
  *
- * "Ny beställning" button:
- *   - Enters disabled + Loader2 spinner state during mutation.
- *   - On success: navigate to /bestallningar/<new-id> (D-50).
- *   - On error: toast fired by useCreateDraftOrder's onError; button re-enables.
+ * Both hooks are called unconditionally (React Hook rules). The active status
+ * determines which result is displayed.
  *
- * Document title: 'Beställningar — MediTrack' (restored to 'MediTrack' on unmount).
+ * Tab strip aesthetic: underlined tabs per UI-SPEC §Components 1 (bg-transparent,
+ * border-b, active tab border-b-2 border-primary).
+ *
+ * Loading state (tab switch): skeleton rows + cards; tab strip stays interactive.
+ *
+ * Empty states per UI-SPEC §Empty States:
+ *   Utkast    → existing EmptyStateCard with 'Ny beställning' CTA (Phase 3 unchanged)
+ *   Skickade  → inline paragraph: 'Inga skickade beställningar.'
+ *   Bekräftade→ inline paragraph: 'Inga bekräftade beställningar.'
+ *   Levererade→ inline paragraph: 'Inga levererade beställningar ännu.'
+ *   Alla      → inline paragraph (no CTA for history tabs)
  */
+
+type StatusTab = 'utkast' | 'skickad' | 'bekraftad' | 'levererad' | 'alla';
+type NonUtkastTab = 'skickad' | 'bekraftad' | 'levererad' | 'alla';
+
+const VALID_STATUSES: StatusTab[] = ['utkast', 'skickad', 'bekraftad', 'levererad', 'alla'];
+
+function isValidStatus(s: string): s is StatusTab {
+  return VALID_STATUSES.includes(s as StatusTab);
+}
+
+function isNonUtkast(s: StatusTab): s is NonUtkastTab {
+  return s !== 'utkast';
+}
+
 export function BestallningarPage() {
   const navigate = useNavigate();
-  const { data, isLoading } = useDraftsQuery();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawStatus = searchParams.get('status') ?? 'utkast';
+  const status: StatusTab = isValidStatus(rawStatus) ? rawStatus : 'utkast';
+
+  // Both queries called unconditionally (React Hook rules).
+  const draftsQuery = useDraftsQuery();
+  const ordersQuery = useOrdersByStatusQuery(isNonUtkast(status) ? status : 'utkast');
+
+  // Select the active query result.
+  const activeQuery = status === 'utkast' ? draftsQuery : ordersQuery;
+
   const createMutation = useCreateDraftOrder();
 
-  // Set document title — WR-09: use save/restore hook so SPA navigation
-  // restores the previous route's title (e.g., 'Läkemedel — MediTrack')
-  // instead of hard-coding 'MediTrack' on unmount.
   useDocumentTitle('Beställningar — MediTrack');
 
-  const rows = data?.rows ?? [];
-  const rowsEmpty = !isLoading && data !== undefined && rows.length === 0;
+  const rows = activeQuery.data?.rows ?? [];
+  const isLoading = activeQuery.isLoading;
+  const rowsEmpty = !isLoading && activeQuery.data !== undefined && rows.length === 0;
 
   async function handleNyBestallning() {
     const response = await createMutation.mutateAsync();
     navigate(`/bestallningar/${response.id}`);
   }
 
-  function handleRowClick(row: (typeof rows)[number]) {
-    navigate(`/bestallningar/${row.id}`);
+  const isCreating = createMutation.isPending;
+
+  function handleTabChange(value: string) {
+    setSearchParams({ status: value });
   }
 
-  const isCreating = createMutation.isPending;
+  function getEmptyStateText(): string | null {
+    switch (status) {
+      case 'skickad':
+        return 'Inga skickade beställningar.';
+      case 'bekraftad':
+        return 'Inga bekräftade beställningar.';
+      case 'levererad':
+        return 'Inga levererade beställningar ännu.';
+      default:
+        return null;
+    }
+  }
+
+  const nonUtkastEmptyText = getEmptyStateText();
 
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6 lg:p-8">
@@ -70,63 +119,131 @@ export function BestallningarPage() {
         </Can>
       </div>
 
-      {/* Loading state */}
-      {isLoading && (
-        <>
-          {/* Table skeletons (≥md) */}
-          <div className="hidden md:flex flex-col gap-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full rounded" />
-            ))}
-          </div>
-          {/* Card skeletons (<md) */}
-          <div className="flex flex-col gap-3 md:hidden">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-24 w-full rounded-lg" />
-            ))}
-          </div>
-        </>
-      )}
+      {/* Status-tab filter (ORD-07 D-82) */}
+      <Tabs value={status} onValueChange={handleTabChange}>
+        {/* Tab strip — underlined aesthetic per UI-SPEC §Components 1 */}
+        <TabsList
+          aria-label="Beställningsstatus"
+          className="bg-transparent border-b border-border rounded-none p-0 overflow-x-auto flex-nowrap w-full justify-start h-auto"
+        >
+          {(
+            [
+              { value: 'utkast', label: 'Utkast' },
+              { value: 'skickad', label: 'Skickade' },
+              { value: 'bekraftad', label: 'Bekräftade' },
+              { value: 'levererad', label: 'Levererade' },
+              { value: 'alla', label: 'Alla' },
+            ] as const
+          ).map(({ value, label }) => (
+            <TabsTrigger
+              key={value}
+              value={value}
+              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary
+                         data-[state=active]:text-foreground font-semibold text-xs text-muted-foreground
+                         pb-2 flex-shrink-0 whitespace-nowrap px-4 py-2 bg-transparent
+                         hover:text-foreground transition-colors focus-visible:outline-none
+                         focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            >
+              {label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
 
-      {/* Empty state — no drafts in DB yet (D-70) */}
-      {rowsEmpty && (
-        <div className="flex items-center justify-center flex-1 p-8">
-          <div className="max-w-md w-full p-8 text-center bg-card border border-border rounded-lg shadow-sm">
-            <ClipboardList className="h-12 w-12 text-slate-400 mx-auto mb-4" aria-hidden="true" />
-            <h2 className="text-xl font-semibold text-foreground mb-2">
-              Inga utkast ännu
-            </h2>
-            <p className="text-sm text-muted-foreground mb-4">
-              Skapa en ny beställning för att komma igång.
-            </p>
-            <Can action="order:create">
-              <Button
-                onClick={handleNyBestallning}
-                disabled={isCreating}
-              >
-                {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
-                Ny beställning
-              </Button>
-            </Can>
-          </div>
-        </div>
-      )}
+        {/* Tab content — shared layout for all 5 tabs */}
+        {(
+          ['utkast', 'skickad', 'bekraftad', 'levererad', 'alla'] as const
+        ).map((tabValue) => (
+          <TabsContent key={tabValue} value={tabValue} className="mt-4">
+            {/* Loading state */}
+            {isLoading && status === tabValue && (
+              <>
+                {/* Table skeletons (≥md) */}
+                <div className="hidden md:flex flex-col gap-2">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full rounded" />
+                  ))}
+                </div>
+                {/* Card skeletons (<md) */}
+                <div className="flex flex-col gap-3 md:hidden">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <Skeleton key={i} className="h-24 w-full rounded-lg" />
+                  ))}
+                </div>
+              </>
+            )}
 
-      {/* Data: table (≥md) and card list (<md) */}
-      {!isLoading && rows.length > 0 && (
-        <>
-          <DraftsTable
-            items={rows}
-            onRowClick={handleRowClick}
-            className="hidden md:block"
-          />
-          <DraftsCardList
-            items={rows}
-            onCardClick={handleRowClick}
-            className="block md:hidden"
-          />
-        </>
-      )}
+            {/* Empty state — Utkast */}
+            {rowsEmpty && status === tabValue && tabValue === 'utkast' && (
+              <div className="flex items-center justify-center flex-1 p-8">
+                <div className="max-w-md w-full p-8 text-center bg-card border border-border rounded-lg shadow-sm">
+                  <ClipboardList className="h-12 w-12 text-slate-400 mx-auto mb-4" aria-hidden="true" />
+                  <h2 className="text-xl font-semibold text-foreground mb-2">
+                    Inga utkast ännu
+                  </h2>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Skapa en ny beställning för att komma igång.
+                  </p>
+                  <Can action="order:create">
+                    <Button
+                      onClick={handleNyBestallning}
+                      disabled={isCreating}
+                    >
+                      {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
+                      Ny beställning
+                    </Button>
+                  </Can>
+                </div>
+              </div>
+            )}
+
+            {/* Empty state — Alla (no CTA — history is passive) */}
+            {rowsEmpty && status === tabValue && tabValue === 'alla' && (
+              <p className="text-sm text-muted-foreground py-12 text-center">
+                Inga beställningar ännu.
+              </p>
+            )}
+
+            {/* Empty state — non-Utkast status tabs (informational text only) */}
+            {rowsEmpty && status === tabValue && tabValue !== 'utkast' && tabValue !== 'alla' && nonUtkastEmptyText && (
+              <p className="text-sm text-muted-foreground py-12 text-center">
+                {nonUtkastEmptyText}
+              </p>
+            )}
+
+            {/* Data: Utkast tab → Phase 3 DraftsTable / DraftsCardList */}
+            {!isLoading && rows.length > 0 && status === tabValue && tabValue === 'utkast' && (
+              <>
+                <DraftsTable
+                  items={rows}
+                  onRowClick={(row) => navigate(`/bestallningar/${row.id}`)}
+                  className="hidden md:block"
+                />
+                <DraftsCardList
+                  items={rows}
+                  onCardClick={(row) => navigate(`/bestallningar/${row.id}`)}
+                  className="block md:hidden"
+                />
+              </>
+            )}
+
+            {/* Data: non-Utkast tabs → new OrdersTable / OrdersCardList */}
+            {!isLoading && rows.length > 0 && status === tabValue && tabValue !== 'utkast' && (
+              <>
+                <OrdersTable
+                  rows={rows}
+                  tab={tabValue}
+                  className="hidden md:block"
+                />
+                <OrdersCardList
+                  rows={rows}
+                  tab={tabValue}
+                  className="block md:hidden"
+                />
+              </>
+            )}
+          </TabsContent>
+        ))}
+      </Tabs>
     </div>
   );
 }
