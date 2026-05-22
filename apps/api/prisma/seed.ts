@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PrismaClient } from '@prisma/client';
 import { parse } from 'csv-parse';
-import { defaultLowStockThreshold } from '@meditrack/shared';
+import { defaultLowStockThreshold, ORDER_STATUS_LABELS } from '@meditrack/shared';
 import { hashPassword } from '../src/auth/password.js';
 
 /**
@@ -323,8 +323,9 @@ async function main() {
     `[seed] CareUnitMedications inserted for ${CARE_UNIT_ID}: ${cumTotal} (~${pct}% below threshold)`,
   );
 
-  // Phase 3: seed one in-flight Utkast draft for sjukskoterska@example.test.
-  await seedDraftOrder(prisma);
+  // Phase 4 D-85: seed one demo order per status (Utkast, Skickad, Bekräftad, Levererad).
+  // seedDemoOrders replaces Phase 3's single-draft seedDraftOrder for the demo path.
+  await seedDemoOrders(prisma);
 }
 
 /**
@@ -420,6 +421,183 @@ async function seedDraftOrder(prisma: PrismaClient): Promise<void> {
   console.log(
     `[seed] Draft order created for ${sjukskoterska.email} with ${medIds.length} line(s).`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 D-85 — Demo orders fan-out (one per status, idempotent)
+// ---------------------------------------------------------------------------
+
+/**
+ * Picks up to `n` low-stock CareUnitMedications for the given careUnit.
+ * Falls back to any available meds if fewer than `n` are below threshold.
+ *
+ * Extracted from seedDraftOrder so all four status-seeders call the same
+ * helper and produce the same 3 demo CUMs (predictable 30-second demo path
+ * per D-85). Prisma doesn't support column-to-column comparisons in WHERE
+ * so filtering is done in JS.
+ */
+async function pickLowStockCumsFor(
+  prisma: PrismaClient,
+  careUnitId: string,
+  n: number,
+): Promise<string[]> {
+  const candidates = await prisma.careUnitMedication.findMany({
+    where: { careUnitId, deletedAt: null },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, currentStock: true, lowStockThreshold: true },
+  });
+
+  const lowStock = candidates.filter((m) => m.currentStock < m.lowStockThreshold).slice(0, n);
+  let ids = lowStock.map((m) => m.id);
+
+  if (ids.length < n) {
+    const fallback = await prisma.careUnitMedication.findMany({
+      where: { careUnitId, deletedAt: null, id: { notIn: ids } },
+      take: n - ids.length,
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    ids = [...ids, ...fallback.map((m) => m.id)];
+  }
+
+  return ids;
+}
+
+/**
+ * Phase 4 D-85 — Seed one demo order for the given status, idempotently.
+ *
+ * Idempotency key: (careUnitId, createdByUserId, status, deletedAt: null).
+ * Per-status guard so re-running seed after a partial run tops up only the
+ * missing statuses without re-creating or re-applying stock increments for
+ * statuses that already exist.
+ *
+ * For 'levererad': applies post-step stock increment per line INSIDE the same
+ * idempotency block — the findFirst early-return guards both the order create
+ * AND the stock UPDATE so re-running produces no double-increment (T-04-21).
+ */
+async function seedOrderInStatus(
+  prisma: PrismaClient,
+  status: 'utkast' | 'skickad' | 'bekraftad' | 'levererad',
+  sjukskoterska: { id: string; careUnitId: string; email: string },
+  apotekare?: { id: string },
+  cumIds?: string[],
+): Promise<void> {
+  // Idempotency check: one per (careUnitId, createdByUserId, status).
+  const existing = await prisma.order.findFirst({
+    where: {
+      careUnitId: sjukskoterska.careUnitId,
+      createdByUserId: sjukskoterska.id,
+      status,
+      deletedAt: null,
+    },
+  });
+
+  const statusLabel = ORDER_STATUS_LABELS[status];
+
+  if (existing) {
+    // eslint-disable-next-line no-console
+    console.log(`[seed] ${statusLabel} order already exists — skipping (idempotent).`);
+    return;
+  }
+
+  // Resolve the demo CUMs (passed in from the caller so all four orders share the same set).
+  const ids = cumIds ?? [];
+  if (ids.length === 0) {
+    // eslint-disable-next-line no-console
+    console.log(`[seed] No CareUnitMedications available — skipping ${statusLabel} order seed.`);
+    return;
+  }
+
+  const now = new Date();
+
+  // Build actor stamps based on how far through the lifecycle this status is.
+  const data: Parameters<typeof prisma.order.create>[0]['data'] = {
+    careUnitId: sjukskoterska.careUnitId,
+    createdByUserId: sjukskoterska.id,
+    status,
+    lines: {
+      create: ids.map((careUnitMedicationId) => ({
+        careUnitMedicationId,
+        quantity: 5, // predictable quantity for the demo path
+      })),
+    },
+  };
+
+  if (status === 'skickad' || status === 'bekraftad' || status === 'levererad') {
+    data.submittedAt = now;
+    data.submittedByUserId = sjukskoterska.id;
+  }
+  if ((status === 'bekraftad' || status === 'levererad') && apotekare) {
+    data.confirmedAt = now;
+    data.confirmedByUserId = apotekare.id;
+  }
+  if (status === 'levererad' && apotekare) {
+    data.deliveredAt = now;
+    data.deliveredByUserId = apotekare.id;
+  }
+
+  await prisma.order.create({ data });
+
+  // eslint-disable-next-line no-console
+  console.log(`[seed] ${statusLabel} order created.`);
+
+  // D-85 post-step: for the Levererad order, apply stock increments per line
+  // so /lakemedel reflects the historic delivery. This block is INSIDE the
+  // idempotency guard (early-return above prevents re-applying on re-runs).
+  if (status === 'levererad') {
+    for (const cumId of ids) {
+      await prisma.careUnitMedication.update({
+        where: { id: cumId },
+        data: { currentStock: { increment: 5 } }, // mirrors the line quantity above
+      });
+    }
+    // eslint-disable-next-line no-console
+    console.log(`[seed] Levererad order stock incremented for ${ids.length} CUM(s).`);
+  }
+}
+
+/**
+ * Phase 4 D-85 — Orchestrate seeding of one demo order per status.
+ *
+ * Idempotent per status: each seedOrderInStatus call checks independently
+ * before inserting. Running seedDemoOrders N times produces exactly 4 orders
+ * (one per status) and stock incremented exactly once.
+ *
+ * The same 3 low-stock CUMs are used across all four orders so the demo
+ * path is predictable (D-85: apotekare login → Skickade tab → confirm →
+ * deliver → /lakemedel shows updated stock).
+ */
+async function seedDemoOrders(prisma: PrismaClient): Promise<void> {
+  const sjukskoterska = await prisma.user.findUnique({
+    where: { email: 'sjukskoterska@example.test' },
+  });
+  const apotekare = await prisma.user.findUnique({
+    where: { email: 'apotekare@example.test' },
+  });
+
+  if (!sjukskoterska) {
+    // eslint-disable-next-line no-console
+    console.log('[seed] sjukskoterska user not found — skipping demo order seed.');
+    return;
+  }
+  if (!apotekare) {
+    // eslint-disable-next-line no-console
+    console.log('[seed] apotekare user not found — skipping demo order seed.');
+    return;
+  }
+
+  // Pick the same 3 demo CUMs once; reuse across all four status-seeders (D-85).
+  const cumIds = await pickLowStockCumsFor(prisma, sjukskoterska.careUnitId, 3);
+  if (cumIds.length === 0) {
+    // eslint-disable-next-line no-console
+    console.log('[seed] No CareUnitMedications available — skipping demo order seed.');
+    return;
+  }
+
+  await seedOrderInStatus(prisma, 'utkast', sjukskoterska, undefined, cumIds);
+  await seedOrderInStatus(prisma, 'skickad', sjukskoterska, apotekare, cumIds);
+  await seedOrderInStatus(prisma, 'bekraftad', sjukskoterska, apotekare, cumIds);
+  await seedOrderInStatus(prisma, 'levererad', sjukskoterska, apotekare, cumIds);
 }
 
 main()
