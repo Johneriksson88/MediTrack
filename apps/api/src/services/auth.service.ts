@@ -51,17 +51,19 @@ export async function login(
 
     // Phase 5 D-96 — explicit auth.login_failed write. The $extends
     // middleware can't observe this case because no Session row is
-    // created. entityId '' is the chosen sentinel for "no entity exists
-    // yet"; greppable and obvious. The `after` JSON contains ONLY the
-    // attempted email — never password material. actorUserId is null
-    // because we don't know who tried (the email matched no user).
+    // created. WR-07 fix — entityType: 'auth_attempt' (distinct from
+    // 'session', which implies a persisted Session row). entityId is the
+    // attempted email — a forensically useful identifier (admin filter
+    // `?entityType=auth_attempt&entityId=alice@example.com` surfaces every
+    // failed attempt for that email, regardless of whether the email maps
+    // to a real User). actorUserId stays null because we don't know who tried.
     const store = als.getStore();
     await prisma.auditEvent.create({
       data: {
         actorUserId: null,
         careUnitId: null,
-        entityType: 'session',
-        entityId: '',
+        entityType: 'auth_attempt',
+        entityId: email,
         action: 'auth.login_failed',
         // before / after are Json? — omitting before defaults to DB null.
         after: { email },

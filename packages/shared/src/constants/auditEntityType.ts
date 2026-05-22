@@ -12,6 +12,11 @@ import { z } from 'zod';
  * Like AUDIT_ACTIONS, the set is OPEN on the API boundary
  * (auditEventResponse declares `entityType: z.string()`). The const-list
  * and enum exist for FE label-map exhaustiveness.
+ *
+ * Plan 05 added `'auth_attempt'` as the entityType for unknown-email
+ * failed-login rows (WR-07 fix) — semantically distinct from `'session'`
+ * (a persisted post-login object) because no Session row exists for an
+ * unknown-email attempt.
  */
 export const AUDIT_ENTITY_TYPES = [
   'medication',
@@ -20,6 +25,7 @@ export const AUDIT_ENTITY_TYPES = [
   'order_line',
   'user',
   'session',
+  'auth_attempt',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 
@@ -38,4 +44,5 @@ export const AUDIT_ENTITY_TYPE_LABELS: Record<AuditEntityType, string> = {
   order_line: 'beställningsrad',
   user: 'användare',
   session: 'session',
+  auth_attempt: 'inloggningsförsök',
 };
