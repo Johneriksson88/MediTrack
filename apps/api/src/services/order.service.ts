@@ -545,7 +545,12 @@ export async function confirmOrder(
       });
     }
 
-    // Step 4 — Defense-in-depth: validate non-empty lines (mirrors submitOrder step 4).
+    // Step 4 — Sanity check: non-empty lines. submitOrder already enforces
+    // this at submission time and lines are immutable after Skickad
+    // (assertOrderEditable rejects non-utkast), so reaching this branch with
+    // zero lines implies the lines were deleted out-of-band (manual DB edit).
+    // The Order FOR UPDATE lock above does NOT cover OrderLine rows, so this
+    // is not a true race guard — it's a tripwire for invariant violations.
     if (order.lines.length === 0) {
       throw new ValidationFailedError(
         'Beställningen måste ha minst en rad.',
