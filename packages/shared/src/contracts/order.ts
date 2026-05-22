@@ -153,16 +153,21 @@ export type CreateOrderRequest = z.infer<typeof createOrderRequest>;
  * POST /api/orders/:id/confirm body — intentionally empty (D-75). All context
  * (careUnitId, actorUserId) comes from req.user; the body must be empty.
  * .strict() rejects stray fields (T-04-02 mass-assignment mitigation).
+ * .nullish() so callers may omit the body entirely — Fastify passes the body
+ * as `null` when no payload is sent and as `undefined` in some test paths;
+ * both should be accepted because the mitigation only concerns stray FIELDS,
+ * not absence.
  */
-export const confirmOrderRequest = z.object({}).strict();
+export const confirmOrderRequest = z.object({}).strict().nullish();
 export type ConfirmOrderRequest = z.infer<typeof confirmOrderRequest>;
 
 /**
  * POST /api/orders/:id/deliver body — intentionally empty (D-75). All context
  * (careUnitId, actorUserId) comes from req.user; the body must be empty.
  * .strict() rejects stray fields (T-04-02 mass-assignment mitigation).
+ * .nullish() so callers may omit the body entirely — see confirmOrderRequest.
  */
-export const deliverOrderRequest = z.object({}).strict();
+export const deliverOrderRequest = z.object({}).strict().nullish();
 export type DeliverOrderRequest = z.infer<typeof deliverOrderRequest>;
 
 /**
