@@ -67,9 +67,12 @@ DO $$
 BEGIN
   ALTER TABLE "AuditEvent" DISABLE TRIGGER "AuditEvent_no_delete";
 EXCEPTION
-  WHEN OTHERS THEN
-    -- Swallow: trigger absent, already disabled, or table missing.
-    NULL;
+  -- Narrowed from WHEN OTHERS (WR-07): only swallow the two classes
+  -- that correspond to the documented benign cases. Privilege errors,
+  -- lock timeouts, and other failures now propagate up and abort the
+  -- migration transaction so operators can investigate.
+  WHEN object_not_in_prerequisite_state THEN NULL; -- trigger absent / already disabled
+  WHEN undefined_table THEN NULL; -- table missing on fresh DB
 END $$;
 
 -- Step 2 — Purge all pre-migration audit rows.
@@ -83,8 +86,9 @@ DO $$
 BEGIN
   ALTER TABLE "AuditEvent" ENABLE TRIGGER "AuditEvent_no_delete";
 EXCEPTION
-  WHEN OTHERS THEN
-    NULL;
+  -- Narrowed from WHEN OTHERS (WR-07): symmetric with Step 1.
+  WHEN object_not_in_prerequisite_state THEN NULL; -- trigger absent / already enabled
+  WHEN undefined_table THEN NULL; -- table missing on fresh DB
 END $$;
 
 -- Step 4 — Safety gate: fail the migration if the trigger is not re-enabled.
