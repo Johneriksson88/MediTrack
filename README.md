@@ -193,16 +193,27 @@ enforced by Postgres GRANTs and triggers, not by the application.**
 A Prisma `$extends` middleware (`apps/api/src/db/auditExtension.ts`)
 intercepts `create`, `update`, `updateMany`, `delete`, `deleteMany` on
 six audited models (`Medication`, `CareUnitMedication`, `Order`,
-`OrderLine`, `User`, `Session`). For UPDATE/DELETE the middleware
-loads the matching `before` row(s) inside the same `prisma.$transaction`
-as the wrapping mutation, runs the original op, then writes 1+N audit
-rows. **If the mutation rolls back, the audit row rolls back with it**
-— integration test #2 asserts this (D-91: "the audit log doesn't lie").
+`OrderLine`, `User`, `Session`). Each per-model handler resolves the
+active client surface from the `AsyncLocalStorage` store's `activeTx`
+slot — when the caller is inside `prisma.$transaction(async (tx) => ...)`,
+that slot holds the tx client; for bare calls, it falls back to the
+captured root client from `Prisma.defineExtension`. The extension
+intercepts `$transaction` calls at runtime (via `patchTransactionForAudit`
+in `apps/api/src/db/client.ts`) to push the tx into the `activeTx` slot
+before the user's callback runs, then clears it in the finally block. The
+handler then routes BOTH the `findUnique` / `findMany` `before`-row
+pre-loads AND the final `auditEvent.create` audit-row INSERT through that
+resolved context — routing through the captured root `client` is what the
+original Plan 01 ship did and what caused D-91 to fail. **If the mutation rolls back, the audit row rolls back with it**
+— integration test #2 forces a throw inside a
+`prisma.$transaction(async (tx) => { await tx.careUnitMedication.update(...); throw new Error('forced rollback'); })`
+block and asserts zero `audit_events` rows for the rolled-back entity
+(D-91: "the audit log doesn't lie").
 
 Actor identity is carried from the Fastify `onRequest` hook to the
 Prisma middleware via `AsyncLocalStorage`
 (`apps/api/src/plugins/requestContext.ts`) — store payload
-`{ actorUserId, careUnitId, requestId, requestSource, ipAddress, actionOverride }`.
+`{ actorUserId, careUnitId, requestId, requestSource, ipAddress, actionOverride, activeTx }`.
 The actor is **never** sourced from a request body. When the ALS store
 is empty (seed scripts, migration runners), the middleware skips audit
 row creation entirely (D-92) — `apps/api/prisma/seed.ts` runs outside
@@ -251,6 +262,20 @@ UPDATE goes through Prisma's `updateMany` which IS audited). But a
 mitigation: a CI grep banning `$executeRaw` outside an allowlist
 (Phase 4's `FOR UPDATE` would be allowlisted; future raw-writes would
 force a code-review discussion).
+
+**One-shot orphan-row cleanup (migration 0009).** The initial Phase 5
+ship had a bug in the Prisma extension where the audit-row INSERT and
+`before`-row pre-loads ran against the captured root `client` argument
+from `Prisma.defineExtension((client) => ...)`, not against the active
+transactional context. Mutations that rolled back left orphan audit rows
+that the append-only triggers refused to let application code delete.
+Migration `0009_audit_events_purge_orphans` is a one-shot maintenance
+migration that disables `AuditEvent_no_delete` inside its own
+transaction, deletes all pre-migration rows, then re-enables the trigger
+— all inside the same tx, so the audit table is never bypassable in a
+state visible to a concurrent session. The fix to the extension (Plan 04
+Task 1) and the regression test (Plan 04 Task 2) ensure no future
+rollback produces an orphan.
 
 ### §6 interview-ready phrasings
 
