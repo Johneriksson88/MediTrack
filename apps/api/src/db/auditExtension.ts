@@ -341,9 +341,16 @@ async function writeAuditRow(
  *
  * Called once from `db/client.ts` on the singleton extended client.
  */
-export function patchTransactionForAudit<T extends { $transaction: unknown }>(
-  extendedClient: T,
-): T {
+export function patchTransactionForAudit<
+  // WR-04 — narrowed from `{ $transaction: unknown }`: that earlier bound
+  // accepted any object where $transaction was any type — including null,
+  // undefined, or a non-function value — which would crash the .bind()
+  // call below at runtime with no compile-time signal. Requiring a
+  // callable shape moves the check to compile time so mocks and partial
+  // Prisma stubs fail the type-check, not the runtime.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  T extends { $transaction: (...args: any[]) => Promise<any> },
+>(extendedClient: T): T {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const original$transaction = (extendedClient as any).$transaction.bind(extendedClient);
 
