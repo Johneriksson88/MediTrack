@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 05
 status: in_progress
-last_updated: "2026-05-22T20:29:42.619Z"
+last_updated: "2026-05-22T22:52:00.000Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 7
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 20
-  completed_plans: 19
-  percent: 57
+  completed_plans: 20
+  percent: 71
 ---
 
 # State: MediTrack
@@ -60,7 +60,7 @@ See: [.planning/config.json](config.json)
 
 ## Next Action
 
-Phase 5 complete. Run `/gsd:discuss-phase 6` to gather context for Phase 6 (AI categorization + low-stock notifications) before planning, or `/gsd:plan-phase 6` to skip discussion and plan directly.
+Phase 5 complete (all 5 plans including gap-closure plans 04 + 05). Run `/gsd:discuss-phase 6` to gather context for Phase 6 (AI categorization + low-stock notifications) before planning, or `/gsd:plan-phase 6` to skip discussion and plan directly.
 
 ### Quick Tasks Completed
 
@@ -90,6 +90,7 @@ Phase 5 complete. Run `/gsd:discuss-phase 6` to gather context for Phase 6 (AI c
 | 05-02 | Read API + Admin UI (audit.service + routes + page) | Complete | f2f5473, c3651a5, 3b3de1a |
 | 05-03 | Integration tests + ESLint + final hardening | Complete | 72b52e4, 045bdc4, edbcc5b |
 | 05-04 | D-91 Gap Closure (Transactional Audit Contract) | Complete | 7ed96b2, 0e650b5, 11e150c, 948564c, aa1c757 |
+| 05-05 | CR-02/CR-04/WR-07 Gap Closure (error taxonomy + actor attribution + auth_attempt entityType) | Complete | af15979, d2ce395, d7bd8ae, 9c6a8f2 |
 
 ## Decisions Made
 
@@ -127,6 +128,9 @@ Phase 5 complete. Run `/gsd:discuss-phase 6` to gather context for Phase 6 (AI c
 - D-91 implementation via activeTx ALS slot + patchTransactionForAudit (runtime Object.defineProperty patch): Prisma.getExtensionContext is a no-op identity function; query extension handlers are not called with this bound to the client; $transaction interceptor pushes tx into store.activeTx before user callback runs; handlers resolve activeClient = store.activeTx ?? client
 - patchTransactionForAudit runtime patch preserves original TypeScript overload signatures for $transaction callers (order.service.ts, medication.service.ts) — D-83 preserved, no Phase 4 files edited
 - Migration 0009 purges ALL pre-migration orphan audit rows inside a single tx with DISABLE/ENABLE TRIGGER and a DO-block safety gate; Postgres MVCC ensures trigger-disabled state is invisible to concurrent sessions until commit
+- CR-02 closed: decodeCursor() details.reason fixed from 'invalid_quantity' to 'invalid_cursor'; ValidationFailedError union extended to include 'invalid_cursor'
+- CR-04 closed: DELETE /api/auth/session now uses lookup-before-destroy (findSessionById before logout()); setActor() called with session.userId/careUnitId so auth.logout audit rows carry correct actorUserId
+- WR-07 closed: AUDIT_ENTITY_TYPES extended with 'auth_attempt' (Swedish: 'inloggningsförsök'); unknown-email failed-login writes entityType='auth_attempt', entityId=attemptedEmail for forensic brute-force filtering
 
 Last activity: 2026-05-22
 
