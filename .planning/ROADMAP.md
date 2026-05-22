@@ -99,6 +99,10 @@
 **Mode:** mvp
 **UI hint:** yes
 **Requirements:** AUD-01, AUD-02, AUD-03
+**Plans:** 3 plans
+  - [ ] 05-01-PLAN.md — Slice 1 (Wave 1): AuditEvent schema + REVOKE migration + Prisma $extends middleware + AsyncLocalStorage plugin + auditAllowlist + permission key + shared contracts + auth.login_failed write (AUD-01 infrastructure)
+  - [ ] 05-02-PLAN.md — Slice 2 (Wave 2): audit.service.ts (cross-tenant D-16 exception) + GET /api/audit/events (cursor-paginated) + GET /api/audit/filters + AuditPage replaces stub + AuditFilterBar (3 comboboxes URL-as-state) + responsive AuditTable/AuditCardList + AuditDiffPanel + Kopiera permalink (AUD-02)
+  - [ ] 05-03-PLAN.md — Slice 3 (Wave 3): ESLint no-restricted-syntax rule + 5 integration tests (full pipeline coverage, rollback-leaves-no-audit, grep, REVOKE rejection, passwordHash redaction, admin-only 403/403/200) + README audit-log section with §6 prep (AUD-03)
 **Success Criteria:**
 1. Every successful POST/PATCH/DELETE on medications and orders writes an `audit_events` row with `(actor_user_id, entity_type, entity_id, action, before, after, timestamp)`.
 2. User with role `admin` can browse the audit log at `/admin/audit` in reverse-chronological order; filters by user, entity type, and action all combine.
