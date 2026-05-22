@@ -226,13 +226,22 @@ export function ComposeOrderPage() {
         onOpenChange={setDiscardOpen}
         isDeleting={discardMutation.isPending}
         onConfirm={async () => {
+          // WR-04: navigate FIRST, then fire the mutation. useDiscardOrder.onSuccess
+          // removes ['order', vars.orderId] from the cache; if we awaited the
+          // mutation before navigating, React could flush a frame where
+          // useOrderQuery(id).data is undefined (cache gone) but the route
+          // hasn't changed yet — producing a one-frame "Beställning hittades
+          // inte" flash before the navigate runs. Navigating first unmounts
+          // this page synchronously, so the cache eviction happens after
+          // unmount and is never observed in this route's render.
+          navigate('/bestallningar');
           try {
             await discardMutation.mutateAsync({ orderId: order.id });
-            navigate('/bestallningar');
           } catch {
-            // Hook handles toast on error; dialog stays open on 409 (Mode B re-render
-            // is triggered by the hook's invalidation — no further action needed here).
-            setDiscardOpen(false);
+            // Hook handles toast on error; we've already navigated away,
+            // so on 409 (Mode B re-render no longer applies — we left the
+            // page) the user sees the destructive toast on /bestallningar
+            // and the drafts list invalidation refreshes correctly.
           }
         }}
       />
