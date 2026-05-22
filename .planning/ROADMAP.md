@@ -22,7 +22,7 @@
 | 2 | Medication Catalog | 4/4 | Complete   | 2026-05-21 |
 | 3 | Draft Orders | 4/4 | Complete | 2026-05-22 |
 | 4 | Confirm, Deliver & Stock | 3/3 | Complete   | 2026-05-22 |
-| 5 | Audit Log | 3/3 | Complete   | 2026-05-22 |
+| 5 | Audit Log | 4/5 | In Progress|  |
 | 6 | AI Categorization & Low-Stock Notifications | LLM suggests therapeutic class on medication save; dashboard banner surfaces low-stock items live | AI-01, AI-02, AI-03, NTF-01, NTF-02 | yes |
 | 7 | Ops & Submission Polish | One-command Docker Compose runs the full stack with seed data; README explains decisions; git history is review-ready | OPS-01, OPS-02, OPS-04 | no |
 
@@ -99,11 +99,11 @@
 **Mode:** mvp
 **UI hint:** yes
 **Requirements:** AUD-01, AUD-02, AUD-03
-**Plans:** 3/5 plans complete (gap-closure adds 05-04 + 05-05)
+**Plans:** 4/5 plans executed
   - [x] 05-01-PLAN.md — Slice 1 (Wave 1): AuditEvent schema + REVOKE migration + Prisma $extends middleware + AsyncLocalStorage plugin + auditAllowlist + permission key + shared contracts + auth.login_failed write (AUD-01 infrastructure)
   - [x] 05-02-PLAN.md — Slice 2 (Wave 2): audit.service.ts (cross-tenant D-16 exception) + GET /api/audit/events (cursor-paginated) + GET /api/audit/filters + AuditPage replaces stub + AuditFilterBar (3 comboboxes URL-as-state) + responsive AuditTable/AuditCardList + AuditDiffPanel + Kopiera permalink (AUD-02)
   - [x] 05-03-PLAN.md — Slice 3 (Wave 3): ESLint no-restricted-syntax rule + 5 integration tests (full pipeline coverage, rollback-leaves-no-audit, grep, REVOKE rejection, passwordHash redaction, admin-only 403/403/200) + README audit-log section with §6 prep (AUD-03)
-  - [ ] 05-04-PLAN.md — Gap closure (Wave 4): CR-01 D-91 transactional contract fix (Prisma.getExtensionContext routing for pre-loads + audit INSERT) + real rollback regression test (replaces vacuous Test 2) + one-shot orphan-row purge migration (0009) + README §"How the audit hook works" drift correction (AUD-01)
+  - [x] 05-04-PLAN.md — Gap closure (Wave 4): CR-01 D-91 transactional contract fix (Prisma.getExtensionContext routing for pre-loads + audit INSERT) + real rollback regression test (replaces vacuous Test 2) + one-shot orphan-row purge migration (0009) + README §"How the audit hook works" drift correction (AUD-01)
   - [ ] 05-05-PLAN.md — Gap closure (Wave 4): CR-02 cursor decode reason code fix (`invalid_quantity` → `invalid_cursor`) + CR-04 auth.logout actor attribution via lookup-before-destroy in DELETE /api/auth/session + WR-07 unknown-email failed-login entityType (`session` → `auth_attempt`, entityId = attempted email) + 3 regression tests (AUD-01, AUD-02)
 **Success Criteria:**
 1. Every successful POST/PATCH/DELETE on medications and orders writes an `audit_events` row with `(actor_user_id, entity_type, entity_id, action, before, after, timestamp)`.

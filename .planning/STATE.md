@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 05
 status: in_progress
-last_updated: "2026-05-22T20:03:02.914Z"
+last_updated: "2026-05-22T20:29:42.619Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 20
-  completed_plans: 18
+  completed_plans: 19
   percent: 57
 ---
 
@@ -89,6 +89,7 @@ Phase 5 complete. Run `/gsd:discuss-phase 6` to gather context for Phase 6 (AI c
 | 05-01 | Audit Foundation (schema + extension + ALS) | Complete | 9bffbaa, a7dae03, 55afe79 |
 | 05-02 | Read API + Admin UI (audit.service + routes + page) | Complete | f2f5473, c3651a5, 3b3de1a |
 | 05-03 | Integration tests + ESLint + final hardening | Complete | 72b52e4, 045bdc4, edbcc5b |
+| 05-04 | D-91 Gap Closure (Transactional Audit Contract) | Complete | 7ed96b2, 0e650b5, 11e150c, 948564c, aa1c757 |
 
 ## Decisions Made
 
@@ -123,8 +124,11 @@ Phase 5 complete. Run `/gsd:discuss-phase 6` to gather context for Phase 6 (AI c
 - T-05-03 closed in lockstep by AUDIT_ALLOWLIST (drops Session.id from after JSON) + resolveEntityId (returns row.userId, NOT row.id, for entityId column); test #7 asserts both for auth.login AND auth.logout
 - Five composite test helpers (loginAs, captureSessionCookie, createEmptyOrder, findTestCareUnitMedication, progressOrderToBekraftad) promoted to apps/api/test/helpers/buildTestApp.ts; six existing test files migrated; loginAs canonicalized to `(app, user)` signature; no duplicate helper bodies remain outside the helpers directory
 - Phase 5 complete: AUD-01 + AUD-02 + AUD-03 all mechanically asserted by tests AND documented in README.md `## Audit log` with §6 interview prep (five labelled phrasings: concurrency, scale-to-50, retrofitting auth, what I'm proud of, what I'm least proud of)
+- D-91 implementation via activeTx ALS slot + patchTransactionForAudit (runtime Object.defineProperty patch): Prisma.getExtensionContext is a no-op identity function; query extension handlers are not called with this bound to the client; $transaction interceptor pushes tx into store.activeTx before user callback runs; handlers resolve activeClient = store.activeTx ?? client
+- patchTransactionForAudit runtime patch preserves original TypeScript overload signatures for $transaction callers (order.service.ts, medication.service.ts) — D-83 preserved, no Phase 4 files edited
+- Migration 0009 purges ALL pre-migration orphan audit rows inside a single tx with DISABLE/ENABLE TRIGGER and a DO-block safety gate; Postgres MVCC ensures trigger-disabled state is invisible to concurrent sessions until commit
 
 Last activity: 2026-05-22
 
 ---
-*Last updated: 2026-05-22 after 05-03-integration-tests-eslint-hardening*
+*Last updated: 2026-05-22 after 05-04-d91-gap-closure*
