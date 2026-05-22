@@ -2,6 +2,7 @@ import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import type {
   OrderListResponse,
   OrderResponse,
+  OrderStatus,
   PickerOptionsResponse,
 } from '@meditrack/shared';
 import { fetchJson, type ApiError } from '@/lib/api';
@@ -30,6 +31,32 @@ export function useDraftsQuery() {
   return useQuery<OrderListResponse, ApiError>({
     queryKey: ['orders', { status: 'utkast' }],
     queryFn: () => fetchJson<OrderListResponse>('/api/orders?status=utkast'),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * Fetches orders for the current user's careUnit by status.
+ *
+ * Phase 4 ORD-07 — status-tab history surface.
+ *
+ * Accepts:
+ *   - single OrderStatus (e.g. 'skickad')
+ *   - OrderStatus[] (e.g. ['skickad', 'bekraftad'])
+ *   - 'alla' literal (server-side pre-parser expands to all four statuses)
+ *
+ * Query key uses the joined comma-string so array queries cache distinctly
+ * from single-status queries. The 'alla' literal is sent verbatim to the API.
+ *
+ * placeholderData: keepPreviousData delivers smooth transitions when switching
+ * tabs — the previous tab's rows remain visible during the fetch.
+ */
+export function useOrdersByStatusQuery(status: OrderStatus | OrderStatus[] | 'alla') {
+  const statusKey = Array.isArray(status) ? status.join(',') : status;
+  return useQuery<OrderListResponse, ApiError>({
+    queryKey: ['orders', { status: statusKey }],
+    queryFn: () =>
+      fetchJson<OrderListResponse>(`/api/orders?status=${encodeURIComponent(statusKey)}`),
     placeholderData: keepPreviousData,
   });
 }

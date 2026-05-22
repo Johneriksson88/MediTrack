@@ -26,6 +26,7 @@ vi.mock('@/auth/useAuth', () => ({
 // Mock order queries so tests control data without real API calls
 vi.mock('@/features/orders/useOrderQueries', () => ({
   useDraftsQuery: vi.fn(),
+  useOrdersByStatusQuery: vi.fn(),
 }));
 
 // Mock order mutations
@@ -44,11 +45,12 @@ vi.mock('react-router-dom', async () => {
 });
 
 import { useAuth } from '@/auth/useAuth';
-import { useDraftsQuery } from '@/features/orders/useOrderQueries';
+import { useDraftsQuery, useOrdersByStatusQuery } from '@/features/orders/useOrderQueries';
 import { useCreateDraftOrder } from '@/features/orders/useOrderMutations';
 
 const mockUseAuth = vi.mocked(useAuth);
 const mockUseDraftsQuery = vi.mocked(useDraftsQuery);
+const mockUseOrdersByStatusQuery = vi.mocked(useOrdersByStatusQuery);
 const mockUseCreateDraftOrder = vi.mocked(useCreateDraftOrder);
 
 /** Nurse with order:create permission — typical BestallningarPage user */
@@ -77,11 +79,18 @@ const DRAFT_ROW = {
   createdBy: { id: 'u-nurse', name: 'Sara Sjuksköterska' },
 };
 
-/** Helper to mock useDraftsQuery with a specific rows array */
+/** Helper to mock useDraftsQuery (and useOrdersByStatusQuery stub) with a specific rows array */
 function mockDraftsQuery(rows: typeof DRAFT_ROW[], loading = false) {
-  mockUseDraftsQuery.mockReturnValue({
+  const result = {
     data: loading ? undefined : { rows, total: rows.length },
     isLoading: loading,
+  } as unknown as UseQueryResult<OrderListResponse, ApiError>;
+  mockUseDraftsQuery.mockReturnValue(result);
+  // useOrdersByStatusQuery is called unconditionally (React Hook rules); return an empty
+  // result stub for non-utkast statuses so tests focused on the utkast tab work correctly.
+  mockUseOrdersByStatusQuery.mockReturnValue({
+    data: { rows: [], total: 0 },
+    isLoading: false,
   } as unknown as UseQueryResult<OrderListResponse, ApiError>);
 }
 
