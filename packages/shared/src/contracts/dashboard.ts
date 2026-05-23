@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { therapeuticClassEnum } from '../constants/therapeuticClass.js';
 
 /**
  * Phase 6 D-08 / D-120 / NTF-01 — Dashboard low-stock contract.
@@ -48,11 +49,11 @@ export const lowStockItem = z.object({
   name: z.string(),
   currentStock: z.number().int().nonnegative(),
   lowStockThreshold: z.number().int().positive(),
-  // TODO Phase 6 Plan 02: replace z.string().nullable() with
-  // therapeuticClassEnum.nullable() once constants/therapeuticClass.ts lands.
-  // Plan 01 ships first (D-120 dashboard banner) and must compile WITHOUT
-  // depending on Plan 02's migration / enum constant.
-  therapeuticClass: z.string().nullable(),
+  // Phase 6 Plan 02 — upgraded from the Plan-01 placeholder
+  // (z.string().nullable()) now that constants/therapeuticClass.ts ships
+  // the closed enum. Wire shape is unchanged (still `<nullable string>`);
+  // type now narrows to the 14-letter union (D-113 / D-114).
+  therapeuticClass: therapeuticClassEnum.nullable(),
 });
 export type LowStockItem = z.infer<typeof lowStockItem>;
 

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { therapeuticClassEnum } from '../constants/therapeuticClass.js';
 
 /**
  * Phase 2 D-08 / D-44 / D-45 / D-31 — Medication contracts.
@@ -41,6 +42,9 @@ export const medicationListItem = z.object({
   currentStock: z.number().int().nonnegative(),
   lowStockThreshold: z.number().int().positive(),
   source: z.enum(['npl', 'user']),
+  // Phase 6 D-115 — nullable until the user (or AI suggest path in Plan 03)
+  // sets a value. Closed enum via therapeuticClassEnum (D-113 / D-114).
+  therapeuticClass: therapeuticClassEnum.nullable(),
 });
 export type MedicationListItem = z.infer<typeof medicationListItem>;
 
@@ -64,6 +68,9 @@ export const medicationListQuery = z.object({
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
     .optional(),
+  // Phase 6 AI-03 / D-116 — optional single-letter ATC level-1 class filter
+  // (URL param `?class=N` is normalized to this key on the FE).
+  therapeuticClass: therapeuticClassEnum.optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
@@ -142,6 +149,11 @@ export const medicationCreateFromNplRequest = z.object({
   medicationId: z.string().min(1),
   currentStock: z.number().int().nonnegative(),
   lowStockThreshold: z.number().int().positive(),
+  // Phase 6 D-115 + D-32 carve-out: therapeuticClass is editable on NPL meds
+  // (classification is metadata, not pharmaceutical identity). Optional/
+  // nullable because the create-from-NPL path can run without choosing a
+  // class — the Sheet's AI-suggest flow (Plan 03) populates this later.
+  therapeuticClass: therapeuticClassEnum.nullable().optional(),
 });
 export type MedicationCreateFromNplRequest = z.infer<typeof medicationCreateFromNplRequest>;
 
@@ -158,6 +170,10 @@ export const medicationCreateUserRequest = z.object({
   strength: z.string().nullable().optional(),
   currentStock: z.number().int().nonnegative(),
   lowStockThreshold: z.number().int().positive(),
+  // Phase 6 D-115 — therapeuticClass is optional on the user-create path
+  // (the Sheet's "Hämta AI-förslag" affordance lands in Plan 03; user-created
+  // meds start without a class until they Apply a suggestion or pick one).
+  therapeuticClass: therapeuticClassEnum.nullable().optional(),
 });
 export type MedicationCreateUserRequest = z.infer<typeof medicationCreateUserRequest>;
 
@@ -199,6 +215,11 @@ export const medicationUpdateRequest = z
       .optional(),
     form: z.string().min(1).optional(),
     strength: z.string().nullable().optional(),
+    // Phase 6 D-115 + D-32 carve-out: therapeuticClass IS editable on NPL
+    // meds (classification is metadata, not pharmaceutical identity).
+    // updateCareUnitMedication writes this unconditionally — NOT inside the
+    // `source === 'user'` branch where name/atcCode/form/strength are gated.
+    therapeuticClass: therapeuticClassEnum.nullable().optional(),
   })
   .strict()
   .refine((d) => Object.keys(d).length > 0, {
