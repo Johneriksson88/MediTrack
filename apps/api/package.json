@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@fastify/cookie": "^9.4.0",
+    "@fastify/rate-limit": "^8.0.0",
     "@meditrack/shared": "workspace:*",
     "@prisma/client": "^5.18.0",
     "argon2": "^0.40.3",

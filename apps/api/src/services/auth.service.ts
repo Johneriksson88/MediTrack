@@ -65,7 +65,7 @@ export async function login(
     // call (none today). If a future refactor wraps verifyCredentials in a tx (e.g.
     // for an "account lockout after N failures" feature), this audit row would commit
     // even if the surrounding tx rolls back — silently breaking the D-91 same-tx
-    // contract. See 05-REVIEWS.md MEDIUM #7 + integration test (Test 16) in
+    // contract. See 05-REVIEWS.md MEDIUM #7 + integration test (Test 17) in
     // audit.integration.test.ts. To preserve the invariant, either keep this write
     // outside any tx, OR explicitly use a separate transaction boundary.
     await prisma.auditEvent.create({
@@ -103,7 +103,7 @@ export async function login(
     // call (none today). If a future refactor wraps verifyCredentials in a tx (e.g.
     // for an "account lockout after N failures" feature), this audit row would commit
     // even if the surrounding tx rolls back — silently breaking the D-91 same-tx
-    // contract. See 05-REVIEWS.md MEDIUM #7 + integration test (Test 16) in
+    // contract. See 05-REVIEWS.md MEDIUM #7 + integration test (Test 17) in
     // audit.integration.test.ts. To preserve the invariant, either keep this write
     // outside any tx, OR explicitly use a separate transaction boundary.
     await prisma.auditEvent.create({

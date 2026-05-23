@@ -1,5 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
+// Side-effect import: loads @fastify/rate-limit's .d.ts declaration-merging
+// block that extends FastifyContextConfig with the `rateLimit` field (W4 fix).
+// Without this import, TypeScript sees `config: { rateLimit: {...} }` as an
+// excess-property error because RouteOptions does not know about `rateLimit`.
+import '@fastify/rate-limit';
 import { loginRequest, loginResponse } from '@meditrack/shared';
 import { env } from '../env.js';
 import {
@@ -42,6 +47,47 @@ export async function authRoutes(app: FastifyInstance) {
       schema: {
         body: loginRequest,
         response: { 200: loginResponse },
+      },
+      // Plan 05-09 / 05-REVIEWS.md MEDIUM #8 — per-email + per-IP rate-limit.
+      //
+      // The per-IP global guard is registered in app.ts (30/min default); this
+      // route-level config adds the per-(email, IP) bucket (10/min default).
+      // The two buckets are independent:
+      //   (a) per-(email, IP): bounds brute-force against a single account.
+      //   (b) per-IP global:  bounds slow-scan attacks iterating across emails.
+      //
+      // Rate-limited requests return HTTP 429 BEFORE verifyCredentials runs,
+      // so NO audit.login_failed row is written for them — bounding row growth.
+      config: {
+        rateLimit: {
+          max: parseInt(process.env.RATE_LIMIT_LOGIN_PER_EMAIL_PER_MINUTE ?? '10', 10),
+          timeWindow: '1 minute',
+          keyGenerator: (req) => {
+            const body = (req.body ?? {}) as { email?: string };
+            const email = (body.email ?? 'unknown').toLowerCase().trim();
+            // Combined key: per-email bucket is independent across IPs;
+            // the global per-IP guard (app.ts) also bounds IP fan-out.
+            return `login:${email}|${req.ip}`;
+          },
+          // Run the rate-limit check in the preHandler hook (NOT the default onRequest).
+          // Fastify parses the JSON body between onRequest and preHandler, so req.body
+          // is populated by the time preHandler fires. Without this, req.body is always
+          // undefined in the keyGenerator and ALL requests share the same 'unknown' key.
+          hook: 'preHandler',
+          // D-19 strict alignment (W5): errorResponseBuilder returns an Error
+          // object with statusCode: 429. @fastify/rate-limit THROWS this value
+          // through Fastify's error pipeline; our errorHandlerPlugin intercepts
+          // statusCode === 429 and wraps it in the canonical D-19 envelope
+          // {error: {code: 'rate_limited', message}} using err.message for the
+          // localized Swedish text.
+          errorResponseBuilder: (_req, context) => {
+            const err = new Error(
+              `För många inloggningsförsök. Försök igen om ${context.after}.`,
+            ) as Error & { statusCode: number };
+            err.statusCode = 429;
+            return err;
+          },
+        },
       },
     },
     async (req, reply) => {

@@ -48,6 +48,12 @@ services:
       PORT: "3000"
       NODE_ENV: production
       CI: "true"
+      # Login rate-limit (Plan 05-09 / 05-REVIEWS.md MEDIUM #8)
+      # Bounds audit.login_failed row growth from brute-force; bounding is per-(email, IP)
+      # bucket (RATE_LIMIT_LOGIN_PER_EMAIL_PER_MINUTE) and per-IP (RATE_LIMIT_LOGIN_PER_IP_PER_MINUTE).
+      # Production deployments can override these via the .env file or Docker secrets.
+      RATE_LIMIT_LOGIN_PER_EMAIL_PER_MINUTE: "10"
+      RATE_LIMIT_LOGIN_PER_IP_PER_MINUTE: "30"
     depends_on:
       postgres:
         condition: service_healthy
