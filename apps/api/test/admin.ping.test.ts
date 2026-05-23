@@ -118,7 +118,8 @@ describe('GET /api/me — permissions[] regression (D-18)', () => {
     expect(res.statusCode).toBe(200);
     // Phase 4 D-15: admin gains order:confirm + order:deliver
     // Phase 5 D-15: admin gains audit:read (cross-tenant audit log access)
-    expect(res.json().permissions).toEqual(['admin:ping', 'medication:read', 'medication:create', 'medication:update', 'medication:delete', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete', 'order:confirm', 'order:deliver', 'audit:read']);
+    // Phase 6 D-15: admin gains ai:suggest (AI categorization)
+    expect(res.json().permissions).toEqual(['admin:ping', 'medication:read', 'medication:create', 'medication:update', 'medication:delete', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete', 'order:confirm', 'order:deliver', 'audit:read', 'ai:suggest']);
   });
 
   it("returns medication:read + order:* permissions for a sjuksköterska session", async () => {
@@ -141,6 +142,7 @@ describe('GET /api/me — permissions[] regression (D-18)', () => {
     });
     expect(res.statusCode).toBe(200);
     // Phase 4 D-15: apotekare gains order:confirm + order:deliver
-    expect(res.json().permissions).toEqual(['medication:read', 'medication:create', 'medication:update', 'medication:delete', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete', 'order:confirm', 'order:deliver']);
+    // Phase 6 D-15: apotekare gains ai:suggest (AI categorization)
+    expect(res.json().permissions).toEqual(['medication:read', 'medication:create', 'medication:update', 'medication:delete', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete', 'order:confirm', 'order:deliver', 'ai:suggest']);
   });
 });

@@ -72,7 +72,8 @@ describe('GET /api/me', () => {
       // Phase 3 D-64 — all roles gain order:* (ORD-01..03 no role restriction).
       // Phase 4 D-15 — admin gains order:confirm + order:deliver.
       // Phase 5 D-15 — admin gains audit:read (cross-tenant audit log).
-      permissions: ['admin:ping', 'medication:read', 'medication:create', 'medication:update', 'medication:delete', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete', 'order:confirm', 'order:deliver', 'audit:read'],
+      // Phase 6 D-15 — admin gains ai:suggest (AI categorization).
+      permissions: ['admin:ping', 'medication:read', 'medication:create', 'medication:update', 'medication:delete', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete', 'order:confirm', 'order:deliver', 'audit:read', 'ai:suggest'],
     });
     expect(body).not.toHaveProperty('passwordHash');
   });
