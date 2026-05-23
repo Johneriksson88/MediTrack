@@ -579,6 +579,267 @@ What I'd add with more time, in rough priority order:
 - **Swedish translation of §6 answers** — This README is in English; the UI copy is locked in Swedish per CONTEXT.md `<specifics>`. §6 phrasings in English can be translated live in the interview if Swedish is preferred. v2: pre-translate the §6 paragraphs so the interview answer reads from the README verbatim. 05-REVIEWS.md LOW #17.
 - **Per-vårdenhet admin scope toggle** — Phase 5's admin sees ALL careUnits (cross-tenant per D-16's documented exception). v2: a toggle in the FilterBar that scopes to a specific careUnit, gated by a per-careUnit admin role. Useful when the system scales to 50 vårdenheter (§6 question). Tracked in `.planning/phases/05-audit-log/05-CONTEXT.md <deferred>`.
 
+## AI Categorization
+
+Phase 6 ships an LLM-backed "Hämta AI-förslag" button inside the
+`/lakemedel` Sheet. The button calls Anthropic Claude Haiku 4.5 with the
+medication's name + ATC code and receives a `{therapeuticClass,
+confidence}` payload constrained to the WHO ATC level-1 anatomical-group
+enum. The user can accept the suggestion (one click) or override it by
+picking a different enum bucket from the `Slutgiltig klass` combobox.
+
+REQ-IDs satisfied: **AI-01** (structured suggestion via single LLM call)
+and **AI-02** (accept-or-override flow visible in the UI).
+
+### How the suggestion works
+
+The flow lives behind a single service-file seam at
+`apps/api/src/services/aiCategorization.service.ts` — the ONLY file in
+`apps/api/src/` that imports `@anthropic-ai/sdk`. ROADMAP success
+criterion #4 ("LLM call is isolated behind a single service interface
+so swapping providers — or mocking in tests — is one change in one
+file") is satisfied by this seam (D-106).
+
+End-to-end:
+
+1. User opens `Lägg till läkemedel` (create mode) or edits an existing
+   row, fills `Namn` and `ATC-kod`, clicks **Hämta AI-förslag**.
+2. The FE posts `{name, atcCode}` to
+   `POST /api/ai/suggest-therapeutic-class`.
+3. The route checks `requirePermission('ai:suggest')` — apotekare +
+   admin only (sjuksköterska gets 403 per D-15).
+4. The service calls Anthropic Messages API with `claude-haiku-4-5`,
+   a `tool_use` constraint forcing one of the 14 valid enum values,
+   and a 5-second `AbortController` (D-112; budget below).
+5. The raw `tool_use.input` (validated by `llmToolUseSchema`) returns
+   `{therapeuticClass, confidence: number 0..1}`. The service buckets
+   the float into a discrete band (`hog`/`medel`/`lag` per D-111) and
+   returns the wire shape `{therapeuticClass, confidence: band}`.
+6. The FE renders `AiSuggestionChip` showing `Förslag: <Swedish label>`
+   + a `ConfidenceBadge` (Hög/Medel/Låg säkerhet).
+7. User clicks **Använd förslag** to copy the suggestion into the
+   `Slutgiltig klass` combobox, OR picks a different enum bucket to
+   override. Either way the chip stays visible so accept-vs-override
+   is auditable to the user (D-110).
+8. On save, the `Medication.therapeuticClass` write flows through the
+   Phase 5 audit middleware — diff panel surfaces `therapeuticClass:
+   null → <chosen>` (free integration with audit log; D-95 + D-97
+   allowlist extension lands the column automatically).
+
+### Confidence band semantics
+
+The LLM returns a `0..1` float per its own `tool_use` schema. The
+service buckets server-side per D-111:
+
+- `>= 0.85` → `hog` (Hög säkerhet, green-100 / TrendingUp icon)
+- `>= 0.6`  → `medel` (Medel säkerhet, yellow-100 / Minus icon)
+- `< 0.6`   → `lag` (Låg säkerhet, slate-100 / TrendingDown icon)
+
+Only the band ships in `aiSuggestionResponse.confidence`. Rationale: an
+LLM saying "92%" is theater, not measurement. The band is the honesty
+signal — the UI doesn't pretend to know more than it can defend. The
+mapping is unit-tested via the integration suite (`vi.spyOn` returns a
+fixed band and the FE chip renders the matching label).
+
+### Why a closed enum, not free text (AI-02 reframing)
+
+REQUIREMENTS.md AI-02 reads "override with free text". Phase 6
+deliberately reframes this contract: in this build, the user can
+**override by picking a different enum bucket** from the same 14-option
+list (`A` Mag–tarm och ämnesomsättning … `V` Övrigt). This is the WHO
+ATC level-1 anatomical groups, an international clinical standard since
+1976 (D-113).
+
+Why the reframing:
+
+- **Free text breaks the filter combobox (AI-03).** `Lakemedel ?class=`
+  is a single-select over the closed enum. Spelling drift across
+  "Antibiotika" / "Antibiotikum" / "Antibiotic" would partition the
+  list and silently hide rows.
+- **The 14 anatomical groups already cover the long tail.** `V = Övrigt`
+  is the canonical overflow bucket. A hybrid (closed enum + "Annat"
+  free-text overflow) was considered and rejected as scope creep — the
+  ATC standard already solves this for clinical work.
+- **The interview rubric values defensible domain modeling over
+  literal interpretation of the brief.** The reframing is documented up
+  front (here, and in `.planning/phases/06-ai-categorization-low-stock-notifications/06-CONTEXT.md` D-113) so the interviewer sees the
+  deliberate deviation immediately.
+
+Both the suggestion AND the override go through the same closed enum,
+so the audit log's `Medication.update` event surfaces both flows with
+the same diff shape: `therapeuticClass: <before> → <after>` where both
+sides are valid enum codes.
+
+### Falling back when the API key is absent
+
+`ANTHROPIC_API_KEY` is **OPTIONAL** in `apps/api/src/env.ts`
+(`z.string().optional()`, no `.min(1)` — D-107). When the key is unset
+or empty:
+
+- `GET /api/ai/status` returns `{available: false}`.
+- The FE conditional render in `MedicationSheet` (driven by
+  `useAiAvailability()`) **hides the "Hämta AI-förslag" button
+  entirely** — not disabled, not greyed out, not a layout placeholder.
+  The Sheet looks like the v1-without-AI build (D-108).
+- The `Slutgiltig klass` combobox + dashboard low-stock banner +
+  medication catalog + `?class=N` filter all work unchanged. None of
+  these depend on the LLM.
+- `POST /api/ai/suggest-therapeutic-class` returns `503 ai_unavailable`
+  with the canonical envelope, covering the race where the FE check
+  flipped between availability and the click.
+
+The golden command `docker compose up` on a fresh clone preserves this
+graceful degradation: the api container starts cleanly without the
+key, and the AI affordance simply doesn't appear.
+
+### Latency budget
+
+Target **p95 ≤ 3s**, hard timeout **5s** via `AbortController` inside
+`suggestTherapeuticClass` (D-112). On overrun the service throws
+`AiTimeoutError`, the errorHandler plugin maps to **504 `ai_timeout`**,
+and the FE toasts `AI-förslaget tog för lång tid — försök igen.`
+
+The 5s timeout is overridable via `env.AI_TIMEOUT_MS` strictly for
+Vitest — Test 3 in `apps/api/test/aiCategorization.integration.test.ts`
+sets it to `50` (via `vi.hoisted` before module-load so the service
+file's `const TIMEOUT_MS` read picks it up), then drives the SDK-layer
+mock to return a Promise that resolves only on `signal.abort`. The
+real `AbortController` fires in ~50ms wall time and the test asserts
+the 504 envelope. Production never reads the override.
+
+Manual smoke-check latency for `claude-haiku-4-5` on a typical
+"Amoxicillin + J01CA04" request: not measured on this build (no local
+key in the executor environment); upstream Anthropic data points to
+< 1s p50 for tool-use calls this small.
+
+## Dashboard low-stock banner
+
+Phase 6's other surface replaces the Phase 1 `<EmptyStateCard>` stub on
+`/dashboard` with a banner enumerating every `CareUnitMedication` in
+the caller's vårdenhet whose `currentStock < lowStockThreshold` — name,
+current stock, threshold, `LowStockBadge`, sorted by urgency
+(`currentStock / lowStockThreshold` ratio ASC).
+
+REQ-IDs satisfied: **NTF-01** (in-app low-stock visibility) and
+**NTF-02** (auto-refresh without manual reload).
+
+### Refresh strategy
+
+Three layers per D-119, no SSE/WebSocket (explicit out-of-scope per
+PROJECT.md):
+
+1. **TanStack invalidation siblings** — `useDeliverOrder.onSuccess`
+   invalidates both `['medications']` (existing) AND `['dashboard',
+   'low-stock']` (new). Same goes for `useCreateMedication`,
+   `useUpdateMedication`, `useDeleteMedication`, and
+   `useUpdateThresholdOptimistic`. Same-tab deliveries refresh the
+   banner instantly.
+2. **`refetchOnWindowFocus: true`** on `useLowStockQuery` — Alt-tabbing
+   back catches changes made in another tab or session. Directly
+   answers the §6 "two nurses" question for this surface.
+3. **`refetchInterval: 30_000`** — Foreground polling for the case
+   where the dashboard tab is left open during a demo. ~one GET per
+   30 seconds while the tab is foreground; TanStack pauses interval
+   polling on hidden tabs automatically.
+
+All three combine: same-tab actions invalidate instantly, cross-tab
+actions catch up on focus, and idle dashboards self-update within 30s.
+The contract is asserted by `LOW_STOCK_QUERY_OPTIONS` as a named
+export from `useLowStockQuery.ts` — `DashboardLowStockCard.test.tsx`
+Test 5 imports the const and asserts both flags, so any future refactor
+that drops one of them also has to remove the named export (the test
+fails loudly).
+
+### Why a dedicated endpoint
+
+`GET /api/dashboard/low-stock` ships a focused `{rows, total}` payload
+owning its own cache key `['dashboard', 'low-stock']`, distinct from
+`/lakemedel`'s `['medications', filters]` (D-120).
+
+Rationale:
+
+- **Cache-key independence.** Reusing
+  `GET /api/medications?belowThreshold=true&pageSize=100` would marry
+  the dashboard's refresh model to `/lakemedel`'s filter state — every
+  filter change there would invalidate the banner.
+- **Payload shape.** The banner doesn't need pagination, total counts
+  for sub-filters, or any of the medicationListResponse metadata. A
+  narrower wire shape is the correct contract.
+- **Cost.** ~30 lines of service + route code reusing the established
+  `currentStock < lowStockThreshold` `$queryRaw` pattern from
+  `medication.service.ts:listMedicationsForUnit`. Nothing new.
+
+The endpoint is `requireSession` only — all three roles see the
+dashboard. Scope is careUnit-first per D-16: the service signature is
+`listLowStockForUnit(careUnitId)` and the WHERE clause filters by
+`CareUnitMedication.careUnitId` first.
+
+## Error envelope additions (Phase 6)
+
+Two new canonical error codes join the Phase 1+ taxonomy (all error
+responses follow `{error: {code, message, details?}}` per D-19):
+
+| Code              | HTTP | Source                            | Message (Swedish)                      |
+|-------------------|------|-----------------------------------|----------------------------------------|
+| `ai_unavailable`  | 503  | POST /api/ai/suggest-therapeutic-class when `env.ANTHROPIC_API_KEY` is unset/empty | `AI-tjänsten är inte tillgänglig.` |
+| `ai_timeout`      | 504  | POST /api/ai/suggest-therapeutic-class when the 5s `AbortController` fires (D-112) | `AI-förslaget tog för lång tid.` |
+
+Both classes live in `apps/api/src/plugins/errorHandler.ts`
+(`AiUnavailableError` + `AiTimeoutError`) with branches in the
+`setErrorHandler` mapping. The FE `useSuggestTherapeuticClass` hook
+switches on `err.envelope.error.code` per the canonical D-19 pattern
+and toasts the user-displayable Swedish copy. A third path —
+`Kunde inte hämta förslag — försök igen.` — covers all other errors.
+
+## Environment variables (Phase 6 additions)
+
+The full env contract lives in `apps/api/src/env.ts` (Zod-validated at
+boot). Phase 6 adds one optional key:
+
+| Variable             | Required | Phase | Default | Description |
+|----------------------|----------|-------|---------|-------------|
+| `ANTHROPIC_API_KEY`  | NO       | 6     | unset   | When set, the medication Sheet shows the "Hämta AI-förslag" button (apotekare + admin only). When unset/empty, the AI affordance hides itself; dashboard + catalog + filter combobox all work unchanged. Get a key at <https://console.anthropic.com/settings/keys>. |
+
+`docker-compose.yml` reads the variable via `${ANTHROPIC_API_KEY:-}` so
+the empty-default keeps `docker compose up` working on a fresh clone
+without any key configured. The `.env.example` placeholder is empty.
+
+## Phase 6 v2 candidates
+
+What I'd add with more time, scoped to AI categorization + the
+dashboard banner:
+
+- **Bulk AI backfill of the 43k NPL seed meds** — On a fresh clone the
+  filter combobox is functionally empty until someone clicks **Hämta
+  AI-förslag** on a few rows. An admin "Klassificera alla läkemedel"
+  job would batch the LLM calls in a background queue with progress
+  UI. Cost: ~$4 in Anthropic spend per fresh seed at `claude-haiku-4-5`
+  pricing. Punted from v1 because it adds 30+ seconds to first-boot
+  and is too aggressive for a demo `docker compose up`.
+- **Free-text override bucket ("Annat" hybrid)** — Rejected in D-113;
+  the closed enum is the right domain model for the international ATC
+  standard. Captured here for v2 if a clinical edge case surfaces
+  where `V = Övrigt` is insufficient.
+- **Severity gradient on banner rows** — Red for `< 25% of threshold`,
+  amber for `< 50%`, default otherwise. Polish that NTF-01 doesn't
+  require but would help a nurse skim the banner faster.
+- **Per-row "Beställ" CTA inside the dashboard banner** —
+  Deep-link to `/bestallningar/ny` preloaded with the low-stock med.
+  Scope creep for Phase 6 (NTF-01 only requires visibility, not
+  action); great v2 polish.
+- **Caching AI suggestions by `(name, atcCode)`** — The LLM call is
+  fast + cheap + idempotent for this input. A Postgres table or
+  in-memory LRU would speed things up at the cost of stale-suggestion-
+  on-prompt-change bugs. Reconsider if demo cost becomes a problem.
+- **Multi-select on the Terapeutisk klass filter combobox** — Rejected
+  in D-116 as a clinical workflow that doesn't map to real queries
+  ("antibiotics AND nervsystem"). v2 if a real user complains.
+- **Per-user rate-limit on `POST /api/ai/suggest-therapeutic-class`** —
+  `T-06-15` threat-model item; the route file carries a `TODO` marker
+  pointing at this. ~30/min per session would bound LLM cost in
+  adversarial scenarios. Currently mitigated by the apotekare+admin
+  permission gate (~2 seed accounts in the demo).
+
 ## Vad ligger var?
 
 | Sökväg              | Innehåll                                                          |
