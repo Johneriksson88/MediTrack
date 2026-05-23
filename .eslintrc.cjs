@@ -35,6 +35,24 @@
  * - `prisma.auditEvent.count(...)`          — never used today but allowed
  * - `prisma.auditEvent.aggregate(...)`      — never used today but allowed
  * - `prisma.auditEvent.groupBy(...)`        — listAuditFilters service
+ *
+ * # CREATEMANY BAN (05-REVIEWS.md HIGH #4 — Plan 05-08)
+ *
+ * The third selector below bans `*.createMany` outside `apps/api/prisma/seed.ts`.
+ * D-93 deliberately did not intercept createMany in the Prisma extension
+ * because seed.ts was the only known consumer. The ESLint ban operationalises
+ * that decision so a future contributor cannot accidentally add a createMany
+ * call in a service file and silently bypass the audit middleware.
+ *
+ * To enable createMany for a new bulk-import path, either reopen D-93 and
+ * intercept createMany in the audit extension (load matched rows by PK after
+ * the op, emit N audit rows), OR decompose the call into N individual
+ * prisma.<model>.create({data}) calls which ARE intercepted.
+ *
+ * The `overrides` block at the bottom of this file exempts `apps/api/prisma/seed.ts`
+ * from the `no-restricted-syntax` rule entirely. The seed file runs outside the
+ * ALS frame so it doesn't trigger audit writes anyway, and it's the ONLY
+ * documented createMany consumer (D-93). See the overrides block below.
  */
 
 /* eslint-env node */
@@ -99,6 +117,40 @@ module.exports = {
         message:
           'audit_events is append-only — destructured access to auditEvent.update*/delete*/upsert is banned (D-98).',
       },
+      {
+        // CREATEMANY BAN — 05-REVIEWS.md HIGH #4 / Plan 05-08
+        //
+        // createMany bypasses the audit middleware: the Prisma $extends
+        // interceptor fires on model-method calls, but createMany returns
+        // only { count: N } — no row data for the extension to snapshot.
+        // D-93 deliberately skipped intercepting createMany because
+        // apps/api/prisma/seed.ts was (and remains) the ONLY consumer.
+        // This ESLint rule operationalises that decision.
+        //
+        // If a new bulk-import path is needed, either:
+        //   (a) Reopen D-93 and extend the audit extension to load matched
+        //       rows by PK after the op and emit N audit rows.
+        //   (b) Decompose into N individual prisma.<model>.create({data})
+        //       calls — those ARE intercepted by the audit extension.
+        selector: "MemberExpression[property.name='createMany']",
+        message:
+          'createMany bypasses the audit middleware (D-93 deliberately skips createMany). Only apps/api/prisma/seed.ts is allowed — see 05-REVIEWS.md HIGH #4. To enable createMany for a new bulk-import path, either (a) reopen D-93 and intercept createMany in the audit extension by loading matched rows by PK after the op + emitting N audit rows, or (b) decompose the call into N individual prisma.<model>.create({data}) calls (which ARE intercepted).',
+      },
     ],
   },
+  // apps/api/prisma/seed.ts is the ONLY documented createMany consumer (D-93).
+  // Seed runs outside the ALS frame and does NOT trigger audit writes. The
+  // no-restricted-syntax rule is disabled here so the seed's createMany calls
+  // pass lint. The auditEvent.update*/delete*/upsert bans also relax here, but
+  // seed.ts does not (and should not) call those — the relaxation is benign.
+  overrides: [
+    {
+      files: ['apps/api/prisma/seed.ts'],
+      rules: {
+        // Seed runs outside the ALS frame and is the ONLY documented
+        // createMany consumer (D-93). Disable the createMany ban here.
+        'no-restricted-syntax': 'off',
+      },
+    },
+  ],
 };

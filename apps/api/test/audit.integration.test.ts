@@ -1,6 +1,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
+
+// Resolve repo root from this test file's location:
+// test/audit.integration.test.ts → apps/api → apps → repo root
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const REPO_ROOT = path.resolve(__dirname, '../../..');
 import { actorALS } from '../src/plugins/requestContext.js';
 import {
   TEST_SJUKSKOTERSKA,
@@ -20,9 +28,10 @@ import {
 /**
  * Phase 5 Plan 03 — Audit log integration tests.
  *
- * 14 tests across 7 describe blocks covering AUD-01 / AUD-02 / AUD-03 with
+ * 16 tests across 7 describe blocks covering AUD-01 / AUD-02 / AUD-03 with
  * the threat-model assertions T-05-02 (append-only) and T-05-03 (session
- * id leak via entityId), plus Plan 05 and Plan 06 gap-closure regression tests.
+ * id leak via entityId), plus Plan 05, Plan 06, and Plan 08 gap-closure
+ * regression tests.
  *
  *   AUD-01 — full pipeline coverage
  *     Test 1: create draft → submit → confirm → deliver writes the
@@ -57,6 +66,18 @@ import {
  *             Asserts: (a) current_user === 'meditrack_app', (b) meditrack_app
  *             lacks UPDATE privilege on AuditEvent, (c) if DIRECT_URL is set,
  *             the owner role (meditrack) ALSO rejects UPDATE via the trigger.
+ *     Test 15: CI grep — no off-allowlist prisma.$executeRaw* in apps/ or
+ *             packages/ (05-REVIEWS.md MEDIUM #5). Allowlist is hardcoded in
+ *             the test; empty at Phase 5 close because Phase 4 D-79's FOR
+ *             UPDATE uses $queryRaw (READ form), not $executeRaw (WRITE form).
+ *             New off-allowlist matches fail the test; PR must add to allowlist
+ *             with a reason or refactor to a Prisma model method.
+ *     Test 16: DB-layer empty-entityId trigger rejection — INSERT with
+ *             entityId='' rejects with SQLSTATE 23514 'must be a non-empty
+ *             string' (05-REVIEWS.md LOW #12, migration 0011 backstop for
+ *             Plan 05-05's WR-07 application-code fix). Runs via DIRECT_URL
+ *             (owner role) because the trigger fires regardless of the role
+ *             at the DB layer. Skipped if DIRECT_URL is unset.
  *
  *   AUD-01 — sensitive-field redaction (D-97 + T-05-03)
  *     Test 5: The `auth.login` audit row's `after` JSON does NOT contain
@@ -540,6 +561,117 @@ describe('AUD-03 — append-only enforcement', () => {
       } finally {
         await ownerPrisma.$disconnect();
       }
+    }
+  });
+});
+
+describe('AUD-03 — defense-in-depth guards (Plan 05-08)', () => {
+  it('CI grep: no off-allowlist prisma.$executeRaw* in apps/ or packages/ (05-REVIEWS.md MEDIUM #5)', () => {
+    // ALLOWLIST: production-code files permitted to call $executeRaw or
+    // $executeRawUnsafe (the WRITE forms). $queryRaw / $queryRawUnsafe
+    // (the READ forms) are NOT banned — the audit extension cannot see
+    // them, but reads don't mutate the audit-required entities.
+    //
+    // To add an entry: provide the file path + a one-line reason explaining
+    // why a raw write is required AND why it cannot route through a Prisma
+    // model method (which IS intercepted by the audit extension).
+    //
+    // Empty at Plan 05-08 time: Phase 4 D-79's FOR UPDATE uses $queryRaw
+    // (READ form), which is not subject to this ban.
+    const ALLOWLIST: ReadonlyArray<{ file: string; reason: string }> = [
+      // No entries: all production-code raw operations use $queryRaw (READ).
+    ];
+
+    let matches: string[] = [];
+    try {
+      // Run git grep from the REPO ROOT so 'apps' and 'packages' resolve correctly.
+      // process.cwd() is the vitest working dir (apps/api), not the repo root —
+      // git grep would fail with "ambiguous argument 'apps'" from that directory.
+      const output = execFileSync(
+        'git',
+        ['grep', '-nE', String.raw`prisma\.\$executeRaw(Unsafe)?`, '--', 'apps', 'packages'],
+        { encoding: 'utf8', cwd: REPO_ROOT },
+      ).trim();
+      matches = output.split('\n').filter((l) => l.length > 0);
+    } catch (err: unknown) {
+      // git grep exits 1 with empty stdout when there are no matches.
+      // execFileSync throws on non-zero exit; treat exit-1-with-empty as success.
+      const e = err as { status?: number; stdout?: { toString(): string } };
+      if (e.status === 1 && (e.stdout?.toString().trim() ?? '') === '') {
+        matches = [];
+      } else {
+        throw err;
+      }
+    }
+
+    // Exclude non-production files:
+    // - Test files (e.g. Test 4's $executeRawUnsafe for REVOKE/trigger assertions)
+    // - SQL migration files (comments in migrations mention patterns for documentation)
+    // - Lines where the match is inside a SQL comment (starts with '--')
+    const productionMatches = matches.filter((m) => {
+      const filePath = m.split(':')[0] ?? '';
+      // git grep format: "path:linenum:content"
+      const content = m.split(':').slice(2).join(':').trimStart();
+      return (
+        !filePath.includes('/test/') &&
+        !filePath.endsWith('.test.ts') &&
+        !filePath.endsWith('.spec.ts') &&
+        !filePath.includes('migrations/') &&
+        !filePath.endsWith('.sql') &&
+        // Exclude JS/TS comment-only lines (the pattern appears in a code comment, not as a call)
+        !content.startsWith('//') &&
+        !content.startsWith('*') &&
+        !content.startsWith('/*')
+      );
+    });
+
+    const allowlistFiles = new Set(ALLOWLIST.map((e) => e.file));
+    const offAllowlist = productionMatches.filter((m) => {
+      const filePath = m.split(':')[0] ?? '';
+      return !allowlistFiles.has(filePath);
+    });
+
+    if (offAllowlist.length > 0) {
+      throw new Error(
+        `Off-allowlist $executeRaw* call sites found (05-REVIEWS.md MEDIUM #5):\n` +
+          offAllowlist.join('\n') +
+          `\n\nThese calls bypass the audit middleware (D-93 — the extension cannot see raw queries).\n` +
+          `Either (a) refactor to a Prisma model method (which IS intercepted), or (b) add the file to the ALLOWLIST in this test with a reason.`,
+      );
+    }
+
+    expect(offAllowlist).toHaveLength(0);
+  });
+
+  it('DB-layer: empty entityId INSERT is rejected with SQLSTATE 23514 (05-REVIEWS.md LOW #12)', async () => {
+    // The migration-0011 BEFORE INSERT trigger rejects rows where
+    // entityId = '' or IS NULL. This test runs as the OWNER role
+    // (DIRECT_URL) because the trigger fires regardless of role —
+    // we need the owner connection to verify the DB-layer contract.
+    // If DIRECT_URL is unset, skip the test with a clear message.
+    if (!process.env.DIRECT_URL) {
+      console.warn('Skipping Test 16 — DIRECT_URL not set (migration 0011 trigger not verifiable without owner connection)');
+      return;
+    }
+    const { PrismaClient } = await import('@prisma/client');
+    const ownerPrisma = new PrismaClient({ datasourceUrl: process.env.DIRECT_URL });
+    try {
+      await expect(
+        ownerPrisma.auditEvent.create({
+          data: {
+            actorUserId: null,
+            careUnitId: null,
+            entityType: 'auth_attempt',
+            entityId: '',
+            action: 'auth.login_failed',
+            before: null,
+            after: {},
+            requestId: 'test-low-12-' + Date.now(),
+          },
+        }),
+      ).rejects.toThrow(/non-empty string/);
+    } finally {
+      await ownerPrisma.$disconnect();
     }
   });
 });
