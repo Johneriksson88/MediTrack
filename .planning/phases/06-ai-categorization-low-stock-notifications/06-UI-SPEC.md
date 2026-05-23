@@ -1,10 +1,11 @@
 ---
 phase: 6
 slug: ai-categorization-low-stock-notifications
-status: draft
+status: approved
 shadcn_initialized: true
 preset: "style=new-york baseColor=slate css-variables=true"
 created: 2026-05-23
+reviewed_at: 2026-05-23T00:00:00Z
 ---
 
 # Phase 6 — UI Design Contract: AI Categorization & Low-Stock Notifications
