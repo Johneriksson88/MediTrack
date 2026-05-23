@@ -241,6 +241,8 @@ pnpm verify
 
 Förväntad körtid: ca 5–6 minuter. Kommandot kör `pnpm lint && pnpm -r typecheck && pnpm -r test && pnpm -r build` i den ordningen.
 
+SC#4 Playwright-layoutverifieringen ingår **inte** i `pnpm verify` — den kräver att `docker compose up` körs lokalt (api + web måste vara uppe). Dess dedikerade kommando och genomföranderesultat finns under [§ Mobil-först verifiering](#mobil-först-verifiering).
+
 ## Mobil-först verifiering
 
 <!-- Populated by Slice 4 -->
