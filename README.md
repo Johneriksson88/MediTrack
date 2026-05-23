@@ -180,7 +180,25 @@ genereras per användare och rotaras vid första inlogg — se
 
 ## Demo-rundtur (5 minuter)
 
-<!-- Populated by Slice 5 -->
+Den här rundturen tar fem minuter och täcker varje brief-§2.1-krav i en sammanhängande demo. Förutsättning: `docker compose up` är igång och alla tre demo-användare är seedade.
+
+1. **Logga in som sjuksköterska** — använd `sjukskoterska@example.test` / `demo1234` på `http://localhost:5173/login`. Sessionen överlever en sidomladdning (AUTH-02). Navigera till [§ Mobil-först verifiering](#mobil-först-verifiering) ovan om du vill se inloggningen vid 360 px.
+
+2. **Lägg en multi-radsbeställning** — på `/bestallningar/ny` (eller via `Ny beställning` från `/bestallningar`). Öppna `MedicationPickerSheet` med `Lägg till läkemedel`; välj 2–3 läkemedel; ändra kvantiteter via `QuantityStepper` (44 px touch-targets, optimistisk uppdatering med debounce). Klicka `Skicka` — statusen skiftar `Utkast → Skickad` med en bekräftelsebanner på toppen (ORD-01 + ORD-02 + ORD-03).
+
+3. **Försök redigera den skickade beställningen** — observera att raderna är immutable och att API:t returnerar `HTTP 409 order_locked`. Detta är ORD-06 och Phase 3:s D-54 atomic compare-and-swap-precondition i praktiken.
+
+4. **Logga ut och logga in som apotekare** — `apotekare@example.test` / `demo1234`. Navigera till `/bestallningar` och se den nyss skickade beställningen i tabben `Skickad`.
+
+5. **Bekräfta och leverera beställningen** — klicka in på beställningen, tryck `Bekräfta` (status `Skickad → Bekräftad`), sedan `Leverera` som öppnar `DeliverConfirmDialog`. Bekräfta i dialogen — statusen skiftar till `Levererad` (ORD-04 + ORD-05), och samma transaktion ökar lagersaldot på alla berörda läkemedel (STK-01 + STK-02 + D-79 CUM-batch lock). `OrderActorTrail` visar vem som gjort vilken transition och när.
+
+6. **Se lagret uppdateras** — navigera till `/lakemedel` och hitta ett av de levererade läkemedlen; lagersaldot är nu inkrementerat. Navigera till `/dashboard` — `DashboardLowStockCard` visar de under-tröskel-läkemedel som fortfarande är kritiska (NTF-01 + NTF-02). Om ett läkemedel precis steg över sin tröskel har det försvunnit från bannern (refetchad vid mutation-invalidation per D-119).
+
+7. **AI-förslag på ett nytt läkemedel** — på `/lakemedel`, klicka `Lägg till läkemedel` för att öppna sheeten i create-läge; fyll i namn och ATC-kod; klicka `Hämta AI-förslag`. Servern returnerar en strukturerad rekommendation (`tool_use` mot `claude-haiku-4-5`) med konfidens-band (`Hög säkerhet` / `Medel säkerhet` / `Låg säkerhet` per D-111). Acceptera förslaget eller välj om i `Slutgiltig klass`-dropdown (override-by-enum-bucket per D-113). Spara — `therapeuticClass` persisteras (AI-01 + AI-02).
+
+8. **Logga ut och logga in som admin** — `admin@example.test` / `demo1234`. Navigera till `/admin/audit`. Filtrera på "Användare = sjukskoterska@example.test" — se beställningsraden som skapades i steg 2. Klicka in på den för att se `AuditDiffPanel` (Fält / Före / Efter). Klicka `Kopiera permalink` — URL:en innehåller alla filter-koordinater (men inte before/after-payload, per D-104). RequestId-chip:en länkar till alla syskon-events från samma HTTP-request (AUD-01 + AUD-02 + AUD-03).
+
+Hela rundturen täcker mandatory-omfattningen och 4/4 valda optionals; total walltime cirka 5 minuter vid normal interaktionshastighet.
 
 ## Lokal utveckling utan Docker
 
