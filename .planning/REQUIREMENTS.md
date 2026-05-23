@@ -58,8 +58,8 @@ Requirements for the Medovia interview submission. Each maps to exactly one road
 
 ### Notifications
 
-- [ ] **NTF-01**: Dashboard shows a persistent low-stock banner enumerating every medication for the user's `vårdenhet` whose current stock < threshold
-- [ ] **NTF-02**: The banner refetches after any stock-changing mutation (delivery) and reflects the new state
+- [x] **NTF-01**: Dashboard shows a persistent low-stock banner enumerating every medication for the user's `vårdenhet` whose current stock < threshold
+- [x] **NTF-02**: The banner refetches after any stock-changing mutation (delivery) and reflects the new state
 
 ### User Experience
 
@@ -154,8 +154,8 @@ Updated during roadmap creation. Each v1 requirement maps to exactly one phase.
 | AI-01 | Phase 6 | Pending |
 | AI-02 | Phase 6 | Pending |
 | AI-03 | Phase 6 | Pending |
-| NTF-01 | Phase 6 | Pending |
-| NTF-02 | Phase 6 | Pending |
+| NTF-01 | Phase 6 | Complete |
+| NTF-02 | Phase 6 | Complete |
 | OPS-01 | Phase 7 | Pending |
 | OPS-02 | Phase 7 | Pending |
 | OPS-04 | Phase 7 | Pending |

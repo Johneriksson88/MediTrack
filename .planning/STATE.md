@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 6
+current_phase: 06
 status: ready_to_plan
-last_updated: "2026-05-23T10:48:40.237Z"
+last_updated: "2026-05-23T12:34:04.644Z"
 last_activity: 2026-05-23
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 29
-  completed_plans: 26
+  completed_plans: 27
   percent: 71
 ---
 
@@ -22,7 +22,7 @@ See: [.planning/PROJECT.md](PROJECT.md) (initialized 2026-05-19)
 
 **Core value:** A nurse can place an order for a low-stock medication and, when delivered, the stock balance and audit trail update atomically — reliably, with no manual reconciliation.
 
-**Current focus:** Phase 6 — ai categorization & low stock notifications
+**Current focus:** Phase 06 — ai-categorization-low-stock-notifications
 
 ## Roadmap Reference
 
@@ -31,7 +31,7 @@ See: [.planning/ROADMAP.md](ROADMAP.md) (created 2026-05-19)
 **Total phases:** 7
 **Phases complete:** 0
 **Phases in progress:** 0
-**Current phase:** 6
+**Current phase:** 06
 
 ## Phase Progress
 
@@ -92,6 +92,12 @@ Phase 5 complete (all 5 plans including gap-closure plans 04 + 05). Run `/gsd:di
 | 05-04 | D-91 Gap Closure (Transactional Audit Contract) | Complete | 7ed96b2, 0e650b5, 11e150c, 948564c, aa1c757 |
 | 05-05 | CR-02/CR-04/WR-07 Gap Closure (error taxonomy + actor attribution + auth_attempt entityType) | Complete | af15979, d2ce395, d7bd8ae, 9c6a8f2 |
 
+## Phase 06 Progress
+
+| # | Plan | Status | Commits |
+|---|------|--------|---------|
+| 06-01 | Slice A — Dashboard Low-Stock Banner | Complete | db4dbba, 1dd8106, 5db3612, 400d497, ee253c2, 3507213 |
+
 ## Decisions Made
 
 - D-46 confirmed: OrderStatus Postgres enum verbatim mirrors ORDER_STATUSES (utkast/skickad/bekraftad/levererad)
@@ -131,8 +137,14 @@ Phase 5 complete (all 5 plans including gap-closure plans 04 + 05). Run `/gsd:di
 - CR-02 closed: decodeCursor() details.reason fixed from 'invalid_quantity' to 'invalid_cursor'; ValidationFailedError union extended to include 'invalid_cursor'
 - CR-04 closed: DELETE /api/auth/session now uses lookup-before-destroy (findSessionById before logout()); setActor() called with session.userId/careUnitId so auth.logout audit rows carry correct actorUserId
 - WR-07 closed: AUDIT_ENTITY_TYPES extended with 'auth_attempt' (Swedish: 'inloggningsförsök'); unknown-email failed-login writes entityType='auth_attempt', entityId=attemptedEmail for forensic brute-force filtering
+- D-120 live (Phase 6 Plan 01): GET /api/dashboard/low-stock owns its own cache key ['dashboard', 'low-stock'] — decouples dashboard refresh from /lakemedel's ['medications', filters]; service returns {rows, total} only (no pagination, no belowThresholdTotal). Wire shape narrower than medicationListResponse on purpose.
+- D-119 live (Phase 6 Plan 01): three-layer refresh — TanStack mutation invalidation at 5 sites (useDeliverOrder + useCreateMedication + useUpdateMedication + useUpdateThresholdOptimistic + useDeleteMedication) + refetchOnWindowFocus:true + refetchInterval:30_000 on useLowStockQuery. Each NTF-02 hook is a one-line addition paired with the existing ['medications'] invalidate.
+- D-117 live (Phase 6 Plan 01): dashboard.service.listLowStockForUnit sorts server-side by (currentStock/lowStockThreshold) ASC then name ASC; FE renders rows in received order. \$queryRaw uses ::float cast so the division is real, not integer truncation.
+- D-118 live (Phase 6 Plan 01): DashboardPage.tsx body replaced with single-line `<DashboardLowStockCard />`; no AppShell/nav/h1 changes — CardTitle "Läkemedel under tröskel" serves as the page heading.
+- Plan-01-ships-before-Plan-02-lands contract (Phase 6 Plan 01): dashboard contract declares therapeuticClass: z.string().nullable() with a Plan-02 TODO; dashboard.service.ts SELECTs NULL::text AS "therapeuticClass". Both swap to therapeuticClassEnum + m."therapeuticClass" in lockstep with Plan 02's migration. Avoids cross-plan ordering coupling without weakening the wire contract.
+- LOW_STOCK_QUERY_OPTIONS exported as a named const from useLowStockQuery.ts so the component test can assert the D-119 refresh-policy contract WITHOUT mounting a QueryClient — a refactor that drops either flag must also remove the named export, which the test catches.
 
 Last activity: 2026-05-23
 
 ---
-*Last updated: 2026-05-22 after 05-04-d91-gap-closure*
+*Last updated: 2026-05-23 after 06-01-slice-a-dashboard-low-stock-banner*
