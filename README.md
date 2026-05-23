@@ -1,5 +1,24 @@
 # MediTrack
 
+> README är på svenska. UI-strängar citeras ordagrant i kodfont (t.ex. `Hämta AI-förslag`, `Utkast / Skickad / Bekräftad / Levererad`); tekniska egennamn som `AsyncLocalStorage`, `$extends`, `meditrack_app`, `tool_use` och `claude-haiku-4-5` lämnas i ursprungsform inom kodfont.
+
+## Innehåll
+
+- [Vad är det här?](#vad-är-det-här)
+- [Arkitekturval (motivera dina val)](#arkitekturval-motivera-dina-val)
+- [Snabbstart med Docker Compose](#snabbstart-med-docker-compose)
+- [Demo-konton](#demo-konton)
+- [Demo-rundtur (5 minuter)](#demo-rundtur-5-minuter)
+- [Lokal utveckling utan Docker](#lokal-utveckling-utan-docker)
+- [Tester](#tester)
+- [Mobil-först verifiering](#mobil-först-verifiering)
+- [Kända luckor](#kända-luckor)
+- [Med mer tid](#med-mer-tid)
+- [§6-svar (intervjudiskussion)](#6-svar-intervjudiskussion)
+- [Vad ligger var?](#vad-ligger-var)
+
+---
+
 ## Vad är det här?
 
 Internt webbverktyg på svenska för **vårdenheter** att hantera läkemedelslager
@@ -8,8 +27,12 @@ lagersaldo, lägger flerradsbeställningar och följer status `Utkast → Skicka
 → Bekräftad → Levererad`, med varning när ett läkemedel går under sin
 tröskel. Ersätter dagens felbenägna listor och e-postbeställningar.
 
-Levereras som Medovias case för senior-fullstack-intervjun (en veckas
+Levereras som Medovias case för mid-level fullstack-intervjun (en veckas
 tidsbudget).
+
+## Arkitekturval (motivera dina val)
+
+<!-- Populated by Slice 2 -->
 
 ## Snabbstart med Docker Compose
 
@@ -64,8 +87,12 @@ Tre seedade användare på samma vårdenhet, alla med samma demo-lösenord:
 
 Lösenorden är ett medvetet trivialt demo-värde och finns i klartext i
 seed-skriptet (`apps/api/prisma/seed.ts`). I en skarp miljö skulle de
-genereras per användare och rotaras vid första inlogg — det är inte
-inom ramen för Phase 1.
+genereras per användare och rotaras vid första inlogg — se
+[§ Kända luckor](#kända-luckor).
+
+## Demo-rundtur (5 minuter)
+
+<!-- Populated by Slice 5 -->
 
 ## Lokal utveckling utan Docker
 
@@ -97,748 +124,85 @@ ligga i Docker medan api och web kör direkt på värddatorn:
 
 ## Tester
 
-API:t har en integrations-smoke-svit (Vitest + Fastify `app.inject` mot
+API:t har en integrationssvit (Vitest + Fastify `app.inject` mot
 samma Postgres som dev-stacken):
 
 ```bash
 pnpm --filter @meditrack/api exec vitest run
 ```
 
-Suiten täcker login (AUTH-01), `/me`-rundturen (AUTH-02), RBAC-matrisen
+Sviten täcker login (AUTH-01), `/me`-rundturen (AUTH-02), RBAC-matrisen
 för `/api/admin/ping` (AUTH-05/06) och en end-to-end-smoke som loggar
 in som var och en av de tre demo-rollerna och kör hela
 `login → /me → /admin/ping → logout`-pipelinen
-(`apps/api/test/auth.flow.smoke.test.ts` — Phase 1 success-kriterium #4).
+(`apps/api/test/auth.flow.smoke.test.ts`), 17 audit-integrationstester
+(inkl. transaktionsrollback, nästlade `$transaction`, parallella anrop,
+keep-alive-isolering), 4 rate-limit-tester och AI-integrationstester.
 
-## Status
-
-Phase 1 — Foundation & Auth — är klar. Phases 2–7 är planerade men inte
-implementerade ännu. Se `.planning/ROADMAP.md` för fasplanen och
-`.planning/REQUIREMENTS.md` för alla 38 v1-requirements med spårbarhet.
-
-Phase 7 kommer utöka denna README med det fulla brief-kravet:
-arkitektur-motivering, svaren på §6 (samtidighet, skalning, retrofitting
-av auth), och "kända luckor + vad jag skulle göra med mer tid".
-
-## Audit log
-
-Every successful mutation in MediTrack is recorded in an immutable
-`audit_events` table — medication CRUD, order status transitions
-(`Utkast → Skickad → Bekräftad → Levererad`), order-line edits,
-stock decrements/increments, session creates and deletes, and failed
-login attempts. The table is **append-only — no application code path
-issues UPDATE, DELETE, UPDATE_MANY, DELETE_MANY, or UPSERT against it.**
-Append-only is enforced at two independent layers.
-
-### Layer 1 — code absence (architectural)
-
-The codebase contains zero calls to `prisma.auditEvent.update`,
-`updateMany`, `delete`, `deleteMany`, or `upsert`. This is mechanically
-asserted on every CI run by integration test #3 in
-`apps/api/test/audit.integration.test.ts` ("grep finds zero
-prisma.auditEvent.update*/delete*/upsert calls"), which spawns:
+Webbappens komponenttester körs med Vitest + Testing Library:
 
 ```bash
-git grep -nE 'prisma\.auditEvent\.(update|delete|deleteMany|updateMany|upsert)\b' apps packages
+pnpm --filter @meditrack/web exec vitest run
 ```
 
-and asserts exit code 1 (no matches). The grep is the canonical
-acceptance check for AUD-03's "no UPDATE or DELETE code paths exist."
+Kör hela sviten (lint + typecheck + test + build) i ett kommando:
 
-The same patterns are caught at PR time by an ESLint
-`no-restricted-syntax` rule in `.eslintrc.cjs` (D-99):
-
-```js
-selector: "MemberExpression[object.property.name='auditEvent'][property.name=/^(update|updateMany|delete|deleteMany|upsert)$/]"
-message:  "audit_events is append-only — see Phase 5 D-98. Use prisma.auditEvent.create only."
+```bash
+pnpm verify
 ```
 
-`pnpm lint` runs this rule across the whole workspace. A scratch-file
-smoke test (run inline by Plan 03 verification) confirms the rule
-actually fires on a fabricated `prisma.auditEvent.update(...)` call —
-not just absent-by-omission. Allowed methods: `create`, `findMany`,
-`findUnique`, `findFirst`, `count`, `aggregate`, `groupBy`.
+Förväntad körtid: ca 5–6 minuter. Kommandot kör `pnpm lint && pnpm -r typecheck && pnpm -r test && pnpm -r build` i den ordningen.
 
-### Layer 2 — DB role privilege revocation + BEFORE-trigger
+## Mobil-först verifiering
 
-Migration `0008_audit_events_revoke_grants` runs two things:
+<!-- Populated by Slice 4 -->
 
-1. `REVOKE UPDATE, DELETE, TRUNCATE ON "AuditEvent" FROM CURRENT_USER`
-   — the standard GRANT/REVOKE guard, kept as defense-in-depth so any
-   future runtime role that doesn't own the table is automatically
-   guarded.
-2. A `BEFORE UPDATE/DELETE/TRUNCATE` trigger that calls a plpgsql
-   function which `RAISE EXCEPTION ... USING ERRCODE = '42501'`. 42501
-   is the canonical SQLSTATE behind "permission denied for table".
+## Kända luckor
 
-The runtime role is `meditrack_app` — a named non-owner role whose
-REVOKE on AuditEvent UPDATE/DELETE/TRUNCATE binds it physically
-(Layer 2b, migration 0010). The OWNER role hits the BEFORE-trigger guard
-(Layer 2a, migration 0008). See §Database roles below for the env-var split.
+- `pnpm verify` är inte wired till CI än — ingen GitHub Actions-workflow finns i repot. En `push`-triggered CI-körning är en naturlig nästa åtgärd men prioriterades bort till förmån för applikationsdjup inom vecko-budgeten (se [§ Drift & skalning](#drift--skalning)).
+- 43 538 NPL-läkemedel saknar `therapeuticClass` på fresh seed. Det är ett medvetet avvägning (D-115): en bulk-AI-klassificering kostar ~$4 per `docker compose up` och lägger 30+ sekunder på första-boot — oacceptabelt för en demo. Fältet är ifyllbart via `Hämta AI-förslag` per rad (se [§ AI Categorization (Phase 6)](#ai-categorization-phase-6)).
+- `$queryRaw`-skrivvägar avlyssnas inte av audit-middleware — `$extends`-mellanhanden sitter vid modell-metod-gränsen, inte vid raw SQL. Inga `$executeRaw`-skrivningar finns i produktionskod idag; `audit.integration.test.ts` Test 15 är ett CI-grep som assertar det vid varje körning. En framtida raw-skrivning måste explicit in i allowlisten (se [§ Känd lucka — audit-gap](#känd-lucka--audit-gap)).
+- Demo-lösenord `demo1234` är hårdkodat i seed-skriptet (`apps/api/prisma/seed.ts`). Ingen per-användare rotation vid första inlogg — det är ett demo-konto-mönster, inte ett produktionsmönster.
+- Ingen functional E2E-svit: Playwright används endast för SC#4 layoutverifiering (scrollWidth-assertion + nav-tillgänglighet per viewport) — inte för funktionella flöden. Integrationstester mot Fastify `app.inject` täcker API-ytan; UI-logik täcks av Vitest + Testing Library (se [§ Mobil-först verifiering](#mobil-först-verifiering)).
 
-The trigger is the binding layer for owner sessions because the `meditrack`
-role **owns** the table — Postgres bypasses GRANT/REVOKE checks for
-owners, so REVOKE alone is ineffective for owner connections. The trigger fires
-unconditionally and produces the verbatim "permission denied" message
-D-98 promised. Integration test #4 ("Postgres rejects UPDATE on
-audit_events") now asserts both layers:
+## Med mer tid
 
-```ts
-await expect(
-  prisma.$executeRawUnsafe(`UPDATE "AuditEvent" SET action=$1 WHERE id=$2`, 'hacked', realId),
-).rejects.toThrow(/permission denied/i);
-```
+### Audit & efterlevnad
 
-If a future code change tries an UPDATE — even one that ESLint and the
-grep test missed — Postgres physically rejects it. **Append-only is
-enforced by Postgres GRANTs and triggers, not by the application.**
+- **Retention-rensning / cold-storage** — v1 behåller audit-rader för alltid (D-101). En TTL eller arkiveringskron behöver en `SECURITY DEFINER`-funktion (med migration 0009 som förebild) som pausar `AuditEvent_no_delete`-triggern inuti en transaktion — utan att kompromissa med append-only-garantin.
+- **Hash-kedjade rader för kryptografiskt append-only-bevis** — Varje rad bär `sha256(föregående_rad || denna_rad)`; manipulation av rad N ogiltigförklarar kedjan från N framåt.
+- **Per-vårdenhet admin-scope-toggle** — Admin ser idag alla vårdenheter (D-16 medvetet undantag). v2-tillägget "scope to my vårdenhet" i FilterBar är ett WHERE-tillägg — `careUnitId`-kolumnen finns redan på varje rad.
+- **"FailedLogins"-unionvy i /admin/audit** — Plan 05-05 delade upp misslyckade inloggningar i två `entityType`-värden (`auth_attempt` för okänt e-post, `session` för känt-användare-fel-lösenord). En "FailedLogins"-tab som unionerar båda server-side ger den admin som utreder brute-force ett enda filter.
+- **`Kopiera filterlänk` — etikettbyte** — Nuvarande label `Kopiera permalink` överdrivs; det som kopieras är en filter-URL, inte en djuplänk till det expanderade händelsekortet. v2: byta till `Kopiera filterlänk`.
 
-#### Two-migration sequence (Migration 0008 → Migration 0010)
+### AI & klassificering
 
-The append-only enforcement landed in two migrations:
+- **Bulk-AI-backfill av 43k NPL-läkemedel** — En admin-"Klassificera alla läkemedel"-funktion som batch-anropar LLM:n i en bakgrundskö med förloppsvisning. Kostnad: ~$4 i Anthropic-spend per fresh seed på `claude-haiku-4-5`-prissättning. Avregistrerades från v1 eftersom det lägger 30+ sekunder på första-boot.
+- **Cachning av AI-förslag per `(name, atcCode)`** — LLM-anropet är snabbt, billigt och idempotent för den här inmatningen. En Postgres-tabell eller in-memory LRU skulle snabba upp saker till marginell kostnad.
+- **Per-användare rate-limit på `POST /api/ai/suggest-therapeutic-class`** — T-06-15 threat-model-posten; route-filen bär en `TODO`-markör. ~30/min per session håller LLM-kostnaden i schack vid adversarial use. Idag hanteras det via `requirePermission('ai:suggest')`-grinden (apotekare + admin).
+- **Allvarlighetsgradient på dashboard-banner-rader** — Rött för `< 25 % av tröskeln`, gult för `< 50 %`. NTF-01 kräver bara synlighet, men det skulle hjälpa en sjuksköterska skumma bannern snabbare.
 
-- **Migration 0008** (Plan 01) installed an OWNER-binding `BEFORE UPDATE OR DELETE OR TRUNCATE`
-  trigger on `AuditEvent` (Layer 2a) plus a no-op `REVOKE ... FROM CURRENT_USER` (Plan 01's
-  SUMMARY documents the no-op finding — `CURRENT_USER` evaluated to the table owner, which
-  Postgres bypasses for GRANT/REVOKE checks).
-- **Migration 0010** (Plan 05-07) adds the NAMED-role `REVOKE UPDATE, DELETE, TRUNCATE ON
-  "AuditEvent" FROM meditrack_app` (Layer 2b) and switches the application's runtime
-  `DATABASE_URL` to connect as `meditrack_app`. The trigger in 0008 remains active and
-  remains the OWNER-side guard (admin `psql` sessions, migrations, seed scripts).
+### Drift & skalning
 
-Migration 0008's SQL is intentionally left unmodified: editing any byte of an applied Prisma
-migration changes its SHA-256 checksum and causes `prisma migrate status` to report drift.
-The cross-reference between the two migrations is documented in 0010's header instead.
-See §Database roles below for the env-var split between the two roles.
+- **CI/CD-wiring av `pnpm verify` i GitHub Actions** — Lägger till `.github/workflows/verify.yml` som kör vid `push` + `pull_request`. Avregistrerades från fas 7 eftersom GitHub Actions-adoption är ett eget infrastrukturbeslut (caching-strategi, runner-val, branch protection).
+- **Funktionell E2E-svit med Playwright** — SC#4-skriptet är layout-only. En v2-funktionell svit täcker demo-rundturen som automatiserat test (login → beställning → bekräfta → leverera → audit-visning).
+- **Multi-process-lastbalansering** — Den in-memory rate-limit-store (`@fastify/rate-limit`) delar inte tillstånd mellan processer. En HA-driftsättning byter till den dokumenterade Redis-store:n; applikationen är i övrigt tillståndslös och horisontalt skalbar via `careUnitId`-first service-signaturer.
 
-### Database roles
+### UX-polish
 
-The Postgres database has two roles:
+- **"Beställ"-CTA inuti dashboard-bannern** — Djuplänk till `/bestallningar/ny` förladdad med det låg-lager-läkemedlet. NTF-01 kräver bara synlighet, inte åtgärd.
+- **Flerval på Terapeutisk klass-filtercomboboxen** — Avregistrerades i D-116 som ett kliniskt arbetsflöde som inte mappar till verkliga frågor ("antibiotika OCH nervsystem").
+- **Fri text-overflow-bucket ("Annat")** — Avregistrerades i D-113; den slutna WHO ATC-enumen hanterar långa svansen via `V = Övrigt`. Bevarat här om ett kliniskt gränsfall dyker upp.
 
-- **`meditrack`** — the owner role. Used by `prisma migrate deploy` (migrations) and
-  `prisma db seed` (seed scripts). Has full privileges on every table. Connection string lives
-  in `DIRECT_URL`.
-- **`meditrack_app`** — the application runtime role. Used by the api container's PrismaClient
-  for ALL request-handling queries. Has SELECT / INSERT / UPDATE / DELETE on every table
-  **EXCEPT** `AuditEvent`, where the role has SELECT + INSERT only — UPDATE / DELETE / TRUNCATE
-  have been explicitly REVOKEd by migration 0010. Connection string lives in `DATABASE_URL`.
+### Säkerhet
 
-This split is the named-role half of the append-only audit-log story (D-98 Layer 2b). The
-runtime role physically cannot mutate audit rows; the OWNER role can technically mutate them
-but hits the BEFORE-trigger installed by migration 0008 (Layer 2a) which raises
-`permission denied`. Either layer alone is sufficient for its role; the two compose for
-defense-in-depth.
+- **Per-användare lösenordsrotation vid första inlogg** — Demo-värdet `demo1234` är hårdkodat i seed. En skarp miljö genererar och tvingar byte vid enroll.
+- **Produktion secrets management** — Docker secrets, HashiCorp Vault eller AWS Secrets Manager i stället för `env_file`-konfiguration i docker-compose.
+- **Per-användare rate-limit på AI-endpointen** — Se AI & klassificering ovan (T-06-15).
 
-**The REVOKE is bound to a NAMED role, not to whichever role happened to run the migration.**
-A future deployment swapping to a different role must consciously regrant the privileges,
-surfacing the architectural decision instead of accidentally relaxing it. See
-`apps/api/prisma/migrations/20260523000000_0010_audit_events_named_app_role/migration.sql`
-for the GRANTs and the REVOKE; integration test #4 in
-`apps/api/test/audit.integration.test.ts` asserts both layers (HIGH #3, Plan 05-07).
+## §6-svar (intervjudiskussion)
 
-For local development, the role passwords are hardcoded in `docker-compose.yml`
-(`meditrack` / `meditrack_app_dev`). Production deployments would substitute these with real
-secrets via docker-compose `env_file` or a secret manager — out of scope for this demo.
-
-| Role             | Used by                                  | Env var      | AuditEvent privileges |
-|------------------|------------------------------------------|--------------|-----------------------|
-| `meditrack`      | migrations, seed, admin psql sessions    | `DIRECT_URL` | Full (trigger guards) |
-| `meditrack_app`  | api PrismaClient (all runtime queries)   | `DATABASE_URL` | SELECT + INSERT only |
-
-### How the audit hook works
-
-A Prisma `$extends` middleware (`apps/api/src/db/auditExtension.ts`)
-intercepts `create`, `update`, `updateMany`, `delete`, `deleteMany` on
-six audited models (`Medication`, `CareUnitMedication`, `Order`,
-`OrderLine`, `User`, `Session`). Each per-model handler resolves the
-active Prisma client by reading the top of `activeTxStackALS` — when
-the caller is inside `prisma.$transaction(async (tx) => ...)`, that
-stack holds the tx client; for bare calls it falls back to the captured
-root client from `Prisma.defineExtension`. The extension intercepts
-`$transaction` calls at runtime (via `patchTransactionForAudit`,
-defined in `apps/api/src/db/auditExtension.ts`, applied once in
-`apps/api/src/db/client.ts`) and calls `withActiveTx(tx, fn)` which
-pushes the tx onto `activeTxStackALS` via a new `.run([...prev, tx], fn)`
-frame — nested and parallel transactions each get their own independent
-ALS frame so they never cross-attribute (CR-01). The handler then routes
-BOTH the `findUnique` / `findMany` `before`-row pre-loads AND the final
-`auditEvent.create` audit-row INSERT through that resolved context —
-routing through the captured root `client` is what the original Plan 01
-ship did and what caused D-91 to fail. **If the mutation rolls back, the
-audit row rolls back with it** — integration test #2 forces a throw inside
-a `prisma.$transaction(async (tx) => { await tx.careUnitMedication.update(...); throw new Error('forced rollback'); })`
-block and asserts zero `audit_events` rows for the rolled-back entity
-(D-91: "the audit log doesn't lie").
-
-Actor identity and action overrides are carried from the Fastify
-`onRequest` hook to the Prisma middleware via three independent
-`AsyncLocalStorage` instances in
-`apps/api/src/plugins/requestContext.ts`:
-
-- **`actorALS`** — `{ actorUserId, careUnitId, requestId, requestSource, ipAddress }`.
-  Seeded once per request in the `onRequest` hook (3-arg Fastify form:
-  `actorALS.run(scope, () => done())`); updated by `setActor()` after
-  cookie verification. When the store is absent (seed scripts, migration
-  runners), the middleware skips audit row creation entirely (D-92) —
-  `apps/api/prisma/seed.ts` runs outside the ALS scope, so the audit
-  table starts empty on a fresh `docker compose up`.
-- **`activeTxStackALS`** — a `readonly PrismaClient[]` stack managed by
-  `withActiveTx(tx, fn)` / `currentActiveTx()`. Push and pop are
-  implemented as immutable `.run([...prev, tx], fn)` frames rather than
-  mutating a shared slot, so nested `$transaction` calls never overwrite
-  each other's tx reference (CR-01 fix).
-- **`actionOverrideALS`** — a single `string` frame (or absent). Set by
-  `withActionOverride(action, fn)` which uses
-  `actionOverrideALS.run(action, async () => fn())`. The `async` wrapper
-  is critical: Prisma's `PrismaPromise` is lazy — without it, `.run()`
-  only covers the synchronous `fn()` call that creates the lazy Promise;
-  the actual `$extends` handler fires later when the Promise is
-  `.then()`-ed, at which point the bare `.run()` frame would already be
-  gone.
-
-The actor is **never** sourced from a request body. Three regression
-tests guard the per-concern ALS design: test #12 (nested `$transaction`
-— outer rollback drops its audit row while the inner independent tx
-keeps its own), test #13 (parallel `$transaction` with setImmediate
-interleaving — each tx audits to its own actor, not the other's),
-and test #14 (parallel requests on keep-alive connections — ALS frames
-stay isolated across requests, CR-04).
-
-The `auth.login_failed` path is the one place explicit `prisma.auditEvent.create`
-calls live (in `apps/api/src/services/auth.service.ts`) — those events
-fire BEFORE the `Session.create`, so the `$extends` middleware can't
-observe them. Two writes, both inside the failure branches.
-
-### Why `$extends` over `$use`?
-
-Two Prisma middleware mechanisms exist:
-
-- **`$use(middleware)`** — the original middleware API. Wraps every Prisma operation in a chain of functions; an audit middleware would intercept by registering a `$use` function that wraps the operation.
-- **`$extends({query: {...}})`** — the typed-extension API introduced in Prisma 4 and the documented forward path in Prisma 5+.
-
-Phase 5 uses `$extends` because:
-- `$extends` ships typed extensions per model + per method — `prisma.medication.create` and `prisma.order.update` get distinct extension handlers with type-safe arg shapes. `$use` has a single generic middleware function with untyped args.
-- `$extends` is documented as the long-term API; `$use` is being phased out (the Prisma 5.0 release notes name `$extends` as the recommended replacement).
-- The trade-off: `$extends` does NOT natively intercept `prisma.$transaction` callbacks (the extension's interceptors fire on the EXTENDED client; calling `prisma.$transaction(async (tx) => tx.x.y())` invokes `tx.x.y()` on the inner unextended client). Plan 05-04 closed this gap with the runtime `$transaction` patch in `auditExtension.ts:patchTransactionForAudit`; Plan 05-06 hardened it under nested + parallel + keep-alive concurrency via per-concern ALS instances.
-
-Closes 05-REVIEWS.md MEDIUM #18.
-
-### What's audited
-
-| Model              | Allowlisted columns                                                                                                                                                         | Notes                                                                              |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Medication         | id, nplId, name, atcCode, form, strength, source, createdAt                                                                                                                 | —                                                                                  |
-| CareUnitMedication | id, careUnitId, medicationId, currentStock, lowStockThreshold, deletedAt, createdAt, updatedAt                                                                              | Stock changes audited via `stock.increment` siblings of `order.deliver`.           |
-| Order              | id, careUnitId, createdByUserId, status, submittedAt, submittedByUserId, confirmedAt, confirmedByUserId, deliveredAt, deliveredByUserId, deletedAt, createdAt, updatedAt    | Status transitions wrapped with `withActionOverride('order.submit'|'confirm'|...)` |
-| OrderLine          | id, orderId, careUnitMedicationId, quantity, createdAt, updatedAt                                                                                                           | —                                                                                  |
-| User               | id, email, name, role, careUnitId, createdAt, updatedAt — **excludes `passwordHash`**                                                                                       | Hash NEVER appears in audit rows (D-97). Asserted by integration test #5.          |
-| Session            | userId, careUnitId, createdAt, expiresAt, lastSeenAt — **excludes `id` (the raw signed session token)**                                                                     | Two-layer leak prevention — see below.                                             |
-
-For Session-typed audit rows the `entityId` column carries the actor
-User.id, **NEVER** the raw `Session.id` (T-05-03). This is enforced by
-`resolveEntityId(model, row)` in `apps/api/src/db/auditAllowlist.ts`,
-which returns `row.userId` for Session writes. Two layers close the
-session-token leak path:
-
-- `AUDIT_ALLOWLIST` excludes `Session.id` from the `after` JSON.
-- `resolveEntityId` returns `row.userId` (NOT `row.id`) for `entityId`.
-
-Both layers are asserted in lockstep by integration test #7
-("auth.login + auth.logout entityId equals User.id, NEVER the raw
-Session.id").
-
-### Defense-in-depth guards (Plan 05-08)
-
-Three additional guards close gaps the two layers above didn't cover:
-
-- **`createMany` is banned outside `apps/api/prisma/seed.ts`** (ESLint
-  `no-restricted-syntax`, 05-REVIEWS.md HIGH #4). D-93 deliberately skipped
-  intercepting `createMany` in the audit extension because seed was the only
-  known consumer. The ESLint ban operationalises that decision — a future
-  contributor adding a `prisma.medication.createMany([...])` call in a service
-  file gets a PR-time lint error directing them to either (a) decompose into N
-  individual `prisma.<model>.create({data})` calls (which ARE intercepted) or
-  (b) reopen D-93 and intercept `createMany` in the extension.
-
-- **`$executeRaw` / `$executeRawUnsafe` are subject to a CI allowlist**
-  (integration test `audit.integration.test.ts` Test 15, 05-REVIEWS.md MEDIUM
-  #5). Raw queries bypass the audit extension; a CI grep asserts every
-  production-code match is in a documented allowlist. The allowlist is currently
-  empty — Phase 4 D-79's `FOR UPDATE` uses `$queryRaw` (READ form), which is
-  not subject to the ban. A future raw-write must be added to the allowlist
-  consciously, surfacing the architectural decision at PR time.
-
-- **`audit_events.entityId` cannot be empty or NULL** (migration 0011 BEFORE
-  INSERT trigger, 05-REVIEWS.md LOW #12). Plan 05-05's WR-07 split path closed
-  the sentinel-empty-string case in the application code (`auth.service.ts` now
-  sets `entityId` to the attempted email for unknown-email login failures). The
-  trigger is the DB-layer backstop — any future code path that forgets to set
-  `entityId` hits SQLSTATE 23514 instead of writing a meaningless row.
-
-### Known gap (honest disclosure)
-
-`prisma.$queryRaw` and `prisma.$executeRaw` are **not** intercepted by
-the `$extends` middleware. The middleware sits at the model-method
-boundary, not the raw-SQL boundary.
-
-Today this is harmless: the only raw queries in the codebase are
-Phase 4's `FOR UPDATE` row lock (a read, not a mutation — the actual
-UPDATE goes through Prisma's `updateMany` which IS audited), and some
-read-only `$queryRaw` calls in `medication.service.ts` (column-vs-column
-predicates Prisma ORM cannot express). No `$executeRaw` write calls exist
-in production code — enforced by the CI grep in Test 15 above. A future
-raw write that needs to land must be added to the allowlist with a
-documented reason, surfacing the audit-bypass decision at PR time.
-
-**One-shot orphan-row cleanup (migration 0009).** The initial Phase 5
-ship had a bug in the Prisma extension where the audit-row INSERT and
-`before`-row pre-loads ran against the captured root `client` argument
-from `Prisma.defineExtension((client) => ...)`, not against the active
-transactional context. Mutations that rolled back left orphan audit rows
-that the append-only triggers refused to let application code delete.
-Migration `0009_audit_events_purge_orphans` is a one-shot maintenance
-migration that disables `AuditEvent_no_delete` inside its own
-transaction, deletes all pre-migration rows, then re-enables the trigger
-— all inside the same tx, so the audit table is never bypassable in a
-state visible to a concurrent session. The fix to the extension (Plan 04
-Task 1) and the regression test (Plan 04 Task 2) ensure no future
-rollback produces an orphan.
-
-### §6 interview-ready phrasings
-
-The Medovia brief §6 lists four discussion questions. Phase 5 sharpens
-the answers:
-
-**"Two nurses ordering simultaneously" (concurrency).**
-Phase 4 holds the row lock; the loser's transaction rolls back, and
-the audit log rolls back with it (D-91) — the failed attempt does NOT
-appear in `audit_events`. **The audit log doesn't lie** about what
-actually happened. Integration test #2 asserts this rollback contract.
-
-**"Scale to 50 vårdenheter".**
-Audit rows carry a denormalized `careUnitId` column. The admin view is
-intentionally cross-tenant today; v2 adds a "scope to my vårdenhet"
-filter without a migration — the column is already there. Cursor
-pagination via `useInfiniteQuery` (D-105) keeps the list endpoint
-O(page-size) instead of offset-O(skip+limit), so the latency budget
-holds as the table grows.
-
-**"Retrofitting auth".**
-Phase 5 retrofitted audit logging without touching any Phase 2/3/4
-service code. The `$extends` extension wraps the existing Prisma
-client; existing services keep their `import { prisma }` and pick up
-audit behavior transparently. The same pattern would handle a per-row
-authz check — `$extends` on `findMany` to inject a `where: { tenantId }`
-clause. This is the canonical answer to "could you bolt auth on later
-without rewriting?" — yes, this codebase already did it for audit.
-
-**"What I'm proud of".**
-Append-only is enforced by Postgres GRANTs and a BEFORE-trigger, not
-by the application. Even if a future contributor writes
-`prisma.auditEvent.delete(...)`, ESLint blocks the commit; if the lint
-disables get committed, Postgres rejects the query at the role layer
-with `permission denied`. Two layers, both asserted by tests:
-
-- Integration test #3 — grep for the banned patterns, asserts zero matches.
-- Integration test #4 — raw-SQL UPDATE against AuditEvent, asserts rejection.
-
-Plan 05-08 deepened the enforcement with three additional guards: an ESLint
-ban on `*.createMany` outside `seed.ts` (HIGH #4), a CI grep enforcing an
-allowlist on `$executeRaw` writes (MEDIUM #5), and a BEFORE INSERT trigger
-rejecting empty-string `entityId` rows with SQLSTATE 23514 (LOW #12). The
-three guards are independently tested (Tests 15 and 16 join Tests 3 and 4).
-
-The Plan 05-06 per-concern ALS refactor is also something I'm proud of.
-The original design used a single merged `RequestContext` store with an
-`activeTx` slot that was mutated in a `finally` block — safe for the
-simple case but incorrect under nested or parallel `$transaction` calls
-(CR-01) and under keep-alive TCP connections where the store persists
-across requests (CR-04). The fix splits concerns into three independent
-`AsyncLocalStorage` instances (`actorALS`, `activeTxStackALS`,
-`actionOverrideALS`) so each concern has exactly the lifetime it needs.
-The iterative process — ship, write regression tests that expose the
-failure modes, then refactor — is a pattern I'd repeat on any audit
-system.
-
-**"What I'm least proud of".**
-The Prisma extension can't see `$queryRaw` mutations. No `$executeRaw`
-writes exist today — Phase 4's `FOR UPDATE` is read-only — and Plan 05-08
-ships a CI grep (Test 15) that asserts zero off-allowlist `$executeRaw`
-calls; a future raw write must be allowlisted at PR time. The gap is now
-documented and guarded rather than hidden, but the underlying limitation
-(the `$extends` boundary) remains. I picked the smallest blast radius
-I could find for a one-week budget.
-
-### Lessons learned
-
-Three Phase 5 process retros that each have a one-line takeaway and a
-source-of-truth that would have caught the issue earlier:
-
-- **Read the stdlib docs before introducing an unfamiliar primitive.**
-  Plan 05-01 chose `AsyncLocalStorage.enterWith` for the request-context
-  hook without consulting the Node.js docs page
-  (https://nodejs.org/api/async_context.html). The docs warn explicitly
-  that `enterWith` is generally discouraged in production code due to its
-  unpredictable behavior under connection reuse — exactly the keep-alive
-  frame-leakage hazard that CR-04 exposed. Plan 05-06 retired `enterWith`
-  in favor of `actorALS.run(scope, () => done())` using Fastify's 3-arg
-  `onRequest` signature; Test 14 codifies the contract. Lesson: when
-  introducing an unfamiliar stdlib primitive, read its docs page first.
-  (05-REVIEWS.md MEDIUM #11.)
-
-- **Prefer N independent stores over one shared mutable store the moment
-  the second concern lands.** Plan 05-04's `activeTx` slot was added as a
-  single field on the existing `RequestContext` store (which already
-  carried `actor` + `careUnit` + `requestId`). Three of the six bugs the
-  verifier caught (CR-01 asymmetric clear, CR-04 keep-alive leak, and the
-  WR-01 class) traced back to that shared-store design. Plan 05-06 retired
-  the shared store in favor of three independent `AsyncLocalStorage`
-  instances (`actorALS` / `activeTxStackALS` / `actionOverrideALS`) so
-  each concern has exactly the lifetime it needs. The entire fragility
-  class is structurally eliminated. Lesson: at the moment a request-scope
-  carrier has more than one concern with a different lifetime, prefer
-  per-concern ALS instances. (05-REVIEWS.md HIGH #1.)
-
-- **Library type-defs are the documentation when the docs are silent.**
-  Plan 05-01 spent ~10 minutes debugging "extension registered but never
-  fires" before reading the Prisma client runtime type-def to discover
-  that `$extends({query})` keys are lowercase modelProps names
-  (`'session'`, `'careUnitMedication'`), NOT PascalCase. The PascalCase
-  keys silently registered without runtime matching. Lesson: when an
-  extension or middleware "registers fine but never fires," read the
-  library's type-def file for the registration constraints — it is often
-  the only documentation for ergonomic details like key casing. (Plan
-  05-01 SUMMARY auto-fix #3.)
-
-### Login rate-limiting
-
-`POST /api/auth/login` is rate-limited by `@fastify/rate-limit` with two independent
-buckets (Plan 05-09 / 05-REVIEWS.md MEDIUM #8):
-
-- **Per-(email, IP) bucket**: 10 attempts per minute, configurable via
-  `RATE_LIMIT_LOGIN_PER_EMAIL_PER_MINUTE` (default 10). Bounds brute-force against
-  a single account — an attacker spraying passwords at one email from one IP hits the
-  limit after 10 attempts within any 60-second window.
-- **Per-IP bucket**: 30 attempts per minute across all rate-limited routes (currently
-  only login), configurable via `RATE_LIMIT_LOGIN_PER_IP_PER_MINUTE` (default 30).
-  Bounds slow-scan attacks iterating across emails from one source IP.
-
-Rate-limited requests return HTTP 429 with the canonical D-19 error envelope
-`{error: {code: 'rate_limited', message: '...'}}`. The message is Swedish and
-user-displayable ("För många inloggningsförsök. Försök igen om N sekunder.").
-
-Rate-limited attempts do **NOT** write an `audit.login_failed` row — the rejection
-happens BEFORE `verifyCredentials` runs. This bounds `audit_events` row growth from a
-brute-force attacker (the concern in 05-REVIEWS.md MEDIUM #8). Real attempts (within
-the bucket) continue to write audit rows as before.
-
-The rate-limit store is in-memory (per-process). A multi-process or HA deployment would
-swap to the documented `@fastify/rate-limit` Redis store — out of scope for this
-single-process Docker Compose demo. Production deployments would also add CDN-layer
-rate-limiting (Cloudflare, nginx) for defense in depth.
-
-Integration tests in `apps/api/test/auth.ratelimit.test.ts` cover four scenarios:
-11th attempt returns 429 (Test A), rate-limited attempt does not write an audit row
-(Test B), per-email bucket isolation across emails from the same IP (Test C), and
-a legitimate first-time login is unaffected (Test D).
-
-**§6 narrative.** "The `audit.login_failed` row growth from brute-force is bounded
-by the rate-limit: 10 attempts per (email, IP) per minute. After 10 failed attempts,
-the attacker sees 429 and no further audit rows are written for that (email, IP) pair
-until the window resets. The table grows at most 10 rows per minute per attacker
-email — not unbounded. Real failures (within the bucket) are still audited as before."
-
-### v2 candidates
-
-What I'd add with more time, in rough priority order:
-
-- **Retention purge / cold-storage tier** — v1 keeps audit rows forever
-  (D-101). A TTL or archival cron would need a separately-grantable
-  purge role to bypass the REVOKE without breaking the architectural
-  append-only story.
-- **Hash-chained rows for cryptographic append-only proof** — Each row
-  carries `sha256(prev_row || this_row)`; tampering with row N
-  invalidates the chain from N onward.
-- **Per-vårdenhet admin view** — A "scope to my vårdenhet" filter in
-  the FE; column is already on the row.
-- **Audit-event export (CSV / PDF)** — Out of scope per PROJECT.md but
-  trivial to wire on top of the existing list endpoint.
-- **Webhook / SIEM forwarding** — Emit each row to Splunk / Datadog /
-  similar via a post-commit hook.
-- **Read-event auditing** — Today only mutations are audited. v2 could
-  log SELECT events too (with sampling to bound row volume).
-- **Free-text omnibox search** — D-103 ships three combobox filters;
-  v2 could add a search box over actor / entity / action / diff text.
-- **JSONB patch diff storage (RFC 6902)** — D-95 stores full
-  before/after; v2 could store a compact patch to save space at scale.
-- **`auth.login_failed` brute-force banner** — Surface N failed-logins
-  from one email in M minutes as an admin-page banner.
-- **SECURITY DEFINER purge function for audit retention** — Plan 05-04 shipped a one-shot orphan-purge migration (0009) that disables the AuditEvent BEFORE-trigger inside a tx. That pattern is the precedent for v2: a `purge_audit_events_before(cutoff_date)` SECURITY DEFINER function that suspends the trigger via a transaction-local GUC (`SET LOCAL meditrack.allow_purge = on`), runs the purge, and re-enables. The trigger short-circuits when the GUC is set; admins running the function explicitly opt in. Closes 05-REVIEWS.md MEDIUM #10 — the architectural append-only story stays intact even when retention work lands.
-- **"FailedLogins" union view at /admin/audit** — Plan 05-05's WR-07 split failed-logins into two entityTypes (`auth_attempt` for unknown email, `session` for known-user wrong-password). An admin investigating brute-force has to apply two separate filters. v2: a "FailedLogins" tab that unions both entityTypes server-side, OR a `GET /api/audit/failed-logins` endpoint returning the union. 05-REVIEWS.md LOW #14.
-- **`Kopiera filterlänk` label rename** — The current Swedish label `Kopiera permalink` overstates what's copied (it's a filter URL, not a deep-link to the expanded event). v2: rename to `Kopiera filterlänk` after revisiting the Swedish-copy lock in `.planning/phases/05-audit-log/05-CONTEXT.md <specifics>`. 05-REVIEWS.md LOW #15.
-- **Swedish translation of §6 answers** — This README is in English; the UI copy is locked in Swedish per CONTEXT.md `<specifics>`. §6 phrasings in English can be translated live in the interview if Swedish is preferred. v2: pre-translate the §6 paragraphs so the interview answer reads from the README verbatim. 05-REVIEWS.md LOW #17.
-- **Per-vårdenhet admin scope toggle** — Phase 5's admin sees ALL careUnits (cross-tenant per D-16's documented exception). v2: a toggle in the FilterBar that scopes to a specific careUnit, gated by a per-careUnit admin role. Useful when the system scales to 50 vårdenheter (§6 question). Tracked in `.planning/phases/05-audit-log/05-CONTEXT.md <deferred>`.
-
-## AI Categorization
-
-Phase 6 ships an LLM-backed "Hämta AI-förslag" button inside the
-`/lakemedel` Sheet. The button calls Anthropic Claude Haiku 4.5 with the
-medication's name + ATC code and receives a `{therapeuticClass,
-confidence}` payload constrained to the WHO ATC level-1 anatomical-group
-enum. The user can accept the suggestion (one click) or override it by
-picking a different enum bucket from the `Slutgiltig klass` combobox.
-
-REQ-IDs satisfied: **AI-01** (structured suggestion via single LLM call)
-and **AI-02** (accept-or-override flow visible in the UI).
-
-### How the suggestion works
-
-The flow lives behind a single service-file seam at
-`apps/api/src/services/aiCategorization.service.ts` — the ONLY file in
-`apps/api/src/` that imports `@anthropic-ai/sdk`. ROADMAP success
-criterion #4 ("LLM call is isolated behind a single service interface
-so swapping providers — or mocking in tests — is one change in one
-file") is satisfied by this seam (D-106).
-
-End-to-end:
-
-1. User opens `Lägg till läkemedel` (create mode) or edits an existing
-   row, fills `Namn` and `ATC-kod`, clicks **Hämta AI-förslag**.
-2. The FE posts `{name, atcCode}` to
-   `POST /api/ai/suggest-therapeutic-class`.
-3. The route checks `requirePermission('ai:suggest')` — apotekare +
-   admin only (sjuksköterska gets 403 per D-15).
-4. The service calls Anthropic Messages API with `claude-haiku-4-5`,
-   a `tool_use` constraint forcing one of the 14 valid enum values,
-   and a 5-second `AbortController` (D-112; budget below).
-5. The raw `tool_use.input` (validated by `llmToolUseSchema`) returns
-   `{therapeuticClass, confidence: number 0..1}`. The service buckets
-   the float into a discrete band (`hog`/`medel`/`lag` per D-111) and
-   returns the wire shape `{therapeuticClass, confidence: band}`.
-6. The FE renders `AiSuggestionChip` showing `Förslag: <Swedish label>`
-   + a `ConfidenceBadge` (Hög/Medel/Låg säkerhet).
-7. User clicks **Använd förslag** to copy the suggestion into the
-   `Slutgiltig klass` combobox, OR picks a different enum bucket to
-   override. Either way the chip stays visible so accept-vs-override
-   is auditable to the user (D-110).
-8. On save, the `Medication.therapeuticClass` write flows through the
-   Phase 5 audit middleware — diff panel surfaces `therapeuticClass:
-   null → <chosen>` (free integration with audit log; D-95 + D-97
-   allowlist extension lands the column automatically).
-
-### Confidence band semantics
-
-The LLM returns a `0..1` float per its own `tool_use` schema. The
-service buckets server-side per D-111:
-
-- `>= 0.85` → `hog` (Hög säkerhet, green-100 / TrendingUp icon)
-- `>= 0.6`  → `medel` (Medel säkerhet, yellow-100 / Minus icon)
-- `< 0.6`   → `lag` (Låg säkerhet, slate-100 / TrendingDown icon)
-
-Only the band ships in `aiSuggestionResponse.confidence`. Rationale: an
-LLM saying "92%" is theater, not measurement. The band is the honesty
-signal — the UI doesn't pretend to know more than it can defend. The
-mapping is unit-tested via the integration suite (`vi.spyOn` returns a
-fixed band and the FE chip renders the matching label).
-
-### Why a closed enum, not free text (AI-02 reframing)
-
-REQUIREMENTS.md AI-02 reads "override with free text". Phase 6
-deliberately reframes this contract: in this build, the user can
-**override by picking a different enum bucket** from the same 14-option
-list (`A` Mag–tarm och ämnesomsättning … `V` Övrigt). This is the WHO
-ATC level-1 anatomical groups, an international clinical standard since
-1976 (D-113).
-
-Why the reframing:
-
-- **Free text breaks the filter combobox (AI-03).** `Lakemedel ?class=`
-  is a single-select over the closed enum. Spelling drift across
-  "Antibiotika" / "Antibiotikum" / "Antibiotic" would partition the
-  list and silently hide rows.
-- **The 14 anatomical groups already cover the long tail.** `V = Övrigt`
-  is the canonical overflow bucket. A hybrid (closed enum + "Annat"
-  free-text overflow) was considered and rejected as scope creep — the
-  ATC standard already solves this for clinical work.
-- **The interview rubric values defensible domain modeling over
-  literal interpretation of the brief.** The reframing is documented up
-  front (here, and in `.planning/phases/06-ai-categorization-low-stock-notifications/06-CONTEXT.md` D-113) so the interviewer sees the
-  deliberate deviation immediately.
-
-Both the suggestion AND the override go through the same closed enum,
-so the audit log's `Medication.update` event surfaces both flows with
-the same diff shape: `therapeuticClass: <before> → <after>` where both
-sides are valid enum codes.
-
-### Falling back when the API key is absent
-
-`ANTHROPIC_API_KEY` is **OPTIONAL** in `apps/api/src/env.ts`
-(`z.string().optional()`, no `.min(1)` — D-107). When the key is unset
-or empty:
-
-- `GET /api/ai/status` returns `{available: false}`.
-- The FE conditional render in `MedicationSheet` (driven by
-  `useAiAvailability()`) **hides the "Hämta AI-förslag" button
-  entirely** — not disabled, not greyed out, not a layout placeholder.
-  The Sheet looks like the v1-without-AI build (D-108).
-- The `Slutgiltig klass` combobox + dashboard low-stock banner +
-  medication catalog + `?class=N` filter all work unchanged. None of
-  these depend on the LLM.
-- `POST /api/ai/suggest-therapeutic-class` returns `503 ai_unavailable`
-  with the canonical envelope, covering the race where the FE check
-  flipped between availability and the click.
-
-The golden command `docker compose up` on a fresh clone preserves this
-graceful degradation: the api container starts cleanly without the
-key, and the AI affordance simply doesn't appear.
-
-### Latency budget
-
-Target **p95 ≤ 3s**, hard timeout **5s** via `AbortController` inside
-`suggestTherapeuticClass` (D-112). On overrun the service throws
-`AiTimeoutError`, the errorHandler plugin maps to **504 `ai_timeout`**,
-and the FE toasts `AI-förslaget tog för lång tid — försök igen.`
-
-The 5s timeout is overridable via `env.AI_TIMEOUT_MS` strictly for
-Vitest — Test 3 in `apps/api/test/aiCategorization.integration.test.ts`
-sets it to `50` (via `vi.hoisted` before module-load so the service
-file's `const TIMEOUT_MS` read picks it up), then drives the SDK-layer
-mock to return a Promise that resolves only on `signal.abort`. The
-real `AbortController` fires in ~50ms wall time and the test asserts
-the 504 envelope. Production never reads the override.
-
-Manual smoke-check latency for `claude-haiku-4-5` on a typical
-"Amoxicillin + J01CA04" request: not measured on this build (no local
-key in the executor environment); upstream Anthropic data points to
-< 1s p50 for tool-use calls this small.
-
-## Dashboard low-stock banner
-
-Phase 6's other surface replaces the Phase 1 `<EmptyStateCard>` stub on
-`/dashboard` with a banner enumerating every `CareUnitMedication` in
-the caller's vårdenhet whose `currentStock < lowStockThreshold` — name,
-current stock, threshold, `LowStockBadge`, sorted by urgency
-(`currentStock / lowStockThreshold` ratio ASC).
-
-REQ-IDs satisfied: **NTF-01** (in-app low-stock visibility) and
-**NTF-02** (auto-refresh without manual reload).
-
-### Refresh strategy
-
-Three layers per D-119, no SSE/WebSocket (explicit out-of-scope per
-PROJECT.md):
-
-1. **TanStack invalidation siblings** — `useDeliverOrder.onSuccess`
-   invalidates both `['medications']` (existing) AND `['dashboard',
-   'low-stock']` (new). Same goes for `useCreateMedication`,
-   `useUpdateMedication`, `useDeleteMedication`, and
-   `useUpdateThresholdOptimistic`. Same-tab deliveries refresh the
-   banner instantly.
-2. **`refetchOnWindowFocus: true`** on `useLowStockQuery` — Alt-tabbing
-   back catches changes made in another tab or session. Directly
-   answers the §6 "two nurses" question for this surface.
-3. **`refetchInterval: 30_000`** — Foreground polling for the case
-   where the dashboard tab is left open during a demo. ~one GET per
-   30 seconds while the tab is foreground; TanStack pauses interval
-   polling on hidden tabs automatically.
-
-All three combine: same-tab actions invalidate instantly, cross-tab
-actions catch up on focus, and idle dashboards self-update within 30s.
-The contract is asserted by `LOW_STOCK_QUERY_OPTIONS` as a named
-export from `useLowStockQuery.ts` — `DashboardLowStockCard.test.tsx`
-Test 5 imports the const and asserts both flags, so any future refactor
-that drops one of them also has to remove the named export (the test
-fails loudly).
-
-### Why a dedicated endpoint
-
-`GET /api/dashboard/low-stock` ships a focused `{rows, total}` payload
-owning its own cache key `['dashboard', 'low-stock']`, distinct from
-`/lakemedel`'s `['medications', filters]` (D-120).
-
-Rationale:
-
-- **Cache-key independence.** Reusing
-  `GET /api/medications?belowThreshold=true&pageSize=100` would marry
-  the dashboard's refresh model to `/lakemedel`'s filter state — every
-  filter change there would invalidate the banner.
-- **Payload shape.** The banner doesn't need pagination, total counts
-  for sub-filters, or any of the medicationListResponse metadata. A
-  narrower wire shape is the correct contract.
-- **Cost.** ~30 lines of service + route code reusing the established
-  `currentStock < lowStockThreshold` `$queryRaw` pattern from
-  `medication.service.ts:listMedicationsForUnit`. Nothing new.
-
-The endpoint is `requireSession` only — all three roles see the
-dashboard. Scope is careUnit-first per D-16: the service signature is
-`listLowStockForUnit(careUnitId)` and the WHERE clause filters by
-`CareUnitMedication.careUnitId` first.
-
-## Error envelope additions (Phase 6)
-
-Two new canonical error codes join the Phase 1+ taxonomy (all error
-responses follow `{error: {code, message, details?}}` per D-19):
-
-| Code              | HTTP | Source                            | Message (Swedish)                      |
-|-------------------|------|-----------------------------------|----------------------------------------|
-| `ai_unavailable`  | 503  | POST /api/ai/suggest-therapeutic-class when `env.ANTHROPIC_API_KEY` is unset/empty | `AI-tjänsten är inte tillgänglig.` |
-| `ai_timeout`      | 504  | POST /api/ai/suggest-therapeutic-class when the 5s `AbortController` fires (D-112) | `AI-förslaget tog för lång tid.` |
-
-Both classes live in `apps/api/src/plugins/errorHandler.ts`
-(`AiUnavailableError` + `AiTimeoutError`) with branches in the
-`setErrorHandler` mapping. The FE `useSuggestTherapeuticClass` hook
-switches on `err.envelope.error.code` per the canonical D-19 pattern
-and toasts the user-displayable Swedish copy. A third path —
-`Kunde inte hämta förslag — försök igen.` — covers all other errors.
-
-## Environment variables (Phase 6 additions)
-
-The full env contract lives in `apps/api/src/env.ts` (Zod-validated at
-boot). Phase 6 adds one optional key:
-
-| Variable             | Required | Phase | Default | Description |
-|----------------------|----------|-------|---------|-------------|
-| `ANTHROPIC_API_KEY`  | NO       | 6     | unset   | When set, the medication Sheet shows the "Hämta AI-förslag" button (apotekare + admin only). When unset/empty, the AI affordance hides itself; dashboard + catalog + filter combobox all work unchanged. Get a key at <https://console.anthropic.com/settings/keys>. |
-
-`docker-compose.yml` reads the variable via `${ANTHROPIC_API_KEY:-}` so
-the empty-default keeps `docker compose up` working on a fresh clone
-without any key configured. The `.env.example` placeholder is empty.
-
-## Phase 6 v2 candidates
-
-What I'd add with more time, scoped to AI categorization + the
-dashboard banner:
-
-- **Bulk AI backfill of the 43k NPL seed meds** — On a fresh clone the
-  filter combobox is functionally empty until someone clicks **Hämta
-  AI-förslag** on a few rows. An admin "Klassificera alla läkemedel"
-  job would batch the LLM calls in a background queue with progress
-  UI. Cost: ~$4 in Anthropic spend per fresh seed at `claude-haiku-4-5`
-  pricing. Punted from v1 because it adds 30+ seconds to first-boot
-  and is too aggressive for a demo `docker compose up`.
-- **Free-text override bucket ("Annat" hybrid)** — Rejected in D-113;
-  the closed enum is the right domain model for the international ATC
-  standard. Captured here for v2 if a clinical edge case surfaces
-  where `V = Övrigt` is insufficient.
-- **Severity gradient on banner rows** — Red for `< 25% of threshold`,
-  amber for `< 50%`, default otherwise. Polish that NTF-01 doesn't
-  require but would help a nurse skim the banner faster.
-- **Per-row "Beställ" CTA inside the dashboard banner** —
-  Deep-link to `/bestallningar/ny` preloaded with the low-stock med.
-  Scope creep for Phase 6 (NTF-01 only requires visibility, not
-  action); great v2 polish.
-- **Caching AI suggestions by `(name, atcCode)`** — The LLM call is
-  fast + cheap + idempotent for this input. A Postgres table or
-  in-memory LRU would speed things up at the cost of stale-suggestion-
-  on-prompt-change bugs. Reconsider if demo cost becomes a problem.
-- **Multi-select on the Terapeutisk klass filter combobox** — Rejected
-  in D-116 as a clinical workflow that doesn't map to real queries
-  ("antibiotics AND nervsystem"). v2 if a real user complains.
-- **Per-user rate-limit on `POST /api/ai/suggest-therapeutic-class`** —
-  `T-06-15` threat-model item; the route file carries a `TODO` marker
-  pointing at this. ~30/min per session would bound LLM cost in
-  adversarial scenarios. Currently mitigated by the apotekare+admin
-  permission gate (~2 seed accounts in the demo).
+<!-- Populated by Slice 5 -->
 
 ## Vad ligger var?
 
@@ -848,4 +212,616 @@ dashboard banner:
 | `apps/api`          | Fastify + Prisma (Node.js + TypeScript)                           |
 | `packages/shared`   | Zod-kontrakt och konstanter delade mellan klient och server       |
 | `.planning`         | Planeringsartefakter (PROJECT, REQUIREMENTS, ROADMAP, fas-planer) |
-| `local`             | Lokala filer (brief-PDF m.m.); committas inte                     |
+| `docs/screenshots`  | SC#4 mobil-först layoutverifiering (360 px-skärmdumpar)           |
+
+De mer detaljerade besluts- och implementationsdiskussionerna för varje fas finns i
+`## Feature deep dives` nedan (efter avgränsaren nedan).
+
+---
+## Feature deep dives
+
+### Audit log (Phase 5)
+
+Varje lyckad mutation i MediTrack registreras i en oföränderlig
+`audit_events`-tabell — läkemedels-CRUD, orderstatus-övergångar
+(`Utkast → Skickad → Bekräftad → Levererad`), orderrads-ändringar,
+lagerökningar/-minskningar, session-skapanden och -borttagningar,
+samt misslyckade inloggningsförsök. Tabellen är **append-only — ingen
+applikationskod utfärdar UPDATE, DELETE, UPDATE_MANY, DELETE_MANY eller
+UPSERT mot den.** Append-only upprätthålls av två oberoende lager.
+
+> Framtida idéer för detta område är listade under [§ Med mer tid](#med-mer-tid).
+
+#### Lager 1 — kodfrånvaro (arkitekturellt)
+
+Kodbasen innehåller noll anrop till `prisma.auditEvent.update`,
+`updateMany`, `delete`, `deleteMany` eller `upsert`. Detta assertas
+mekaniskt vid varje CI-körning av integrationstest #3 i
+`apps/api/test/audit.integration.test.ts` ("grep hittar noll
+prisma.auditEvent.update*/delete*/upsert-anrop"), som spawnar:
+
+```bash
+git grep -nE 'prisma\.auditEvent\.(update|delete|deleteMany|updateMany|upsert)\b' apps packages
+```
+
+och assertar exit-kod 1 (inga träffar). Grep-testet är det kanoniska
+acceptanskravet för AUD-03:s "inga UPDATE- eller DELETE-kodstigar finns."
+
+Samma mönster fångas vid PR-tid av en ESLint
+`no-restricted-syntax`-regel i `.eslintrc.cjs` (D-99):
+
+```js
+selector: "MemberExpression[object.property.name='auditEvent'][property.name=/^(update|updateMany|delete|deleteMany|upsert)$/]"
+message:  "audit_events is append-only — see Phase 5 D-98. Use prisma.auditEvent.create only."
+```
+
+`pnpm lint` kör regeln över hela workspace:t. Ett röktest (kört inline
+av Plan 03-verifiering) bekräftar att regeln faktiskt avfyras på ett
+fabricerat `prisma.auditEvent.update(...)`-anrop — inte bara frånvaro
+via utelämning. Tillåtna metoder: `create`, `findMany`,
+`findUnique`, `findFirst`, `count`, `aggregate`, `groupBy`.
+
+#### Lager 2 — DB-rollbehörigheter + BEFORE-trigger
+
+Migration `0008_audit_events_revoke_grants` kör två saker:
+
+1. `REVOKE UPDATE, DELETE, TRUNCATE ON "AuditEvent" FROM CURRENT_USER`
+   — standardskyddet GRANT/REVOKE, behålls som defense-in-depth så
+   att en framtida runtime-roll som inte äger tabellen automatiskt
+   skyddas.
+2. En `BEFORE UPDATE/DELETE/TRUNCATE`-trigger som anropar en plpgsql-
+   funktion som `RAISE EXCEPTION ... USING ERRCODE = '42501'`. `42501`
+   är den kanoniska `SQLSTATE` bakom "permission denied for table".
+
+Runtime-rollen är `meditrack_app` — en namngiven icke-ägar-roll vars
+REVOKE på `AuditEvent` UPDATE/DELETE/TRUNCATE binder den fysiskt
+(Lager 2b, migration `0010_audit_events_named_app_role`). ÄGAR-rollen
+träffar BEFORE-trigger-skyddet (Lager 2a, migration 0008). Se
+§ Databasroller nedan för env-var-uppdelningen.
+
+Triggern är det bindande lagret för ägarsessioner eftersom `meditrack`-rollen
+**äger** tabellen — Postgres förbigår GRANT/REVOKE-kontroller för ägare, så
+REVOKE ensamt är verkningslöst för ägaranslutningar. Triggern avfyras
+villkorslöst och producerar det verbatima "permission denied"-meddelandet
+D-98 lovade. Integrationstest #4 ("Postgres rejects UPDATE on
+audit_events") assertar nu bägge lagren:
+
+```ts
+await expect(
+  prisma.$executeRawUnsafe(`UPDATE "AuditEvent" SET action=$1 WHERE id=$2`, 'hacked', realId),
+).rejects.toThrow(/permission denied/i);
+```
+
+Om en framtida kodändring försöker en UPDATE — även en som ESLint och
+grep-testet missade — rejecterar Postgres den fysiskt. **Append-only
+upprätthålls av Postgres GRANT:s och triggers, inte av applikationen.**
+
+##### Två-migrations-sekvens (Migration 0008 → Migration 0010)
+
+Append-only-skyddet landade i två migrationer:
+
+- **Migration 0008** (Plan 01) installerade en ägarbindande `BEFORE UPDATE OR DELETE OR TRUNCATE`-
+  trigger på `AuditEvent` (Lager 2a) plus en no-op `REVOKE ... FROM CURRENT_USER` (Plan 01:s
+  SUMMARY dokumenterar no-op-fyndet — `CURRENT_USER` evaluerades till tabellägaren, vilket
+  Postgres förbigår för GRANT/REVOKE-kontroller).
+- **Migration 0010** (Plan 05-07) lägger till den NAMNGIVNA rollen `REVOKE UPDATE, DELETE, TRUNCATE ON
+  "AuditEvent" FROM meditrack_app` (Lager 2b) och byter applikationens runtime
+  `DATABASE_URL` till att ansluta som `meditrack_app`. Triggern i 0008 förblir aktiv och
+  är fortfarande ÄGAR-sidans skydd (admin `psql`-sessioner, migrationer, seed-skript).
+
+Migration 0008:s SQL lämnas avsiktligt omodifierad: att redigera en enda byte i en tillämpad Prisma-
+migration ändrar dess SHA-256-kontrollsumma och får `prisma migrate status` att rapportera drift.
+Korsreferensen mellan de två migrationerna dokumenteras i 0010:s header istället.
+Se §Databasroller nedan för env-var-uppdelningen mellan de två rollerna.
+
+#### Databasroller
+
+Postgres-databasen har två roller:
+
+- **`meditrack`** — ägarrollen. Används av `prisma migrate deploy` (migrationer) och
+  `prisma db seed` (seed-skript). Har fullständiga behörigheter på varje tabell. Anslutningssträngen
+  finns i `DIRECT_URL`.
+- **`meditrack_app`** — applikationens runtime-roll. Används av api-containerns PrismaClient
+  för ALLA request-hanterings-frågor. Har SELECT / INSERT / UPDATE / DELETE på varje tabell
+  **UTOM** `AuditEvent`, där rollen har SELECT + INSERT bara — UPDATE / DELETE / TRUNCATE
+  har explicit REVOKEats av migration 0010. Anslutningssträngen finns i `DATABASE_URL`.
+
+Denna uppdelning är den namngivna-roll-halvan av append-only-audit-log-historien (D-98 Lager 2b).
+Runtime-rollen kan fysiskt inte mutera audit-rader; ÄGAR-rollen kan tekniskt mutera dem
+men träffar BEFORE-triggern installerad av migration 0008 (Lager 2a) som raiser
+`permission denied`. Varje lager ensamt är tillräckligt för sin roll; de två komponerar för
+defense-in-depth.
+
+**REVOKE:t är bundet till en NAMNGIVEN roll, inte till vilken roll som råkade köra migrationen.**
+En framtida driftsättning som byter till en annan roll måste medvetet återge behörigheterna,
+vilket synliggör arkitekturbeslutet i stället för att av misstag relaxa det. Se
+`apps/api/prisma/migrations/20260523000000_0010_audit_events_named_app_role/migration.sql`
+för GRANT:s och REVOKE:t; integrationstest #4 i
+`apps/api/test/audit.integration.test.ts` assertar bägge lagren (HIGH #3, Plan 05-07).
+
+För lokal utveckling är rollösenorden hårdkodade i `docker-compose.yml`
+(`meditrack` / `meditrack_app_dev`). Produktionsdriftsättningar ersätter dessa med verkliga
+hemligheter via docker-compose `env_file` eller ett secret manager — utanför ramen för denna demo.
+
+| Roll             | Används av                               | Env-var        | AuditEvent-behörigheter        |
+|------------------|------------------------------------------|----------------|--------------------------------|
+| `meditrack`      | migrationer, seed, admin psql-sessioner  | `DIRECT_URL`   | Fullständiga (trigger skyddar) |
+| `meditrack_app`  | api PrismaClient (alla runtime-frågor)   | `DATABASE_URL` | SELECT + INSERT bara           |
+
+#### Hur audit-hooken fungerar
+
+En Prisma `$extends`-mellanhand (`apps/api/src/db/auditExtension.ts`)
+avlyssnar `create`, `update`, `updateMany`, `delete`, `deleteMany` på
+sex granskade modeller (`Medication`, `CareUnitMedication`, `Order`,
+`OrderLine`, `User`, `Session`). Varje per-modell-hanterare löser upp den
+aktiva Prisma-klienten genom att läsa toppen av `activeTxStackALS` — när
+anroparen är inuti `prisma.$transaction(async (tx) => ...)`, håller den
+stacken tx-klienten; för nakna anrop faller den tillbaka till den fångade
+root-klienten från `Prisma.defineExtension`. Extensionen avlyssnar
+`$transaction`-anrop vid runtime (via `patchTransactionForAudit`,
+definierad i `apps/api/src/db/auditExtension.ts`, tillämpad en gång i
+`apps/api/src/db/client.ts`) och anropar `withActiveTx(tx, fn)` som
+pushar tx:en på `activeTxStackALS` via en ny `.run([...prev, tx], fn)`-
+frame — nästlade och parallella transaktioner får varsin oberoende
+ALS-frame så de aldrig kors-attributerar (CR-01). Hanteraren routar sedan
+BÅDA `findUnique` / `findMany` `before`-rad-förladdningar OCH den slutliga
+`auditEvent.create` audit-rad-INSERT:en genom det lösta kontextet —
+routing genom den fångade root-`client`en är vad det ursprungliga Plan 01-
+skeppet gjorde och vad som fick D-91 att misslyckas. **Om mutationen
+rullas tillbaka, rullas audit-raden tillbaka med den** — integrationstest #2
+tvingar ett kast inuti ett `prisma.$transaction`-block och assertar noll
+`audit_events`-rader för den rullback:ade entiteten
+(D-91: "audit-loggen ljuger inte").
+
+Aktörsidentitet och åsidosättningar av åtgärder transporteras från Fastify:s
+`onRequest`-hook till Prisma-mellanhanden via tre oberoende
+`AsyncLocalStorage`-instanser i `apps/api/src/plugins/requestContext.ts`:
+
+- **`actorALS`** — `{ actorUserId, careUnitId, requestId, requestSource, ipAddress }`.
+  Seedas en gång per request i `onRequest`-hooken (3-arg Fastify-form:
+  `actorALS.run(scope, () => done())`); uppdateras av `setActor()` efter
+  cookie-verifiering. När store:n saknas (seed-skript, migrations-körningar),
+  hoppar mellanhanden helt och hållet över audit-rad-skapande (D-92) —
+  `apps/api/prisma/seed.ts` körs utanför ALS-scope:t, så audit-tabellen
+  börjar tom på en fresh `docker compose up`.
+- **`activeTxStackALS`** — en `readonly PrismaClient[]`-stack hanterad av
+  `withActiveTx(tx, fn)` / `currentActiveTx()`. Push och pop implementeras
+  som oföränderliga `.run([...prev, tx], fn)`-frames snarare än att mutera
+  en delad slot, så nästlade `$transaction`-anrop aldrig skriver över
+  varandras tx-referens (CR-01-fix).
+- **`actionOverrideALS`** — en enskild `string`-frame (eller frånvarande). Sätts av
+  `withActionOverride(action, fn)` som använder
+  `actionOverrideALS.run(action, async () => fn())`. Den `async` wrappern är
+  kritisk: Prisma:s `PrismaPromise` är lat — utan den täcker `.run()` bara
+  det synkrona `fn()`-anropet som skapar det lata Promise:t; den
+  faktiska `$extends`-hanteraren avfyras senare när Promise:t `.then()`-as,
+  vid vilken tidpunkt den nakna `.run()`-framen redan är borta.
+
+Aktören hämtas **aldrig** från en request-body. Tre regressionstester
+skyddar den per-concern ALS-designen: test #12 (nästlad `$transaction`
+— yttre rullback tappar sin audit-rad medan den inre oberoende tx:en
+behåller sin), test #13 (parallell `$transaction` med `setImmediate`-
+interfoliering — varje tx auditerar till sin egen aktör, inte den andres),
+och test #14 (parallella requests på keep-alive-anslutningar — ALS-frames
+förblir isolerade över requests, CR-04).
+
+`auth.login_failed`-stigen är den enda plats där explicita `prisma.auditEvent.create`-
+anrop finns (i `apps/api/src/services/auth.service.ts`) — dessa händelser
+avfyras INNAN `Session.create`, så `$extends`-mellanhanden kan inte
+observera dem. Två skrivningar, båda inuti failure-grenarna.
+
+#### Varför `$extends` över `$use`?
+
+Två Prisma-mellanhandsmekanismer existerar:
+
+- **`$use(middleware)`** — det ursprungliga mellanhandsAPI:et. Wrappar varje Prisma-operation
+  i en kedja av funktioner; en audit-mellanhand skulle avlyssna genom att registrera en `$use`-
+  funktion som wrappar operationen.
+- **`$extends({query: {...}})`** — det typade-extension-API:t introducerat i Prisma 4 och
+  den dokumenterade vägen framåt i Prisma 5+.
+
+Fas 5 använder `$extends` eftersom:
+- `$extends` levererar typade extensioner per modell + per metod — `prisma.medication.create`
+  och `prisma.order.update` får distinkta extensionshanterare med typsäkra arg-former. `$use`
+  har en enda generisk mellanhandsfunktion med otypade args.
+- `$extends` dokumenteras som det långsiktiga API:et; `$use` fasas ut (Prisma 5.0-release-
+  notes namnger `$extends` som den rekommenderade ersättningen).
+- Trade-off:en: `$extends` avlyssnar INTE nativt `prisma.$transaction`-callbacks (extensionens
+  interceptorer avfyras på den UTÖKADE klienten; att anropa `prisma.$transaction(async (tx) => tx.x.y())`
+  anropar `tx.x.y()` på den inre icke-utökade klienten). Plan 05-04 stängde detta gap med
+  runtime-`$transaction`-patchen i `auditExtension.ts:patchTransactionForAudit`; Plan 05-06
+  härdade det under nästlad + parallell + keep-alive-konkurrens via per-concern ALS-instanser.
+
+Stänger 05-REVIEWS.md MEDIUM #18.
+
+#### Vad granskas?
+
+| Modell              | Allowlistade kolumner                                                                                                                                                       | Noteringar                                                                              |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Medication          | id, nplId, name, atcCode, form, strength, source, createdAt                                                                                                                 | —                                                                                       |
+| CareUnitMedication  | id, careUnitId, medicationId, currentStock, lowStockThreshold, deletedAt, createdAt, updatedAt                                                                              | Lagerändringar granskas via `stock.increment`-syskon till `order.deliver`.             |
+| Order               | id, careUnitId, createdByUserId, status, submittedAt, submittedByUserId, confirmedAt, confirmedByUserId, deliveredAt, deliveredByUserId, deletedAt, createdAt, updatedAt    | Statusövergångar wrappas med `withActionOverride('order.submit'\|'confirm'\|...)`      |
+| OrderLine           | id, orderId, careUnitMedicationId, quantity, createdAt, updatedAt                                                                                                           | —                                                                                       |
+| User                | id, email, name, role, careUnitId, createdAt, updatedAt — **exkluderar `passwordHash`**                                                                                     | Hash visas ALDRIG i audit-rader (D-97). Assertas av integrationstest #5.               |
+| Session             | userId, careUnitId, createdAt, expiresAt, lastSeenAt — **exkluderar `id` (den råa signerade sessionstoken)**                                                               | Tvålagers läckageförebyggande — se nedan.                                              |
+
+För Session-typade audit-rader bär `entityId`-kolumnen aktör-User.id,
+**ALDRIG** den råa `Session.id` (T-05-03). Detta upprätthålls av
+`resolveEntityId(model, row)` i `apps/api/src/db/auditAllowlist.ts`,
+som returnerar `row.userId` för Session-skrivningar. Två lager stänger
+sessionstoken-läckagestigen:
+
+- `AUDIT_ALLOWLIST` exkluderar `Session.id` från `after`-JSON:en.
+- `resolveEntityId` returnerar `row.userId` (INTE `row.id`) för `entityId`.
+
+Bägge lagren assertas i locksteg av integrationstest #7
+("auth.login + auth.logout entityId equals User.id, NEVER the raw Session.id").
+
+#### Försvar-på-djupet-skydd (Plan 05-08)
+
+Tre ytterligare skydd stänger gap de två lagren ovan inte täckte:
+
+- **`createMany` är förbjudet utanför `apps/api/prisma/seed.ts`** (ESLint
+  `no-restricted-syntax`, 05-REVIEWS.md HIGH #4). D-93 hoppade avsiktligt
+  över att avlyssna `createMany` i audit-extensionen eftersom seed var den
+  enda kända konsumenten. ESLint-förbudet operationaliserar beslutet — en
+  framtida bidragsgivare som lägger till ett `prisma.medication.createMany([...])`-
+  anrop i en service-fil får ett PR-tid lint-fel som hänvisar dem till antingen
+  (a) att dekomponera till N individuella `prisma.<model>.create({data})`-anrop
+  (som ÄR avlyssnade) eller (b) att återöppna D-93 och avlyssna `createMany`
+  i extensionen.
+
+- **`$executeRaw` / `$executeRawUnsafe` är föremål för en CI-allowlist**
+  (integrationstest `audit.integration.test.ts` Test 15, 05-REVIEWS.md MEDIUM
+  #5). Raw-frågor förbigår audit-extensionen; ett CI-grep assertar att varje
+  produktionskodsmatch finns i en dokumenterad allowlist. Allowlisten är för
+  närvarande tom — Fas 4 D-79:s `FOR UPDATE` använder `$queryRaw` (LÄS-form),
+  som inte är föremål för förbudet. En framtida raw-skrivning måste läggas
+  till allowlisten medvetet, vilket synliggör arkitekturbeslutet vid PR-tid.
+
+- **`audit_events.entityId` kan inte vara tom eller NULL** (migration 0011
+  BEFORE INSERT-trigger, 05-REVIEWS.md LOW #12). Plan 05-05:s WR-07 split-stig
+  stängde sentinel-tom-sträng-fallet i applikationskoden (`auth.service.ts`
+  sätter nu `entityId` till det försökta e-postmeddelandet för
+  okänd-email-inloggningsfel). Triggern är DB-lagrets backup — en framtida
+  kodstig som glömmer att sätta `entityId` träffar `SQLSTATE 23514` i stället
+  för att skriva en meningslös rad.
+
+#### Känd lucka — audit-gap
+
+`prisma.$queryRaw` och `prisma.$executeRaw` avlyssnas **inte** av
+`$extends`-mellanhanden. Mellanhanden sitter vid modell-metod-gränsen,
+inte vid raw-SQL-gränsen.
+
+Idag är detta harmlöst: de enda raw-frågorna i kodbasen är
+Fas 4:s `FOR UPDATE`-radlås (en läsning, inte en mutation — den faktiska
+UPDATE:en går via Prisma:s `updateMany` som ÄR granskad), och några
+skrivskyddade `$queryRaw`-anrop i `medication.service.ts` (kolumn-vs-kolumn-
+predikat Prisma ORM inte kan uttrycka). Inga `$executeRaw`-skrivningsanrop
+finns i produktionskod — upprätthålls av CI-grep:et i Test 15 ovan. En
+framtida raw-skrivning som behöver landa måste läggas till allowlisten med
+en dokumenterad anledning, vilket synliggör audit-bypass-beslutet vid PR-tid.
+
+**En-gångs orphan-rad-rensning (migration 0009).** Det ursprungliga Fas 5-
+skeppet hade ett fel i Prisma-extensionen där audit-rad-INSERT:en och
+`before`-rad-förladdningarna kördes mot den fångade root-`client`-argumentet
+från `Prisma.defineExtension((client) => ...)`, inte mot det aktiva
+transaktionskontextet. Mutationer som rullades tillbaka lämnade orphan-audit-
+rader som append-only-triggrarna vägrade att låta applikationskod radera.
+Migration `0009_audit_events_purge_orphans` är en en-gångs-underhållsmigration
+som inaktiverar `AuditEvent_no_delete` inuti sin egen transaktion, raderar
+alla pre-migrations-rader, sedan återaktiverar triggern — allt inuti samma tx,
+så audit-tabellen är aldrig bypass:bar i ett tillstånd synligt för en
+konkurrerande session. Fixen till extensionen (Plan 04 Task 1) och
+regressionstestet (Plan 04 Task 2) säkerställer att ingen framtida rullback
+producerar en orphan.
+
+#### §6 supporting bullets
+
+<!-- §6 supporting bullets — populated by Slice 5 -->
+
+#### Lärdomar
+
+Tre Fas 5-processretros, var och en med en en-rads lärdom och en
+sanningskälla som hade fångat problemet tidigare:
+
+- **Läs stdlib-dokumentationen innan du introducerar ett okänt primitiv.**
+  Plan 05-01 valde `AsyncLocalStorage.enterWith` för request-context-
+  hooken utan att konsultera Node.js-docssidan
+  (https://nodejs.org/api/async_context.html). Dokumenten varnar explicit
+  för att `enterWith` generellt avråds i produktionskod på grund av dess
+  oförutsägbara beteende under anslutningsåteranvändning — precis det
+  keep-alive-frame-läckage-hazard som CR-04 exponerade. Plan 05-06
+  pensionerade `enterWith` till förmån för `actorALS.run(scope, () => done())`
+  med Fastify:s 3-arg `onRequest`-signatur; Test 14 kodifierar kontraktet.
+  Lärdom: när du introducerar ett okänt stdlib-primitiv, läs dess docssida
+  först. (05-REVIEWS.md MEDIUM #11.)
+
+- **Föredra N oberoende stores framför en delad muterbar store det ögonblick
+  det andra concernet landar.** Plan 05-04:s `activeTx`-slot lades till som
+  ett enda fält i den befintliga `RequestContext`-store:n (som redan bar
+  `actor` + `careUnit` + `requestId`). Tre av de sex buggar som verifieraren
+  fångade (CR-01 asymmetrisk clear, CR-04 keep-alive-läckage, och WR-01-klassen)
+  spårades tillbaka till den delade-store-designen. Plan 05-06 pensionerade
+  den delade store:n till förmån för tre oberoende `AsyncLocalStorage`-instanser
+  (`actorALS` / `activeTxStackALS` / `actionOverrideALS`) så varje concern
+  har exakt den livstid den behöver. Hela fragilitetsklassen elimineras
+  strukturellt. Lärdom: det ögonblick ett request-scope-bärare har mer än ett
+  concern med en annan livstid, föredra per-concern ALS-instanser.
+  (05-REVIEWS.md HIGH #1.)
+
+- **Biblioteks-type-defs är dokumentationen när dokumenten är tysta.**
+  Plan 05-01 spenderade ~10 minuter på att debugga "extension registrerad men
+  avfyras aldrig" innan man läste Prisma-klient-runtime-type-def:en för att
+  upptäcka att `$extends({query})`-nycklar är lowercase modelProps-namn
+  (`'session'`, `'careUnitMedication'`), INTE PascalCase. PascalCase-nycklarna
+  registrerades tyst utan runtime-matchning. Lärdom: när en extension eller
+  mellanhand "registreras fine men aldrig avfyras," läs bibliotekets type-def-
+  fil för registreringsbegränsningarna — det är ofta den enda dokumentationen
+  för ergonomiska detaljer som nyckelstorlek. (Plan 05-01 SUMMARY auto-fix #3.)
+
+#### Inloggnings-rate-limit
+
+`POST /api/auth/login` är rate-limitad av `@fastify/rate-limit` med två oberoende
+bucketar (Plan 05-09 / 05-REVIEWS.md MEDIUM #8):
+
+- **Per-(email, IP)-bucket**: 10 försök per minut, konfigurerbar via
+  `RATE_LIMIT_LOGIN_PER_EMAIL_PER_MINUTE` (standard 10). Begränsar brute-force
+  mot ett enda konto — en angripare som sprayar lösenord mot ett e-postmeddelande
+  från en IP träffar gränsen efter 10 försök inom ett 60-sekunders fönster.
+- **Per-IP-bucket**: 30 försök per minut över alla rate-limitade routes
+  (för närvarande bara login), konfigurerbar via
+  `RATE_LIMIT_LOGIN_PER_IP_PER_MINUTE` (standard 30). Begränsar slow-scan-
+  attacker som itererar över e-postmeddelanden från en käll-IP.
+
+Rate-limitade requests returnerar HTTP 429 med det kanoniska D-19-felenveloppet
+`{error: {code: 'rate_limited', message: '...'}}`. Meddelandet är på svenska och
+användarvisbart ("För många inloggningsförsök. Försök igen om N sekunder.").
+
+Rate-limitade försök skriver **INTE** en `audit.login_failed`-rad — rejectionen
+sker INNAN `verifyCredentials` körs. Detta begränsar `audit_events`-radtillväxt
+från en brute-force-angripare (bekymret i 05-REVIEWS.md MEDIUM #8). Verkliga
+försök (inom bucketen) fortsätter att skriva audit-rader som tidigare.
+
+Rate-limit-store:n är in-memory (per-process). En multi-process- eller HA-
+driftsättning byter till den dokumenterade `@fastify/rate-limit`-Redis-store:n —
+utanför ramen för denna enkla-process Docker Compose-demo. Produktionsdriftsättningar
+skulle också lägga till CDN-lager-rate-limitering (Cloudflare, nginx) för defense
+in depth.
+
+Integrationstester i `apps/api/test/auth.ratelimit.test.ts` täcker fyra scenarier:
+11:e försöket returnerar 429 (Test A), rate-limiterat försök skriver inte en
+audit-rad (Test B), per-email-bucket-isolering över e-postmeddelanden från samma
+IP (Test C), och ett legitimt första inloggningsförsök är opåverkat (Test D).
+
+---
+
+### AI Categorization (Phase 6)
+
+Fas 6 levererar en LLM-stödd `Hämta AI-förslag`-knapp inuti
+`/lakemedel`-Sheeten. Knappen anropar Anthropic Claude Haiku 4.5 med
+läkemedlets namn + ATC-kod och tar emot ett `{therapeuticClass,
+confidence}`-payload begränsat till WHO ATC-nivå-1 anatomiska grupp-
+enumen. Användaren kan acceptera förslaget (ett klick) eller åsidosätta
+det genom att välja en annan enum-bucket från `Slutgiltig klass`-comboboxen.
+
+REQ-IDs uppfyllda: **AI-01** (strukturerat förslag via ett enda LLM-anrop)
+och **AI-02** (accept-eller-override-flöde synligt i UI:t).
+
+> Framtida idéer för detta område är listade under [§ Med mer tid](#med-mer-tid).
+
+#### Hur förslaget fungerar
+
+Flödet lever bakom ett enda service-fil-seam i
+`apps/api/src/services/aiCategorization.service.ts` — den ENDA filen i
+`apps/api/src/` som importerar `@anthropic-ai/sdk`. ROADMAP:s framgångskriterium
+#4 ("LLM-anropet är isolerat bakom ett enda service-gränssnitt så att byte av
+providers — eller mock:ande i tester — är en ändring i en fil") uppfylls av
+detta seam (D-106).
+
+End-to-end:
+
+1. Användare öppnar `Lägg till läkemedel` (skapa-läge) eller redigerar en
+   befintlig rad, fyller i `Namn` och `ATC-kod`, klickar på **Hämta AI-förslag**.
+2. FE:n postar `{name, atcCode}` till
+   `POST /api/ai/suggest-therapeutic-class`.
+3. Routen kontrollerar `requirePermission('ai:suggest')` — apotekare +
+   admin bara (sjuksköterska får 403 per D-15).
+4. Servicen anropar Anthropic Messages API med `claude-haiku-4-5`,
+   en `tool_use`-begränsning som tvingar ett av de 14 giltiga enum-värdena,
+   och en 5-sekunder `AbortController` (D-112; budget nedan).
+5. Råa `tool_use.input` (validerat av `llmToolUseSchema`) returnerar
+   `{therapeuticClass, confidence: number 0..1}`. Servicen bucket:ar
+   float:en till ett diskret band (`hog`/`medel`/`lag` per D-111) och
+   returnerar wire-formen `{therapeuticClass, confidence: band}`.
+6. FE:n renderar `AiSuggestionChip` som visar `Förslag: <Swedish label>`
+   + en `ConfidenceBadge` (`Hög säkerhet / Medel säkerhet / Låg säkerhet`).
+7. Användare klickar **Använd förslag** för att kopiera förslaget till
+   `Slutgiltig klass`-comboboxen, ELLER väljer en annan enum-bucket för
+   att åsidosätta. Oavsett vilket förblir chipen synlig så att accept-
+   kontra-override är granskningsbart för användaren (D-110).
+8. Vid sparning flödar `Medication.therapeuticClass`-skrivningen genom
+   Fas 5:s audit-mellanhand — diff-panelen visar `therapeuticClass:
+   null → <vald>` (fri integration med audit-loggen; D-95 + D-97
+   allowlist-extension landar kolumnen automatiskt).
+
+#### Tillförlitlighetsband-semantik
+
+LLM:en returnerar en `0..1`-float per sitt eget `tool_use`-schema. Servicen
+bucket:ar server-side per D-111:
+
+- `>= 0.85` → `hog` (`Hög säkerhet`, green-100 / TrendingUp-ikon)
+- `>= 0.6`  → `medel` (`Medel säkerhet`, yellow-100 / Minus-ikon)
+- `< 0.6`   → `lag` (`Låg säkerhet`, slate-100 / TrendingDown-ikon)
+
+Bara bandet levereras i `aiSuggestionResponse.confidence`. Motivering: en
+LLM som säger "92 %" är teater, inte mätning. Bandet är hederlighets-signalen
+— UI:t låtsas inte veta mer än det kan försvara. Mappningen är enhetstestades
+via integreringssviten (`vi.spyOn` returnerar ett fast band och FE-chipen
+renderar den matchande etiketten).
+
+#### Varför en sluten enum, inte fritext (AI-02-omformulering)
+
+REQUIREMENTS.md AI-02 lyder "override with free text". Fas 6 omformulerar
+avsiktligt detta kontrakt: i denna build kan användaren
+**åsidosätta genom att välja en annan enum-bucket** från samma 14-alternativs-
+lista (`A` Mag–tarm och ämnesomsättning … `V` Övrigt). Detta är WHO:s
+ATC-nivå-1 anatomiska grupper, en internationell klinisk standard sedan
+1976 (D-113).
+
+Varför omformuleringen:
+
+- **Fritext bryter filter-comboboxen (AI-03).** `Lakemedel ?class=`
+  är en enkel-välj över den slutna enumen. Stavningsavdrift över
+  "Antibiotika" / "Antibiotikum" / "Antibiotic" skulle partitionera
+  listan och tyst dölja rader.
+- **De 14 anatomiska grupperna täcker redan långa svansen.** `V = Övrigt`
+  är den kanoniska overflow-bucketen. En hybrid (sluten enum + "Annat"
+  fritext-overflow) övervägdes och avvisades som scope creep — ATC-standarden
+  löser redan detta för kliniskt arbete.
+- **Intervju-rubriken värderar defensibel domänmodellering över
+  bokstavlig tolkning av briefen.** Omformuleringen dokumenteras
+  upp front (här, och i `.planning/phases/06-ai-categorization-low-stock-notifications/06-CONTEXT.md`
+  D-113) så att intervjuaren ser den avsiktliga avvikelsen omedelbart.
+
+Både förslaget OCH åsidosättandet går genom samma slutna enum,
+så audit-loggens `Medication.update`-händelse visar upp bägge flödena
+med samma diff-form: `therapeuticClass: <före> → <efter>` där båda sidor
+är giltiga enum-koder.
+
+#### Reservstrategi när API-nyckeln saknas
+
+`ANTHROPIC_API_KEY` är **VALFRI** i `apps/api/src/env.ts`
+(`z.string().optional()`, utan `.min(1)` — D-107). När nyckeln saknas
+eller är tom:
+
+- `GET /api/ai/status` returnerar `{available: false}`.
+- Den villkorliga renderingen i FE:n i `MedicationSheet` (driven av
+  `useAiAvailability()`) **döljer `Hämta AI-förslag`-knappen helt** — inte
+  inaktiverad, inte gråad, inte en layout-platshållare.
+  Sheeten ser ut som v1-utan-AI-bygget (D-108).
+- `Slutgiltig klass`-comboboxen + dashboard-low-stock-bannern +
+  läkemedelskatalogen + `?class=N`-filtret fungerar alla oförändrade. Ingen
+  av dessa beror på LLM:en.
+- `POST /api/ai/suggest-therapeutic-class` returnerar `503 ai_unavailable`
+  med det kanoniska enveloppet, täcker raset där FE:s kontroll
+  flippade mellan tillgänglighet och klicket.
+
+Guldkommandot `docker compose up` på en fresh clone bevarar denna
+graceful degradation: api-containern startar rent utan nyckeln,
+och AI-affordansen dyker helt enkelt inte upp.
+
+#### Latensbudget
+
+Mål **p95 ≤ 3s**, hård timeout **5s** via `AbortController` inuti
+`suggestTherapeuticClass` (D-112). Vid överskridning kastar servicen
+`AiTimeoutError`, errorHandler-plugin:et mappar till **504 `ai_timeout`**,
+och FE:n toastar `AI-förslaget tog för lång tid — försök igen.`
+
+5s-timeout:en är åsidosättbar via `env.AI_TIMEOUT_MS` strikt för
+Vitest — Test 3 i `apps/api/test/aiCategorization.integration.test.ts`
+sätter den till `50` (via `vi.hoisted` före modul-laddning så service-
+filens `const TIMEOUT_MS`-läsning plockar upp den), driver sedan SDK-lager-
+mock:en att returnera ett Promise som bara löser sig vid `signal.abort`.
+Den verkliga `AbortController`n avfyras på ~50ms vägg-tid och testet
+assertar 504-enveloppet. Produktion läser aldrig åsidosättningen.
+
+---
+
+### Dashboard low-stock banner (Phase 6)
+
+Fas 6:s andra yta ersätter Fas 1:s `<EmptyStateCard>`-stub på
+`/dashboard` med en banner som räknar upp varje `CareUnitMedication` i
+anroparens vårdenhet vars `currentStock < lowStockThreshold` — namn,
+aktuellt lager, tröskel, `LowStockBadge`, sorterat efter brådska
+(`currentStock / lowStockThreshold`-kvot ASC).
+
+REQ-IDs uppfyllda: **NTF-01** (in-app låg-lager-synlighet) och
+**NTF-02** (automatisk uppdatering utan manuell reload).
+
+> Framtida idéer för detta område är listade under [§ Med mer tid](#med-mer-tid).
+
+#### Uppdateringsstrategi
+
+Tre lager per D-119, ingen SSE/WebSocket (explicit utanför ramen per
+PROJECT.md):
+
+1. **TanStack-invaliderings-syskon** — `useDeliverOrder.onSuccess`
+   invaliderar båda `['medications']` (befintlig) OCH `['dashboard',
+   'low-stock']` (ny). Detsamma gäller `useCreateMedication`,
+   `useUpdateMedication`, `useDeleteMedication` och
+   `useUpdateThresholdOptimistic`. Leveranser på samma flik uppdaterar
+   bannern omedelbart.
+2. **`refetchOnWindowFocus: true`** på `useLowStockQuery` — Alt-tabbning
+   tillbaka fångar ändringar gjorda i en annan flik eller session. Svarar
+   direkt på §6 "två sjuksköterskor"-frågan för denna yta.
+3. **`refetchInterval: 30_000`** — Förgrunds-polling för fallet
+   där dashboard-fliken lämnas öppen under en demo. ~en GET per
+   30 sekunder medan fliken är i förgrunden; TanStack pausar intervall-
+   polling på dolda flikar automatiskt.
+
+Alla tre kombineras: samma-flik-åtgärder invaliderar omedelbart, kors-flik-
+åtgärder hinner ikapp vid fokus, och inaktiva dashboards uppdaterar sig
+inom 30s. Kontraktet assertas av `LOW_STOCK_QUERY_OPTIONS` som en namngiven
+export från `useLowStockQuery.ts` — `DashboardLowStockCard.test.tsx`
+Test 5 importerar konsten och assertar bägge flaggorna, så en framtida
+refaktor som tappar en av dem också måste ta bort den namngivna exporten
+(testet misslyckas högt).
+
+#### Varför en dedikerad endpoint
+
+`GET /api/dashboard/low-stock` levererar ett fokuserat `{rows, total}`-payload
+med sin egen cachenyckel `['dashboard', 'low-stock']`, distinkt från
+`/lakemedel`:s `['medications', filters]` (D-120).
+
+Motivering:
+
+- **Cachenyckel-oberoende.** Att återanvända
+  `GET /api/medications?belowThreshold=true&pageSize=100` skulle gifta
+  dashboardens uppdateringsmodell med `/lakemedel`:s filtertillstånd —
+  varje filterändring där skulle invalidera bannern.
+- **Payload-form.** Bannern behöver inte paginering, totalt antal för
+  under-filter, eller någon av `medicationListResponse`-metadata:n. En
+  smalare wire-form är det korrekta kontraktet.
+- **Kostnad.** ~30 rader service + route-kod som återanvänder det etablerade
+  `currentStock < lowStockThreshold` `$queryRaw`-mönstret från
+  `medication.service.ts:listMedicationsForUnit`. Inget nytt.
+
+Endpointen är bara `requireSession` — alla tre roller ser
+dashboarden. Scope är careUnit-first per D-16: service-signaturen är
+`listLowStockForUnit(careUnitId)` och WHERE-klausulen filtrerar efter
+`CareUnitMedication.careUnitId` först.
+
+---
+
+### Felkodsenvelope (Phase 6)
+
+Två nya kanoniska felkoder ansluter sig till Fas 1+-taxonomin (alla felsvar
+följer `{error: {code, message, details?}}` per D-19):
+
+| Kod               | HTTP | Källa                             | Meddelande (svenska)                          |
+|-------------------|------|-----------------------------------|-----------------------------------------------|
+| `ai_unavailable`  | 503  | POST /api/ai/suggest-therapeutic-class när `env.ANTHROPIC_API_KEY` saknas/är tom | `AI-tjänsten är inte tillgänglig.` |
+| `ai_timeout`      | 504  | POST /api/ai/suggest-therapeutic-class när 5s `AbortController` avfyras (D-112) | `AI-förslaget tog för lång tid.` |
+
+Bägge klasserna finns i `apps/api/src/plugins/errorHandler.ts`
+(`AiUnavailableError` + `AiTimeoutError`) med grenar i `setErrorHandler`-
+mappningen. FE:s `useSuggestTherapeuticClass`-hook byter på
+`err.envelope.error.code` per det kanoniska D-19-mönstret och toastar
+den användarvisningsbara svenska kopian. En tredje stig —
+`Kunde inte hämta förslag — försök igen.` — täcker alla övriga fel.
+
+---
+
+### Miljövariabler (Phase 6 additions)
+
+Det fullständiga env-kontraktet finns i `apps/api/src/env.ts` (Zod-validerat vid
+start). Fas 6 lägger till en valfri nyckel:
+
+| Variabel             | Krävs | Fas | Standard | Beskrivning |
+|----------------------|-------|-----|----------|-------------|
+| `ANTHROPIC_API_KEY`  | NEJ   | 6   | ej satt  | När satt visar läkemedels-Sheeten `Hämta AI-förslag`-knappen (apotekare + admin bara). När ej satt/tom döljer AI-affordansen sig; dashboard + katalog + filtercombobox fungerar oförändrade. Hämta en nyckel på <https://console.anthropic.com/settings/keys>. |
+
+`docker-compose.yml` läser variabeln via `${ANTHROPIC_API_KEY:-}` så
+tom-standarden håller `docker compose up` fungerande på en fresh clone
+utan någon nyckel konfigurerad. `.env.example`-platshållaren är tom.
