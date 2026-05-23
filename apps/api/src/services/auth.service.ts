@@ -4,7 +4,7 @@ import { prisma } from '../db/client.js';
 import { verifyPassword } from '../auth/password.js';
 import { createSession, destroySession } from '../auth/session.js';
 import { InvalidCredentialsError } from '../plugins/errorHandler.js';
-import { als } from '../plugins/requestContext.js';
+import { setActor, withActionOverride, actorALS } from '../plugins/requestContext.js';
 
 /**
  * Pattern D / D-16 — service layer for authentication.
@@ -58,7 +58,16 @@ export async function login(
     // `?entityType=auth_attempt&entityId=alice@example.com` surfaces every
     // failed attempt for that email, regardless of whether the email maps
     // to a real User). actorUserId stays null because we don't know who tried.
-    const store = als.getStore();
+    const actor = actorALS.getStore();
+
+    // INVARIANT (verifyCredentials, unknown-email branch): this audit row is written
+    // OUTSIDE any prisma.$transaction wrapping the surrounding verifyCredentials
+    // call (none today). If a future refactor wraps verifyCredentials in a tx (e.g.
+    // for an "account lockout after N failures" feature), this audit row would commit
+    // even if the surrounding tx rolls back — silently breaking the D-91 same-tx
+    // contract. See 05-REVIEWS.md MEDIUM #7 + integration test (Test 16) in
+    // audit.integration.test.ts. To preserve the invariant, either keep this write
+    // outside any tx, OR explicitly use a separate transaction boundary.
     await prisma.auditEvent.create({
       data: {
         actorUserId: null,
@@ -68,8 +77,8 @@ export async function login(
         action: 'auth.login_failed',
         // before / after are Json? — omitting before defaults to DB null.
         after: { email },
-        requestId: store?.requestId ?? null,
-        ipAddress: store?.ipAddress ?? null,
+        requestId: actor?.requestId ?? null,
+        ipAddress: actor?.ipAddress ?? null,
       },
     });
 
@@ -87,7 +96,16 @@ export async function login(
     // actually care about. actorUserId stays set when we know the user
     // (this branch) and null when we don't (unknown-email branch above), so
     // the two cases remain distinguishable via the actorUserId column.
-    const store = als.getStore();
+    const actor = actorALS.getStore();
+
+    // INVARIANT (verifyCredentials, known-user-wrong-password branch): this audit row
+    // is written OUTSIDE any prisma.$transaction wrapping the surrounding verifyCredentials
+    // call (none today). If a future refactor wraps verifyCredentials in a tx (e.g.
+    // for an "account lockout after N failures" feature), this audit row would commit
+    // even if the surrounding tx rolls back — silently breaking the D-91 same-tx
+    // contract. See 05-REVIEWS.md MEDIUM #7 + integration test (Test 16) in
+    // audit.integration.test.ts. To preserve the invariant, either keep this write
+    // outside any tx, OR explicitly use a separate transaction boundary.
     await prisma.auditEvent.create({
       data: {
         actorUserId: user.id,
@@ -97,40 +115,28 @@ export async function login(
         action: 'auth.login_failed',
         // before omitted (defaults to DB null).
         after: { email },
-        requestId: store?.requestId ?? null,
-        ipAddress: store?.ipAddress ?? null,
+        requestId: actor?.requestId ?? null,
+        ipAddress: actor?.ipAddress ?? null,
       },
     });
 
     throw new InvalidCredentialsError();
   }
 
-  // Phase 5 D-92 — populate the ALS store with the authenticated actor
-  // BEFORE createSession. The Session create that follows goes through
-  // the $extends middleware and writes an auth.login audit row with
-  // the actor + careUnit attributed correctly; without this, the audit
-  // row would carry actorUserId: null because requireSession hasn't
-  // run yet (login is an unprotected route — no preHandler).
-  const store = als.getStore();
-  if (store) {
-    store.actorUserId = user.id;
-    store.careUnitId = user.careUnitId;
-    store.actionOverride = 'auth.login';
-  }
-
-  // WR-05 — wrap createSession in try/finally so actionOverride is cleared
-  // even if it throws (DB error, unique constraint, etc.). Mirrors the
-  // logout() pattern below and the withActionOverride helper convention.
-  let session: Session;
-  try {
-    session = await createSession(user.id, user.careUnitId);
-  } finally {
-    // Clear the override so it doesn't bleed into any subsequent mutation
-    // in this same request.
-    if (store) {
-      store.actionOverride = undefined;
-    }
-  }
+  // Phase 5 D-92 + Plan 06 — populate the ALS actor frame with the
+  // authenticated user BEFORE createSession. The Session create that
+  // follows goes through the $extends middleware and writes an auth.login
+  // audit row with the actor + careUnit attributed correctly.
+  //
+  // Plan 06: setActor mutates the actorALS frame (the one allowed in-frame
+  // mutation — see requestContext.ts setActor JSDoc). withActionOverride
+  // wraps createSession in an actionOverrideALS.run('auth.login', fn)
+  // frame — the override is automatically cleared on return. No manual
+  // store.actionOverride = undefined needed.
+  setActor(user.id, user.careUnitId);
+  const session = await withActionOverride('auth.login', () =>
+    createSession(user.id, user.careUnitId),
+  );
 
   // Shape strips passwordHash explicitly (T-01-07) and matches loginResponse.
   return {
@@ -151,12 +157,7 @@ export async function logout(sessionId: string): Promise<void> {
   // Phase 5 D-94 — set auth.logout as the action override so the
   // Session delete that destroySession runs records as 'auth.logout'
   // rather than the generic 'delete'.
-  const store = als.getStore();
-  const previous = store?.actionOverride;
-  if (store) store.actionOverride = 'auth.logout';
-  try {
-    await destroySession(sessionId);
-  } finally {
-    if (store) store.actionOverride = previous;
-  }
+  // Plan 06: withActionOverride uses actionOverrideALS.run — no manual
+  // store mutation or finally-block save/restore needed.
+  await withActionOverride('auth.logout', () => destroySession(sessionId));
 }

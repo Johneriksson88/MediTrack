@@ -1,5 +1,10 @@
 import { Prisma } from '@prisma/client';
-import { als } from '../plugins/requestContext.js';
+import {
+  actorALS,
+  currentActiveTx,
+  currentActionOverride,
+  withActiveTx,
+} from '../plugins/requestContext.js';
 import {
   AUDITED_MODELS,
   AUDIT_ALLOWLIST,
@@ -27,29 +32,38 @@ import {
  *
  * # SAME-TX GUARANTEE (D-91)
  *
- * The extension intercepts `prisma.$transaction(async (tx) => ...)` at
- * the client level, pushes the tx client into the ALS store under
- * `activeTx` before running the user's callback, then clears it after.
- * Every per-model handler resolves the active client from the ALS store:
- * `store.activeTx ?? client`. Inside a user-opened `$transaction`, all
- * findUnique / findMany pre-loads AND the auditEvent.create INSERT use
- * the stored `activeTx` — so they ARE inside the same transaction. If
- * the user's callback throws, the tx rolls back including any audit rows
- * written by the extension. For bare calls (outside explicit tx), Prisma
- * auto-wraps the operation in an implicit tx, and the extension falls
- * back to `client` (the root pool) for the audit writes — the behavior
- * identical to D-91's original design intent for non-tx paths.
+ * Plan 06 (05-REVIEWS.md HIGH #1 + HIGH #2) replaced the original
+ * single-slot `store.activeTx = tx; finally { store.activeTx = undefined }`
+ * pattern with `activeTxStackALS` + `withActiveTx(tx, fn)`:
+ *
+ *   WHY activeTxStack VIA WITHACTIVETX:
+ *   - Nested $transaction calls give a stack [outerTx, innerTx]; the
+ *     inner handler reads innerTx (top); on inner exit the ALS frame
+ *     restores to [outerTx]; the outer's tail mutations read outerTx.
+ *     Implicit save/restore via stack frames — no asymmetric-clear bug
+ *     (CR-01 nested case from 05-REVIEW.md).
+ *   - Parallel Promise.all([prisma.$transaction(fnA), prisma.$transaction(fnB)])
+ *     — each call's withActiveTx() starts its own activeTxStackALS.run()
+ *     frame; the two frames are independent. No cross-attribution race
+ *     (CR-01 parallel case from 05-REVIEW.md).
+ *   - The asymmetric `= undefined` clear is gone — ALS stack-frame
+ *     restoration handles pop automatically when .run() returns.
+ *
+ * Every per-model handler resolves the active client via currentActiveTx()
+ * (top of the activeTxStack) falling back to the root client for bare calls.
+ * D-91: if the user callback throws, the tx rolls back including any audit
+ * rows the extension wrote against that tx client.
  *
  * VERIFIED in test by forced rollback inside prisma.$transaction leaving
- * zero audit_events rows (Plan 04 Task 2).
+ * zero audit_events rows (Plans 04 + 06 Tasks 2 + 12).
  *
  * # SKIP RULE (D-92)
  *
- * On every intercepted op we read `als.getStore()`. If undefined, we
- * SKIP audit-row creation entirely — just call query(args) and return
+ * On every intercepted op we read `actorALS.getStore()`. If undefined,
+ * we SKIP audit-row creation entirely — just call query(args) and return
  * the result. This is what makes the seed script noiseless. Tests
  * that WANT audit behavior must wrap their setup in an explicit
- * `als.run({ actorUserId: TEST_USER.id, ... }, () => { ... })`.
+ * `actorALS.run({ actorUserId: TEST_USER.id, ... }, () => { ... })`.
  *
  * # ENTITYID LEAK PREVENTION (D-97 + T-05-03)
  *
@@ -107,16 +121,19 @@ export function buildAuditExtension() {
         args: Record<string, unknown>;
         query: (a: Record<string, unknown>) => Promise<unknown>;
       }) => {
-        const store = als.getStore();
-        if (!store) return query(args);
+        const actor = actorALS.getStore();
+        if (!actor) return query(args);
 
-        // Resolve the active client: tx from ALS store when inside a
-        // prisma.$transaction, otherwise the captured root client.
+        // Resolve the active client: top of activeTxStack when inside a
+        // prisma.$transaction (set by withActiveTx in patchTransactionForAudit),
+        // otherwise the captured root client. currentActiveTx() reads the
+        // top of the activeTxStackALS frame — undefined for bare calls (D-91).
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const activeClient: any = store.activeTx ?? client;
+        const activeClient: any = currentActiveTx() ?? client;
+        const overrideAction = currentActionOverride();
         const result = await query(args);
         const row = result as Record<string, unknown>;
-        await writeAuditRow(activeClient, store, model, {
+        await writeAuditRow(activeClient, actor, overrideAction, model, {
           before: null,
           after: row,
           row,
@@ -133,11 +150,12 @@ export function buildAuditExtension() {
         args: Record<string, unknown>;
         query: (a: Record<string, unknown>) => Promise<unknown>;
       }) => {
-        const store = als.getStore();
-        if (!store) return query(args);
+        const actor = actorALS.getStore();
+        if (!actor) return query(args);
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const activeClient: any = store.activeTx ?? client;
+        const activeClient: any = currentActiveTx() ?? client;
+        const overrideAction = currentActionOverride();
         const where = args.where as Record<string, unknown> | undefined;
         let beforeRow: Record<string, unknown> | null = null;
         if (where) {
@@ -148,7 +166,7 @@ export function buildAuditExtension() {
 
         const result = await query(args);
         const row = result as Record<string, unknown>;
-        await writeAuditRow(activeClient, store, model, {
+        await writeAuditRow(activeClient, actor, overrideAction, model, {
           before: beforeRow,
           after: row,
           row,
@@ -165,11 +183,12 @@ export function buildAuditExtension() {
         args: Record<string, unknown>;
         query: (a: Record<string, unknown>) => Promise<unknown>;
       }) => {
-        const store = als.getStore();
-        if (!store) return query(args);
+        const actor = actorALS.getStore();
+        if (!actor) return query(args);
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const activeClient: any = store.activeTx ?? client;
+        const activeClient: any = currentActiveTx() ?? client;
+        const overrideAction = currentActionOverride();
         const where = (args.where as Record<string, unknown> | undefined) ?? {};
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const modelClient = (activeClient as any)[propName];
@@ -183,7 +202,7 @@ export function buildAuditExtension() {
           const afterRow: Record<string, unknown> | null = await modelClient.findUnique({
             where: { id },
           });
-          await writeAuditRow(activeClient, store, model, {
+          await writeAuditRow(activeClient, actor, overrideAction, model, {
             before: beforeRow,
             after: afterRow,
             row: afterRow ?? beforeRow,
@@ -201,11 +220,12 @@ export function buildAuditExtension() {
         args: Record<string, unknown>;
         query: (a: Record<string, unknown>) => Promise<unknown>;
       }) => {
-        const store = als.getStore();
-        if (!store) return query(args);
+        const actor = actorALS.getStore();
+        if (!actor) return query(args);
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const activeClient: any = store.activeTx ?? client;
+        const activeClient: any = currentActiveTx() ?? client;
+        const overrideAction = currentActionOverride();
         const where = args.where as Record<string, unknown> | undefined;
         let beforeRow: Record<string, unknown> | null = null;
         if (where) {
@@ -217,7 +237,7 @@ export function buildAuditExtension() {
         const result = await query(args);
         // For delete, Prisma's result IS the deleted row.
         const row = (result as Record<string, unknown>) ?? beforeRow ?? {};
-        await writeAuditRow(activeClient, store, model, {
+        await writeAuditRow(activeClient, actor, overrideAction, model, {
           before: beforeRow ?? (result as Record<string, unknown>),
           after: null,
           row,
@@ -234,11 +254,12 @@ export function buildAuditExtension() {
         args: Record<string, unknown>;
         query: (a: Record<string, unknown>) => Promise<unknown>;
       }) => {
-        const store = als.getStore();
-        if (!store) return query(args);
+        const actor = actorALS.getStore();
+        if (!actor) return query(args);
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const activeClient: any = store.activeTx ?? client;
+        const activeClient: any = currentActiveTx() ?? client;
+        const overrideAction = currentActionOverride();
         const where = (args.where as Record<string, unknown> | undefined) ?? {};
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const modelClient = (activeClient as any)[propName];
@@ -247,7 +268,7 @@ export function buildAuditExtension() {
         const result = await query(args);
 
         for (const beforeRow of beforeRows) {
-          await writeAuditRow(activeClient, store, model, {
+          await writeAuditRow(activeClient, actor, overrideAction, model, {
             before: beforeRow,
             after: null,
             row: beforeRow,
@@ -277,14 +298,23 @@ export function buildAuditExtension() {
  * and computes entityId via resolveEntityId (D-97 layer 2 / T-05-03).
  *
  * `activeClient` is either the tx client (when called from inside a
- * prisma.$transaction callback — stored in the ALS store under activeTx)
- * or the captured root `client` from `Prisma.defineExtension`. Routing
- * auditEvent.create through the tx client is what makes D-91 hold.
+ * prisma.$transaction callback — resolved from the activeTxStackALS frame
+ * via currentActiveTx()) or the captured root `client` from
+ * `Prisma.defineExtension`. Routing auditEvent.create through the tx
+ * client is what makes D-91 hold.
+ *
+ * `actor` is the ActorContext from actorALS.getStore() — never null here
+ * because handlers skip (return early) when actorALS.getStore() is falsy.
+ *
+ * `overrideAction` is the optional domain-rich action from
+ * actionOverrideALS.getStore() (currentActionOverride()). undefined means
+ * "use the defaultAction from Prisma method name".
  */
 async function writeAuditRow(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   activeClient: any,
-  store: NonNullable<ReturnType<typeof als.getStore>>,
+  actor: NonNullable<ReturnType<typeof actorALS.getStore>>,
+  overrideAction: string | undefined,
   model: AuditedModel,
   payload: {
     before: Record<string, unknown> | null;
@@ -293,23 +323,23 @@ async function writeAuditRow(
     defaultAction: 'create' | 'update' | 'delete';
   },
 ): Promise<void> {
-  const action = store.actionOverride ?? payload.defaultAction;
+  const action = overrideAction ?? payload.defaultAction;
   const entityId = resolveEntityId(model, payload.row);
   const filteredBefore = payload.before ? filterAllowlist(model, payload.before) : null;
   const filteredAfter = payload.after ? filterAllowlist(model, payload.after) : null;
   // careUnitId denormalization: prefer the row's own careUnitId, fall
-  // back to the actor's careUnitId from the ALS store.
+  // back to the actor's careUnitId from the actorALS store.
   const rowCareUnitId =
-    (payload.row.careUnitId as string | undefined) ?? store.careUnitId ?? null;
+    (payload.row.careUnitId as string | undefined) ?? actor.careUnitId ?? null;
 
   const data: Record<string, unknown> = {
-    actorUserId: store.actorUserId,
+    actorUserId: actor.actorUserId,
     careUnitId: rowCareUnitId,
     entityType: mapPrismaModelToEntityType(model),
     entityId,
     action,
-    requestId: store.requestId,
-    ipAddress: store.ipAddress ?? null,
+    requestId: actor.requestId,
+    ipAddress: actor.ipAddress ?? null,
   };
   // Only set before/after when non-null — leaving them undefined makes
   // Prisma default to DB NULL, avoiding the NullableJsonNullValueInput
@@ -322,7 +352,8 @@ async function writeAuditRow(
 
 /**
  * D-91 — patch the extended Prisma client's `$transaction` at runtime
- * to push the tx client into the ALS store for audit-write coordination.
+ * to push the tx client onto the activeTxStack ALS frame for audit-write
+ * coordination.
  *
  * WHY RUNTIME PATCH INSTEAD OF `client` EXTENSION
  * ================================================
@@ -340,6 +371,28 @@ async function writeAuditRow(
  * is type-invisible and behavior-preserving.
  *
  * Called once from `db/client.ts` on the singleton extended client.
+ *
+ * WHY activeTxStack VIA WITHACTIVETX (05-REVIEWS.md HIGH #1 + HIGH #2)
+ * ======================================================================
+ * The original design stored the tx in `store.activeTx` (a single mutable
+ * slot) and cleared it in a finally block. That asymmetric clear broke
+ * nested + parallel scenarios (CR-01 in 05-REVIEW.md):
+ *   - Nested: inner finally cleared activeTx to undefined; the outer's
+ *     tail mutation read the wrong client.
+ *   - Parallel Promise.all: both interceptors raced on the same slot.
+ *
+ * This plan replaces the single-slot pattern with `activeTxStackALS` +
+ * `withActiveTx(tx, fn)`:
+ *   - Nested calls: outer withActiveTx creates frame [outerTx]; inner
+ *     creates frame [outerTx, innerTx]; inner's handler reads innerTx
+ *     (at(-1)); on inner exit ALS restores frame to [outerTx]; outer's
+ *     tail mutations read outerTx. Implicit save/restore via Node stdlib.
+ *   - Parallel Promise.all: each call's withActiveTx starts its own
+ *     activeTxStackALS.run() frame; the frames are independent (no shared
+ *     mutable state). No cross-attribution race.
+ *   - The asymmetric `= undefined` clear is gone — ALS handles pop.
+ *
+ * References: CR-01, HIGH #1, HIGH #2 (05-REVIEWS.md).
  */
 export function patchTransactionForAudit<
   // WR-04 — narrowed from `{ $transaction: unknown }`: that earlier bound
@@ -362,26 +415,25 @@ export function patchTransactionForAudit<
         return original$transaction(fnOrOps, options);
       }
 
-      const store = als.getStore();
-      if (!store) {
-        // No ALS store (seed scripts, migration runner): delegate directly.
+      const actor = actorALS.getStore();
+      if (!actor) {
+        // No actorALS frame (seed scripts, migration runner): delegate directly.
         return original$transaction(fnOrOps, options);
       }
 
-      // Wrap the interactive transaction to capture the tx client.
+      // Wrap the interactive transaction to push the tx onto the activeTxStack.
+      // withActiveTx(tx, fn) calls activeTxStackALS.run([...prev, tx], fn);
+      // per-model handlers read currentActiveTx() (top of stack) to route
+      // their findUnique pre-loads and auditEvent.create INSERTs through the
+      // correct transactional context (D-91).
+      //
+      // On fn() return (success or throw), ALS automatically restores the
+      // previous frame — no manual `activeTx = undefined` needed (no asymmetric
+      // clear bug). Nested calls get a stack of depth ≥ 2; parallel calls each
+      // have their own frame from the start. (CR-01, HIGH #1, HIGH #2)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return original$transaction(async (tx: any) => {
-        // Store the tx in the ALS context so per-model handlers can
-        // retrieve it for pre-load reads and audit INSERTs (D-91).
-        store.activeTx = tx;
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return await (fnOrOps as (tx: any) => Promise<unknown>)(tx);
-        } finally {
-          // Clear the tx reference when the callback completes (success
-          // or throw) so it never leaks into subsequent bare calls.
-          store.activeTx = undefined;
-        }
+        return withActiveTx(tx, () => (fnOrOps as (tx: any) => Promise<unknown>)(tx));
       }, options);
     },
     writable: true,
