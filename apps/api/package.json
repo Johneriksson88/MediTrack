@@ -19,6 +19,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.98.0",
     "@fastify/cookie": "^9.4.0",
     "@fastify/rate-limit": "^8.0.0",
     "@meditrack/shared": "workspace:*",

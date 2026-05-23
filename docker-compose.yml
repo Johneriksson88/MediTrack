@@ -54,6 +54,12 @@ services:
       # Production deployments can override these via the .env file or Docker secrets.
       RATE_LIMIT_LOGIN_PER_EMAIL_PER_MINUTE: "10"
       RATE_LIMIT_LOGIN_PER_IP_PER_MINUTE: "30"
+      # Phase 6 D-107 — OPTIONAL. When set, the medication Sheet shows the
+      # "Hämta AI-förslag" button. When unset/empty, the AI affordance
+      # hides itself and the app behaves as v1-without-AI. The `:-` empty
+      # default passes z.string().optional() and isAvailable() (which
+      # checks length > 0).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
