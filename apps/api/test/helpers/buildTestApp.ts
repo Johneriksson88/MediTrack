@@ -26,6 +26,17 @@ vi.stubEnv('NODE_ENV', 'test');
 if (!process.env.COOKIE_SECRET) {
   vi.stubEnv('COOKIE_SECRET', 'test-cookie-secret-32-bytes-min-len-xxx');
 }
+// Plan 05-09: set a very high rate-limit for the shared test app instance so
+// the existing integration tests (which reuse fixed credential sets across the
+// full suite) are not affected by the per-email bucket. The auth.ratelimit.test.ts
+// file uses a FRESH app instance and realistic limits so the rate-limit behavior
+// is tested in isolation.
+if (!process.env.RATE_LIMIT_LOGIN_PER_EMAIL_PER_MINUTE) {
+  vi.stubEnv('RATE_LIMIT_LOGIN_PER_EMAIL_PER_MINUTE', '10000');
+}
+if (!process.env.RATE_LIMIT_LOGIN_PER_IP_PER_MINUTE) {
+  vi.stubEnv('RATE_LIMIT_LOGIN_PER_IP_PER_MINUTE', '10000');
+}
 if (!process.env.DATABASE_URL) {
   // Plan 05-07: runtime queries use the named non-owner role meditrack_app.
   // REVOKE on AuditEvent UPDATE/DELETE/TRUNCATE binds this role (D-98 Layer 2b).
