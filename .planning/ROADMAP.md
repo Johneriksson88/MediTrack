@@ -22,7 +22,7 @@
 | 2 | Medication Catalog | 4/4 | Complete   | 2026-05-21 |
 | 3 | Draft Orders | 4/4 | Complete | 2026-05-22 |
 | 4 | Confirm, Deliver & Stock | 3/3 | Complete   | 2026-05-22 |
-| 5 | Audit Log | 8/11 | In Progress|  |
+| 5 | Audit Log | 9/11 | In Progress|  |
 | 6 | AI Categorization & Low-Stock Notifications | LLM suggests therapeutic class on medication save; dashboard banner surfaces low-stock items live | AI-01, AI-02, AI-03, NTF-01, NTF-02 | yes |
 | 7 | Ops & Submission Polish | One-command Docker Compose runs the full stack with seed data; README explains decisions; git history is review-ready | OPS-01, OPS-02, OPS-04 | no |
 
@@ -99,7 +99,7 @@
 **Mode:** mvp
 **UI hint:** yes
 **Requirements:** AUD-01, AUD-02, AUD-03
-**Plans:** 8/11 plans executed
+**Plans:** 9/11 plans executed
   - [x] 05-01-PLAN.md — Slice 1 (Wave 1): AuditEvent schema + REVOKE migration + Prisma $extends middleware + AsyncLocalStorage plugin + auditAllowlist + permission key + shared contracts + auth.login_failed write (AUD-01 infrastructure)
   - [x] 05-02-PLAN.md — Slice 2 (Wave 2): audit.service.ts (cross-tenant D-16 exception) + GET /api/audit/events (cursor-paginated) + GET /api/audit/filters + AuditPage replaces stub + AuditFilterBar (3 comboboxes URL-as-state) + responsive AuditTable/AuditCardList + AuditDiffPanel + Kopiera permalink (AUD-02)
   - [x] 05-03-PLAN.md — Slice 3 (Wave 3): ESLint no-restricted-syntax rule + 5 integration tests (full pipeline coverage, rollback-leaves-no-audit, grep, REVOKE rejection, passwordHash redaction, admin-only 403/403/200) + README audit-log section with §6 prep (AUD-03)
@@ -107,7 +107,7 @@
   - [x] 05-05-PLAN.md — Gap closure (Wave 4): CR-02 cursor decode reason code fix (`invalid_quantity` → `invalid_cursor`) + CR-04 auth.logout actor attribution via lookup-before-destroy in DELETE /api/auth/session + WR-07 unknown-email failed-login entityType (`session` → `auth_attempt`, entityId = attempted email) + 3 regression tests (AUD-01, AUD-02)
   - [x] 05-06-PLAN.md — Wave 5 (reviews HIGH #1 + #2 + CR-01/04): per-concern ALS refactor (actorALS / activeTxStackALS / actionOverrideALS) + activeTxStack ships as default + Fastify 3-arg onRequest with als.run + nested/parallel/cross-request regression tests (AUD-01) — REWRITTEN in place from save/restore design
   - [x] 05-07-PLAN.md — Wave 6 (reviews HIGH #3): named DB role `meditrack_app` (non-owner) via migration 0010 + REVOKE UPDATE/DELETE/TRUNCATE on AuditEvent FROM meditrack_app + docker-compose DATABASE_URL/DIRECT_URL split + README §Database roles (AUD-01, AUD-03)
-  - [ ] 05-08-PLAN.md — Wave 7 (reviews HIGH #4 + MEDIUM #5 + LOW #12): ESLint createMany ban (D-93 enforcement) + $executeRaw CI grep with allowlist (T-05-01 closure) + migration 0011 BEFORE INSERT trigger rejecting empty entityId (WR-07 DB-layer backstop) (AUD-01, AUD-03)
+  - [x] 05-08-PLAN.md — Wave 7 (reviews HIGH #4 + MEDIUM #5 + LOW #12): ESLint createMany ban (D-93 enforcement) + $executeRaw CI grep with allowlist (T-05-01 closure) + migration 0011 BEFORE INSERT trigger rejecting empty entityId (WR-07 DB-layer backstop) (AUD-01, AUD-03)
   - [ ] 05-09-PLAN.md — Wave 8 (reviews MEDIUM #7 + #8 + LOW #19): @fastify/rate-limit on POST /api/auth/login (per-email + per-IP buckets, configurable) + INVARIANT comments at auth.login_failed write sites + Test 17 codifying tx-isolation invariant + auth.ratelimit.test.ts (4 tests) (AUD-01, AUTH-01)
   - [ ] 05-10-PLAN.md — Wave 9 (reviews MEDIUM #9 + #11): filter-cache staleness comment in audit.service.ts + README §Lessons learned (enterWith→run + shared-store anti-pattern + Prisma $extends key-casing trap) (AUD-02)
   - [x] 05-11-PLAN.md — Wave 9 docs-only parallel-safe (reviews Tier C — MEDIUM #6/#10/#18 + LOW #14/#15/#17): CONTEXT.md <deferred> expanded with 6 new entries + README §What I'd do with more time bullets + §Architecture choices ($extends vs $use) (AUD-01, AUD-02, AUD-03)
