@@ -48,7 +48,7 @@ Requirements for the Medovia interview submission. Each maps to exactly one road
 
 - [ ] **AI-01**: On medication create or edit, the system suggests a therapeutic class based on name and ATC code via a single LLM call returning structured output (class + confidence)
 - [ ] **AI-02**: User can accept the suggestion or override it with a free-text class; the chosen class persists with the medication
-- [ ] **AI-03**: User can filter the medication list by therapeutic class
+- [x] **AI-03**: User can filter the medication list by therapeutic class
 
 ### Audit Log
 
@@ -153,7 +153,7 @@ Updated during roadmap creation. Each v1 requirement maps to exactly one phase.
 | AUD-03 | Phase 5 | Complete |
 | AI-01 | Phase 6 | Pending |
 | AI-02 | Phase 6 | Pending |
-| AI-03 | Phase 6 | Pending |
+| AI-03 | Phase 6 | Complete |
 | NTF-01 | Phase 6 | Complete |
 | NTF-02 | Phase 6 | Complete |
 | OPS-01 | Phase 7 | Pending |

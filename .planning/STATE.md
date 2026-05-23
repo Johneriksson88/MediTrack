@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 06
-status: ready_to_plan
-last_updated: "2026-05-23T12:34:04.644Z"
+status: in_progress
+last_updated: "2026-05-23T15:11:00.000Z"
 last_activity: 2026-05-23
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 29
-  completed_plans: 27
-  percent: 71
+  completed_plans: 28
+  percent: 75
 ---
 
 # State: MediTrack
@@ -97,6 +97,7 @@ Phase 5 complete (all 5 plans including gap-closure plans 04 + 05). Run `/gsd:di
 | # | Plan | Status | Commits |
 |---|------|--------|---------|
 | 06-01 | Slice A — Dashboard Low-Stock Banner | Complete | db4dbba, 1dd8106, 5db3612, 400d497, ee253c2, 3507213 |
+| 06-02 | Slice B — Therapeutic Class Schema + Filter Combobox | Complete | c15b124, 7275300, 59808a7, 914fec3, edb4a6c, 326218f, 63c80d0 |
 
 ## Decisions Made
 
@@ -143,8 +144,13 @@ Phase 5 complete (all 5 plans including gap-closure plans 04 + 05). Run `/gsd:di
 - D-118 live (Phase 6 Plan 01): DashboardPage.tsx body replaced with single-line `<DashboardLowStockCard />`; no AppShell/nav/h1 changes — CardTitle "Läkemedel under tröskel" serves as the page heading.
 - Plan-01-ships-before-Plan-02-lands contract (Phase 6 Plan 01): dashboard contract declares therapeuticClass: z.string().nullable() with a Plan-02 TODO; dashboard.service.ts SELECTs NULL::text AS "therapeuticClass". Both swap to therapeuticClassEnum + m."therapeuticClass" in lockstep with Plan 02's migration. Avoids cross-plan ordering coupling without weakening the wire contract.
 - LOW_STOCK_QUERY_OPTIONS exported as a named const from useLowStockQuery.ts so the component test can assert the D-119 refresh-policy contract WITHOUT mounting a QueryClient — a refactor that drops either flag must also remove the named export, which the test catches.
+- Phase 6 Plan 02 live: TherapeuticClass closed enum (14 values A B C D G H J L M N P R S V) + Medication.therapeuticClass nullable column landed via migration 0012 (20260523124435_0012_medication_therapeutic_class); trgm GIN index Medication_name_trgm_idx survived the hand-edit of the generated diff (Blocker 2 mitigation — `DROP INDEX "Medication_name_trgm_idx"` stripped before apply).
+- D-115 / D-32 carve-out live (Phase 6 Plan 02): therapeuticClass IS editable on NPL-source meds because classification is metadata, not pharmaceutical identity. The four NPL-locked identity fields (name/atcCode/form/strength) remain server-side stripped; the new column is written UNCONDITIONALLY in updateCareUnitMedication's medData branch. Regression test in apps/api/test/medications.therapeuticClass.integration.test.ts Test 3.
+- D-95 + D-97 + AUDIT_ALLOWLIST extension live (Phase 6 Plan 02): the Phase 5 audit pipeline surfaces therapeuticClass changes automatically on PATCH /api/medications/:id — zero new audit code. Single-file extension to AUDIT_ALLOWLIST.Medication; the existing $extends middleware does the rest. Test 4 asserts `after.therapeuticClass === 'J'` on the resulting `medication.update` event.
+- D-116 live (Phase 6 Plan 02): Terapeutisk klass combobox positioned LEFTMOST in LakemedelFilter (search → Terapeutisk klass → ATC → Form → Visa endast under tröskel); URL-as-state via short param name ?class=N (single-letter value matches the Postgres enum verbatim); shared TherapeuticClassCombobox extracted as ONE file for Plan 02 (LakemedelFilter URL-state consumer) + Plan 03 (MedicationSheet react-hook-form consumer) — Warning-7 anti-duplication.
+- Plan 02 — Slice A's dashboard contract upgraded cleanly: `z.string().nullable()` (Plan 01 forward-compatible placeholder) → `therapeuticClassEnum.nullable()` (closed 14-value union). Wire shape unchanged; type narrowed. Plan 01's DashboardLowStockCard.test.tsx (5/5) and dashboard.integration.test.ts Tests 2+3 still pass after the swap — no regression.
 
 Last activity: 2026-05-23
 
 ---
-*Last updated: 2026-05-23 after 06-01-slice-a-dashboard-low-stock-banner*
+*Last updated: 2026-05-23 after 06-02-slice-b-therapeutic-class-schema-filter*
