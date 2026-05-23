@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import type { FastifyInstance } from 'fastify';
-import { als } from '../src/plugins/requestContext.js';
+import { actorALS } from '../src/plugins/requestContext.js';
 import {
   TEST_SJUKSKOTERSKA,
   TEST_APOTEKARE,
@@ -20,9 +20,9 @@ import {
 /**
  * Phase 5 Plan 03 — Audit log integration tests.
  *
- * 11 tests across 6 describe blocks covering AUD-01 / AUD-02 / AUD-03 with
+ * 14 tests across 7 describe blocks covering AUD-01 / AUD-02 / AUD-03 with
  * the threat-model assertions T-05-02 (append-only) and T-05-03 (session
- * id leak via entityId), plus Plan 05 gap-closure regression tests.
+ * id leak via entityId), plus Plan 05 and Plan 06 gap-closure regression tests.
  *
  *   AUD-01 — full pipeline coverage
  *     Test 1: create draft → submit → confirm → deliver writes the
@@ -34,6 +34,17 @@ import {
  *             which threw a validation error BEFORE reaching the audit-write
  *             site; the new test issues a mutation that SUCCEEDS first, then
  *             forces a throw, exercising the actual rollback path.
+ *     Test 12 (CR-01): nested $transaction with outer-rollback after inner-commit.
+ *             Outer-tx audit row is 0 (rolled back — CR-01 fixed). Inner-tx audit
+ *             row is 1 (independent Prisma transaction committed before outer throw).
+ *             Verifies activeTxStack correctly routes each tx's audit INSERTs; the
+ *             pre-fix bug was the outer's row escaping to the root client after the
+ *             inner's finally-block cleared activeTx to undefined.
+ *             Plan 06 regression test for 05-REVIEWS.md HIGH #1 + HIGH #2.
+ *     Test 13 (CR-01): parallel $transaction (Promise.all + setImmediate forced
+ *             event-loop interleaving) writes one audit row per tx with no
+ *             cross-attribution — hard CUM count assertion per LOW #16,
+ *             no silent skip.
  *
  *   AUD-03 — append-only enforcement (two layers asserted together)
  *     Test 3: `git grep` finds zero `prisma.auditEvent.update`,
@@ -71,6 +82,14 @@ import {
  *   AUD-02 — cursor error envelope (CR-02)
  *     Test 8: GET /api/audit/events with a malformed cursor responds 422
  *             with details.reason === 'invalid_cursor' (not 'invalid_quantity').
+ *
+ *   AUD-01 — parallel actorALS-frame isolation (CR-04, W10 reframing per checker feedback)
+ *     Test 14 (CR-04, W10): parallel actorALS-frame isolation under one Fastify app
+ *             instance — three CONCURRENT logouts via Promise.all + app.inject each
+ *             commit their own actorALS frame. Per-row assertions on actorUserId /
+ *             entityId / distinct requestIds confirm no cross-attribution under
+ *             concurrent keep-alive execution. Tests 7+9 verify sequential routing;
+ *             Test 14 verifies parallel-frame isolation (the novel contract).
  */
 
 let app: FastifyInstance;
@@ -164,13 +183,13 @@ describe('AUD-01 — full pipeline coverage', () => {
       select: { currentStock: true },
     });
 
-    // The audit extension only writes rows when the ALS store is
+    // The audit extension only writes rows when the actorALS store is
     // populated (D-92). The test wraps the prisma.$transaction in an
-    // als.run so the extension sees an actor context — and therefore
+    // actorALS.run so the extension sees an actor context — and therefore
     // WILL attempt to write an audit row inside the tx. The forced
     // throw then proves the audit row also rolled back (D-91).
     await expect(
-      als.run(
+      actorALS.run(
         {
           actorUserId: testUser.id,
           careUnitId: testUser.careUnitId,
@@ -217,6 +236,216 @@ describe('AUD-01 — full pipeline coverage', () => {
       where: { requestId: { startsWith: 'test-rollback-' } },
     });
     expect(orphanByRequestId).toBe(0);
+  });
+
+  it('nested $transaction: outer rollback drops outer-tx audit row; inner-committed audit row persists (CR-01)', async () => {
+    // Test 12 — CR-01 regression: Plan 06 activeTxStack must correctly
+    // track both outer and inner tx clients.
+    //
+    // THE CR-01 BUG (Plan 04 single-slot design): the inner tx's `finally`
+    // block cleared `store.activeTx = undefined`. After the inner tx
+    // returned, the OUTER's tail mutations found `store.activeTx === undefined`
+    // and fell back to the root client (bare INSERT outside the outer tx).
+    // That audit row committed even though the outer tx rolled back — an orphan.
+    //
+    // THE FIX (Plan 06 activeTxStack): each `prisma.$transaction` push/pops its
+    // own frame via `activeTxStackALS.run([...stack, tx], fn)`. The outer
+    // handler reads `outerTx` (its own frame). After the inner returns, the
+    // ALS frame restores to `[outerTx]` automatically — no asymmetric clear,
+    // no fall-through to the root client.
+    //
+    // PRISMA NESTED TRANSACTION SEMANTICS: calling `prisma.$transaction(inner)`
+    // on the ROOT client from inside an outer `$transaction` callback creates a
+    // NEW INDEPENDENT Postgres transaction (not a savepoint within the outer).
+    // Prisma 5 has no native savepoint support for `$transaction` interactive
+    // mode. Consequently:
+    //   - outer tx rolls back → outerTx audit row is gone (0 expected)
+    //   - inner tx commits independently → innerTx audit row persists (1 expected)
+    //
+    // The test therefore asserts:
+    //   a) OUTER mutation (careUnitMedication) audit row: 0 rows — CR-01 bug is fixed;
+    //      the outer's audit row now correctly uses outerTx and rolls back with it.
+    //   b) INNER mutation (medication) audit row: 1 row — inner tx committed;
+    //      the inner's audit row correctly uses innerTx and commits with it.
+    //   c) stock sanity: cumAfter.currentStock === cumBefore.currentStock (outer rolled back).
+    const testStartedAt = new Date();
+
+    const testUser = await prisma.user.findUniqueOrThrow({
+      where: { email: TEST_SJUKSKOTERSKA.email },
+      select: { id: true, careUnitId: true },
+    });
+    await ensureAllRolesSeeded();
+    const cum = await findTestCareUnitMedication(testUser.careUnitId);
+    // Read currentStock separately — findTestCareUnitMedication only returns {id, careUnitId}.
+    const cumBefore = await prisma.careUnitMedication.findUniqueOrThrow({
+      where: { id: cum.id },
+      select: { currentStock: true },
+    });
+    const med = await prisma.medication.findFirstOrThrow({ where: { name: { not: '' } } });
+
+    await expect(
+      actorALS.run(
+        {
+          actorUserId: testUser.id,
+          careUnitId: testUser.careUnitId,
+          requestId: 'test-nested-' + Date.now(),
+          requestSource: 'test',
+          ipAddress: null,
+        },
+        async () => {
+          await prisma.$transaction(async (outer) => {
+            // Outer-tx mutation — the audit extension intercepts via outerTx.
+            // activeTxStack = [outerTx]; audit row INSERT via outerTx.
+            await outer.careUnitMedication.update({
+              where: { id: cum.id },
+              data: { currentStock: { increment: 1 } },
+            });
+            // Nested inner $transaction — patchTransactionForAudit intercepts
+            // and pushes innerTx onto the activeTxStack: [outerTx, innerTx].
+            // The handler reads innerTx (top) for this mutation.
+            // Prisma creates a NEW independent transaction (not a savepoint).
+            await prisma.$transaction(async (inner) => {
+              await inner.medication.update({ where: { id: med.id }, data: { name: med.name } });
+            });
+            // Force outer rollback — outer tx and its audit row roll back.
+            // The inner tx already committed (independent connection); its
+            // audit row persists — that is the CORRECT expected behavior.
+            throw new Error('forced outer rollback');
+          });
+        },
+      ),
+    ).rejects.toThrow('forced outer rollback');
+
+    // Sanity: outer-tx rollback restored stock to pre-test value.
+    const cumAfter = await prisma.careUnitMedication.findUniqueOrThrow({
+      where: { id: cum.id },
+      select: { currentStock: true },
+    });
+    expect(cumAfter.currentStock).toBe(cumBefore.currentStock);
+
+    // a) OUTER audit row: 0 expected. The CR-01 fix: activeTxStack correctly
+    //    routes the outer's careUnitMedication audit INSERT through outerTx.
+    //    When outerTx rolls back, the audit row is gone. Pre-fix, the inner's
+    //    finally-block clear caused the outer's row to fall to root client and persist.
+    const outerOrphanRows = await prisma.auditEvent.findMany({
+      where: {
+        entityType: 'care_unit_medication',
+        entityId: cum.id,
+        createdAt: { gte: testStartedAt },
+      },
+    });
+    expect(outerOrphanRows).toHaveLength(0);
+
+    // b) INNER audit row: 1 expected. Inner tx committed independently before
+    //    the outer throw. The activeTxStack correctly pushed innerTx, so the
+    //    inner's medication audit row is written via innerTx and committed.
+    const innerCommittedRows = await prisma.auditEvent.findMany({
+      where: {
+        entityType: 'medication',
+        entityId: med.id,
+        createdAt: { gte: testStartedAt },
+      },
+    });
+    expect(innerCommittedRows).toHaveLength(1);
+  });
+
+  it('parallel $transaction: no cross-attribution with forced event-loop interleaving (CR-01)', async () => {
+    // Test 13 — CR-01 regression: Plan 06 activeTxStack gives each parallel
+    // $transaction its own ALS frame from the start of withActiveTx(), so
+    // there is no shared mutable slot that could cause cross-attribution.
+    // The setImmediate() yield inside each callback forces the event-loop to
+    // interleave callbacks (LOW #13). The hard expect(cums.length >= 2)
+    // prevents silent skip if the seed regresses (LOW #16).
+    const testStartedAt = new Date();
+
+    const testUser = await prisma.user.findUniqueOrThrow({
+      where: { email: TEST_SJUKSKOTERSKA.email },
+      select: { id: true, careUnitId: true },
+    });
+    await ensureAllRolesSeeded();
+
+    const cums = await prisma.careUnitMedication.findMany({
+      where: { careUnitId: testUser.careUnitId, deletedAt: null },
+      take: 2,
+      orderBy: { id: 'asc' },
+    });
+    // HARD assertion per LOW #16: never silent skip. If seed regresses below
+    // 2 CUMs, the test must fail loudly so the seed gap is fixed, not papered over.
+    expect(cums.length).toBeGreaterThanOrEqual(2);
+    const [cumA, cumB] = cums;
+
+    await actorALS.run(
+      {
+        actorUserId: testUser.id,
+        careUnitId: testUser.careUnitId,
+        requestId: 'test-parallel-' + Date.now(),
+        requestSource: 'test',
+        ipAddress: null,
+      },
+      async () => {
+        const txA = prisma.$transaction(async (tx) => {
+          // Yield to the event loop AFTER starting tx-A but BEFORE the mutation
+          // lands. This forces interleaving with tx-B's callback if the executor's
+          // event loop would otherwise serialize them. Without this yield, the test
+          // could pass on machines where the Promise microtask queue happens to drain
+          // tx-A first — making the test pass-by-luck instead of by design (LOW #13).
+          await new Promise<void>((r) => setImmediate(r));
+          await tx.careUnitMedication.update({
+            where: { id: cumA!.id },
+            data: { currentStock: { increment: 1 } },
+          });
+        });
+        const txB = prisma.$transaction(async (tx) => {
+          await new Promise<void>((r) => setImmediate(r));
+          await tx.careUnitMedication.update({
+            where: { id: cumB!.id },
+            data: { currentStock: { increment: 1 } },
+          });
+        });
+        await Promise.all([txA, txB]);
+      },
+    );
+
+    // Both transactions committed — two audit rows expected, one per CUM.
+    const rows = await prisma.auditEvent.findMany({
+      where: {
+        entityType: 'care_unit_medication',
+        entityId: { in: [cumA!.id, cumB!.id] },
+        createdAt: { gte: testStartedAt },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(rows).toHaveLength(2);
+
+    // No cross-attribution: each row's entityId matches its originating CUM.
+    const rowA = rows.find((r) => r.entityId === cumA!.id);
+    const rowB = rows.find((r) => r.entityId === cumB!.id);
+    expect(rowA).toBeDefined();
+    expect(rowB).toBeDefined();
+    expect((rowA!.after as Record<string, unknown>).id).toBe(cumA!.id);
+    expect((rowB!.after as Record<string, unknown>).id).toBe(cumB!.id);
+
+    // Cleanup: revert the stock increments so subsequent tests are not perturbed.
+    // Wrapped in actorALS.run so symmetric audit rows are written for the decrements.
+    await actorALS.run(
+      {
+        actorUserId: testUser.id,
+        careUnitId: testUser.careUnitId,
+        requestId: 'test-parallel-cleanup-' + Date.now(),
+        requestSource: 'test',
+        ipAddress: null,
+      },
+      async () => {
+        await prisma.careUnitMedication.update({
+          where: { id: cumA!.id },
+          data: { currentStock: { decrement: 1 } },
+        });
+        await prisma.careUnitMedication.update({
+          where: { id: cumB!.id },
+          data: { currentStock: { decrement: 1 } },
+        });
+      },
+    );
   });
 });
 
@@ -520,6 +749,99 @@ describe('AUD-02 — admin-only access', () => {
     // Explicit cross-subsystem-leak assertion: the order-domain reason
     // must NEVER appear on a cursor-decode failure.
     expect(body.error.details.reason).not.toBe('invalid_quantity');
+  });
+});
+
+describe('AUD-01 — parallel actorALS-frame isolation (CR-04, W10)', () => {
+  it('cross-request ALS frame: parallel-frame isolation prevents actor leakage under keep-alive (CR-04, W10 reframing)', async () => {
+    // Test 14 — CR-04 regression: Plan 06 actorALS.run(scope, () => done())
+    // binds each request's actor frame to the request pipeline via the 3-arg
+    // Fastify onRequest hook. Subsequent requests on the same keep-alive TCP
+    // connection each get their own actorALS frame from their own onRequest
+    // invocation — there is no shared mutable store (the als.enterWith design
+    // that caused CR-04).
+    //
+    // W10 reframing per checker feedback: Tests 7 + 9 already verify
+    // sequential-request audit correctness. The novel contract Test 14 verifies
+    // is PARALLEL-FRAME ISOLATION — three concurrent requests via Promise.all
+    // each get a distinct actorALS frame with no cross-attribution. The per-row
+    // assertions on actorUserId / entityId / distinct requestIds are cross-checks
+    // confirming the frame content was bound to the originating request.
+    const testStartedAt = new Date();
+    await ensureAllRolesSeeded();
+
+    // Resolve three user IDs to assert exact audit attribution.
+    const apotekareUser = await prisma.user.findUniqueOrThrow({
+      where: { email: TEST_APOTEKARE.email },
+      select: { id: true },
+    });
+    const sjukskoterskaUser = await prisma.user.findUniqueOrThrow({
+      where: { email: TEST_SJUKSKOTERSKA.email },
+      select: { id: true },
+    });
+    const adminUser = await prisma.user.findUniqueOrThrow({
+      where: { email: TEST_ADMIN.email },
+      select: { id: true },
+    });
+
+    // Parallel logins — each gets its own actorALS frame via the onRequest hook.
+    const [apotekareCookie, sjukskoterskaCookie, adminCookie] = await Promise.all([
+      loginAs(app, TEST_APOTEKARE),
+      loginAs(app, TEST_SJUKSKOTERSKA),
+      loginAs(app, TEST_ADMIN),
+    ]);
+
+    // Parallel logouts via Promise.all — this is the concurrency scenario.
+    // Each request enters the Fastify pipeline concurrently; each gets its
+    // own actorALS frame from the onRequest hook. If frames leaked, one
+    // user's actorUserId would appear on another user's auth.logout audit row.
+    const [resA, resS, resAd] = await Promise.all([
+      app.inject({
+        method: 'DELETE',
+        url: '/api/auth/session',
+        headers: { cookie: apotekareCookie },
+      }),
+      app.inject({
+        method: 'DELETE',
+        url: '/api/auth/session',
+        headers: { cookie: sjukskoterskaCookie },
+      }),
+      app.inject({
+        method: 'DELETE',
+        url: '/api/auth/session',
+        headers: { cookie: adminCookie },
+      }),
+    ]);
+    expect(resA.statusCode).toBe(204);
+    expect(resS.statusCode).toBe(204);
+    expect(resAd.statusCode).toBe(204);
+
+    // Three auth.logout audit rows expected — one per concurrent logout.
+    const auditRows = await prisma.auditEvent.findMany({
+      where: {
+        action: 'auth.logout',
+        actorUserId: { in: [apotekareUser.id, sjukskoterskaUser.id, adminUser.id] },
+        createdAt: { gte: testStartedAt },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(auditRows).toHaveLength(3);
+
+    // Per-row assertions: each row's actorUserId + entityId matches its
+    // originating user (T-05-03: entityId = actor User.id for Session rows).
+    const rowA = auditRows.find((r) => r.actorUserId === apotekareUser.id);
+    const rowS = auditRows.find((r) => r.actorUserId === sjukskoterskaUser.id);
+    const rowAd = auditRows.find((r) => r.actorUserId === adminUser.id);
+    expect(rowA).toBeDefined();
+    expect(rowS).toBeDefined();
+    expect(rowAd).toBeDefined();
+    // T-05-03: entityId = actor User.id, not Session.id.
+    expect(rowA!.entityId).toBe(apotekareUser.id);
+    expect(rowS!.entityId).toBe(sjukskoterskaUser.id);
+    expect(rowAd!.entityId).toBe(adminUser.id);
+    // All three requestIds must be distinct — concurrent requests get independent
+    // actorALS frames with independent randomUUID() requestIds.
+    expect(new Set([rowA!.requestId, rowS!.requestId, rowAd!.requestId]).size).toBe(3);
   });
 });
 
