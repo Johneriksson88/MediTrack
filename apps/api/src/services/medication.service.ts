@@ -12,6 +12,7 @@ import type {
   MedicationSearchResult,
   MedicationCreateRequest,
   MedicationUpdateRequest,
+  TherapeuticClass,
 } from '@meditrack/shared';
 import { OVRIGA_FILTER_VALUE, TOP_MEDICATION_FORMS } from '@meditrack/shared';
 
@@ -60,6 +61,15 @@ export function toListItem(row: MedicationWithJoin): MedicationListItem {
     currentStock: row.currentStock,
     lowStockThreshold: row.lowStockThreshold,
     source: row.medication.source as 'npl' | 'user',
+    // Phase 6 D-115 — Prisma client regen lands in Task 2 alongside the
+    // 0012 migration; until then the live row type has no
+    // `therapeuticClass` field, so we surface null. Once the migration is
+    // applied the Prisma `Medication` model picks up the new nullable
+    // column and this expression becomes
+    // `row.medication.therapeuticClass` without further narrowing.
+    therapeuticClass:
+      (row.medication as Medication & { therapeuticClass?: TherapeuticClass | null })
+        .therapeuticClass ?? null,
   };
 }
 

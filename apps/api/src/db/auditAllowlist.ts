@@ -60,6 +60,11 @@ export const AUDIT_ALLOWLIST: Record<AuditedModel, readonly string[]> = {
     'strength',
     'source',
     'createdAt',
+    // Phase 6 D-97 + D-95 — diff-at-read surfaces therapeuticClass changes
+    // via the existing $extends middleware (D-93). One-file extension; the
+    // first user-driven AI suggest + apply produces an audit row showing
+    // `therapeuticClass: null → N` automatically — no new audit action.
+    'therapeuticClass',
   ],
   CareUnitMedication: [
     'id',

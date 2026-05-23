@@ -111,10 +111,21 @@ model Medication {
   form                String
   strength            String?
   source              MedicationSource
+  /// Phase 6 D-113 / D-114 / D-115 — therapeutic class (closed enum of the
+  /// 14 WHO ATC level-1 anatomical groups). Nullable because the 43k NPL
+  /// seed rows start unset (no seed-time backfill — see PROJECT.md /
+  /// 06-CONTEXT.md "What I'm least proud of"); user-created meds start
+  /// null until "Hämta AI-förslag" → "Använd förslag" populates the field.
+  /// Editable on NPL meds per D-32 carve-out documented in D-115
+  /// (classification is metadata, not pharmaceutical identity).
+  therapeuticClass    TherapeuticClass?
   createdAt           DateTime             @default(now())
   careUnitMedications CareUnitMedication[]
 
   @@index([atcCode])
+  /// Phase 6 D-117 — single-column index supports the AI-03 filter combobox
+  /// on /lakemedel and any future dashboard JOIN over the class column.
+  @@index([therapeuticClass])
 }
 
 /// Phase 2 D-28 — Per-vårdenhet join table. Carries currentStock,
@@ -163,6 +174,28 @@ enum OrderStatus {
   skickad
   bekraftad
   levererad
+}
+
+/// Phase 6 D-113 / D-114 — Therapeutic class enum mirrors THERAPEUTIC_CLASSES
+/// in packages/shared/src/constants/therapeuticClass.ts verbatim. The 14
+/// WHO ATC level-1 anatomical groups: A, B, C, D, G, H, J, L, M, N, P, R,
+/// S, V. The Postgres enum literals (created via CREATE TYPE in migration
+/// 0012) match these values exactly — Prisma generates the matching SQL.
+enum TherapeuticClass {
+  A
+  B
+  C
+  D
+  G
+  H
+  J
+  L
+  M
+  N
+  P
+  R
+  S
+  V
 }
 
 /// Phase 3 D-48 / D-62 — Single Order table; status column distinguishes

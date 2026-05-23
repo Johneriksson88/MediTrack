@@ -1,5 +1,5 @@
 import { prisma } from '../db/client.js';
-import type { LowStockListResponse } from '@meditrack/shared';
+import type { LowStockListResponse, TherapeuticClass } from '@meditrack/shared';
 
 /**
  * Phase 6 D-16 / D-117 / D-120 / NTF-01 — Dashboard low-stock service.
@@ -56,7 +56,7 @@ export async function listLowStockForUnit(
       name: string;
       currentStock: number;
       lowStockThreshold: number;
-      therapeuticClass: string | null;
+      therapeuticClass: TherapeuticClass | null;
     }>
   >`
     SELECT cum."id" AS "careUnitMedicationId",
@@ -64,10 +64,10 @@ export async function listLowStockForUnit(
            m."name",
            cum."currentStock",
            cum."lowStockThreshold",
-           -- TODO Phase 6 Plan 02: replace NULL::text with m."therapeuticClass"
-           -- once migration 0012 applies. Plan 01 must compile + run BEFORE
-           -- the column exists on the Medication table.
-           NULL::text AS "therapeuticClass"
+           -- Phase 6 Plan 02: column is now present on Medication (migration
+           -- 0012). The select returns the closed-enum string ('A'..'V') or
+           -- NULL; the row type above narrows it to TherapeuticClass | null.
+           m."therapeuticClass"
     FROM "CareUnitMedication" cum
     JOIN "Medication" m ON cum."medicationId" = m."id"
     WHERE cum."careUnitId" = ${careUnitId}
