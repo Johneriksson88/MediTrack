@@ -24,7 +24,7 @@
 | 4 | Confirm, Deliver & Stock | 3/3 | Complete   | 2026-05-22 |
 | 5 | Audit Log | 11/11 | Complete   | 2026-05-23 |
 | 6 | AI Categorization & Low-Stock Notifications | 3/3 | Complete   | 2026-05-23 |
-| 7 | Ops & Submission Polish | 3/6 | In Progress|  |
+| 7 | Ops & Submission Polish | 4/6 | In Progress|  |
 
 ## Phase Details
 
@@ -138,11 +138,11 @@
 **Mode:** mvp
 **UI hint:** no
 **Requirements:** OPS-01, OPS-02, OPS-04
-**Plans:** 3/6 plans executed
+**Plans:** 4/6 plans executed
   - [x] 07-01-readme-restructure-PLAN.md — Slice 1 (Wave 1): README restructure to brief-aligned canonical layout + Swedish translation of Phase 5+6 deep dives + consolidated Kända luckor + Med mer tid (OPS-02, OPS-04)
   - [x] 07-02-arkitekturval-PLAN.md — Slice 2 (Wave 2, depends on 07-01): Arkitekturval section — 9-row matrix + 3 prose paragraphs (Postgres+FOR UPDATE / Prisma $extends / named meditrack_app role) + Vad vi medvetet avstått från (OPS-02, OPS-04)
   - [x] 07-03-pnpm-verify-PLAN.md — Slice 3 (Wave 2, depends on 07-01): root pnpm verify chain (lint + typecheck + test + build) + apps/api typecheck script + README §Tester update (OPS-04)
-  - [ ] 07-04-sc04-playwright-PLAN.md — Slice 4 (Wave 2, depends on 07-01): SC#4 Playwright verification harness + 6×360 px PNGs + data-test="primary-nav" on Sidebar+BottomTabBar + README ## Mobil-först verifiering section (OPS-02, OPS-04)
+  - [x] 07-04-sc04-playwright-PLAN.md — Slice 4 (Wave 2, depends on 07-01): SC#4 Playwright verification harness + 6×360 px PNGs + data-test="primary-nav" on Sidebar+BottomTabBar + README ## Mobil-först verifiering section (OPS-02, OPS-04)
   - [ ] 07-05-demo-rundtur-and-sex-svar-PLAN.md — Slice 5 (Wave 3, depends on 07-01+07-04): ## Demo-rundtur (5 minuter) + ## §6-svar 7 elevator pitches + §6 supporting bullets in audit deep dive (OPS-02, OPS-04)
   - [ ] 07-06-final-demo-path-gate-PLAN.md — Slice 6 (Wave 4, depends on all): final demo-path human gate on fresh docker compose up + git log narrative review + closing chore commit (OPS-01, OPS-02, OPS-04)
 **Success Criteria:**
