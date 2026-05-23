@@ -329,8 +329,11 @@ export function useConfirmOrder() {
  * (including status: 'levererad', deliveredAt, deliveredByUserId, deliveredBy) +
  * invalidates ['orders', { status: 'bekraftad' }] (source tab loses a row) and
  * ['orders', { status: 'levererad' }] (destination gains one).
- * Phase 6 NTF-01 hook: also invalidates ['medications'] so the future low-stock
- * dashboard banner refetches on every delivery without Phase 4 needing to know about it.
+ * Phase 6 NTF-01 hook: also invalidates ['medications'] so the /lakemedel page
+ * refetches on every delivery without Phase 4 needing to know about it.
+ * Phase 6 NTF-02 (D-119 / D-120): also invalidates ['dashboard', 'low-stock']
+ * — the dashboard banner uses its own dedicated cache key per D-120 so it
+ * can refresh independently of /lakemedel's filter state.
  *
  * Toast policy (UI-SPEC §Toast Feedback):
  *   - Success: toast.success('Levererad — lagret uppdaterat') (D-83)
@@ -354,8 +357,10 @@ export function useDeliverOrder() {
       // Invalidate both status lists (source tab loses, destination gains).
       void queryClient.invalidateQueries({ queryKey: ['orders', { status: 'bekraftad' }] });
       void queryClient.invalidateQueries({ queryKey: ['orders', { status: 'levererad' }] });
-      // Phase 6 NTF-01 hook: broad invalidation so the dashboard banner refetches.
+      // Phase 6 NTF-01 hook: broad invalidation so the /lakemedel list refetches.
       void queryClient.invalidateQueries({ queryKey: ['medications'] });
+      // Phase 6 D-119 / NTF-02: dashboard banner uses its own dedicated cache key (D-120).
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'low-stock'] });
       toast.success('Levererad — lagret uppdaterat');
     },
     onError: (err, vars) => {

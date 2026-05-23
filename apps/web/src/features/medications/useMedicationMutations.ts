@@ -44,6 +44,8 @@ export function useCreateMedication() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['medications'] });
       void queryClient.invalidateQueries({ queryKey: ['medication-search'] });
+      // Phase 6 D-119 / NTF-02: new med may be under threshold from creation.
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'low-stock'] });
       toast.success('Sparat');
     },
     onError: (err) => {
@@ -77,6 +79,8 @@ export function useUpdateMedication() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['medications'] });
       void queryClient.invalidateQueries({ queryKey: ['medication-search'] });
+      // Phase 6 D-119 / NTF-02: stock or threshold edits can flip the under-threshold predicate.
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'low-stock'] });
       toast.success('Sparat');
     },
     onError: () => {
@@ -162,6 +166,9 @@ export function useUpdateThresholdOptimistic() {
       // Always invalidate so server-authoritative belowThresholdTotal replaces
       // the locally-recomputed estimate (regardless of success or error).
       void queryClient.invalidateQueries({ queryKey: ['medications'] });
+      // Phase 6 D-119 / NTF-02: threshold edits flip the under-threshold predicate
+      // — refetch the dashboard banner so the row appears/disappears live.
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'low-stock'] });
     },
   });
 }
@@ -204,6 +211,8 @@ export function useDeleteMedication() {
       void queryClient.invalidateQueries({ queryKey: ['medications'] });
       // Invalidate search so the now-deletable Medication surfaces in typeahead (D-30).
       void queryClient.invalidateQueries({ queryKey: ['medication-search'] });
+      // Phase 6 D-119 / NTF-02: a deleted med must drop from the dashboard banner too.
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'low-stock'] });
       toast.success(`Borttaget från ${careUnitName}`);
       // Close the parent Sheet via the caller-supplied callback (single-source-of-truth).
       onClose?.();
