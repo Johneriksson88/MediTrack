@@ -206,6 +206,47 @@ export async function listAuditEvents(
 // Filter source — 60s memoized (D-103 / T-05-10)
 // ---------------------------------------------------------------------------
 
+/**
+ * Module-scope memoization of the filter-source response with a 60s TTL.
+ *
+ * # WHY 60s
+ *
+ * `listAuditFilters()` is hit on every page-load of /admin/audit (the
+ * FilterBar's three comboboxes). The query has three parallel GROUP BY
+ * scans; caching for 60s smooths burst traffic when an admin reloads or
+ * navigates between filters. The FE's `useAuditFiltersQuery` also uses
+ * `staleTime: 60_000`, so both layers cooperate: even with admin credentials
+ * an attacker can't exceed ~1 DB hit per minute per app instance
+ * (T-05-10 DoS mitigation, D-103).
+ *
+ * # STALENESS WINDOW (05-REVIEWS.md MEDIUM #9)
+ *
+ * The entity-type set is STATIC today — Phase 5's six entityTypes are
+ * defined in shared constants (`auditEntityType.ts`) and the seed produces
+ * exactly that set. If a future phase adds a model (e.g., Phase 6's
+ * therapeutic-class taxonomy might introduce a new entityType), the new
+ * type does NOT appear in the FilterBar combobox until either:
+ *   (a) the cache expires (max 60s), or
+ *   (b) the api process restarts (cache is in-memory).
+ *
+ * For an internal forensics tool used by admins, 60s of staleness is
+ * acceptable. NO event-driven invalidation is implemented in v1.
+ *
+ * # V2 INVALIDATION CANDIDATES
+ *
+ * - When a new audit row with a previously-unseen entityType lands, the
+ *   audit middleware could emit an in-process event; this service would
+ *   subscribe and invalidate `filtersCache`.
+ * - When a deploy lands new shared constants (i.e., a new entityType is
+ *   added to the codebase), invalidation happens automatically at api
+ *   startup because this cache is in-memory and does not survive a restart.
+ *
+ * # FUTURE CONTRIBUTORS
+ *
+ * If you add a new entityType in Phase 6/7 and don't see it in the
+ * combobox immediately, wait 60s OR restart the api. This is by design;
+ * see 05-REVIEWS.md MEDIUM #9 for the full context.
+ */
 interface FiltersCacheEntry {
   data: AuditFiltersResponse;
   expiresAt: number;

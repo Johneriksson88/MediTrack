@@ -469,19 +469,46 @@ documented and guarded rather than hidden, but the underlying limitation
 (the `$extends` boundary) remains. I picked the smallest blast radius
 I could find for a one-week budget.
 
-The original Plan 05-01 design also used `als.enterWith()` in a Fastify
-`onRequest` hook. `enterWith` binds a store to the _surrounding_ async
-context rather than running a callback inside a new scope — it works for
-simple request-response cases but makes the store's lifetime ambiguous
-under connection reuse (the store from request N can bleed into request
-N+1 on a keep-alive socket if the hook fires before the previous store
-drains). The lesson: when wrapping async work in Node.js, prefer
-`als.run(store, fn)` with a callback that covers the full scope of the
-work. `enterWith` is the right tool only when you genuinely have no
-callback boundary — the Fastify 3-arg hook (`(req, reply, done)`) gives
-exactly the boundary needed: `actorALS.run(scope, () => done())`.
-Reading the Node.js docs more carefully before the initial ship would
-have avoided the CR-04 retro.
+### Lessons learned
+
+Three Phase 5 process retros that each have a one-line takeaway and a
+source-of-truth that would have caught the issue earlier:
+
+- **Read the stdlib docs before introducing an unfamiliar primitive.**
+  Plan 05-01 chose `AsyncLocalStorage.enterWith` for the request-context
+  hook without consulting the Node.js docs page
+  (https://nodejs.org/api/async_context.html). The docs warn explicitly
+  that `enterWith` is generally discouraged in production code due to its
+  unpredictable behavior under connection reuse — exactly the keep-alive
+  frame-leakage hazard that CR-04 exposed. Plan 05-06 retired `enterWith`
+  in favor of `actorALS.run(scope, () => done())` using Fastify's 3-arg
+  `onRequest` signature; Test 14 codifies the contract. Lesson: when
+  introducing an unfamiliar stdlib primitive, read its docs page first.
+  (05-REVIEWS.md MEDIUM #11.)
+
+- **Prefer N independent stores over one shared mutable store the moment
+  the second concern lands.** Plan 05-04's `activeTx` slot was added as a
+  single field on the existing `RequestContext` store (which already
+  carried `actor` + `careUnit` + `requestId`). Three of the six bugs the
+  verifier caught (CR-01 asymmetric clear, CR-04 keep-alive leak, and the
+  WR-01 class) traced back to that shared-store design. Plan 05-06 retired
+  the shared store in favor of three independent `AsyncLocalStorage`
+  instances (`actorALS` / `activeTxStackALS` / `actionOverrideALS`) so
+  each concern has exactly the lifetime it needs. The entire fragility
+  class is structurally eliminated. Lesson: at the moment a request-scope
+  carrier has more than one concern with a different lifetime, prefer
+  per-concern ALS instances. (05-REVIEWS.md HIGH #1.)
+
+- **Library type-defs are the documentation when the docs are silent.**
+  Plan 05-01 spent ~10 minutes debugging "extension registered but never
+  fires" before reading the Prisma client runtime type-def to discover
+  that `$extends({query})` keys are lowercase modelProps names
+  (`'session'`, `'careUnitMedication'`), NOT PascalCase. The PascalCase
+  keys silently registered without runtime matching. Lesson: when an
+  extension or middleware "registers fine but never fires," read the
+  library's type-def file for the registration constraints — it is often
+  the only documentation for ergonomic details like key casing. (Plan
+  05-01 SUMMARY auto-fix #3.)
 
 ### Login rate-limiting
 
