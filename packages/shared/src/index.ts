@@ -74,6 +74,13 @@ export {
   auditFiltersResponse,
   type AuditFiltersResponse,
 } from './contracts/audit.js';
+// Dashboard contracts — Phase 6 D-08 / D-120 / NTF-01 (FE↔BE dashboard low-stock API)
+export {
+  lowStockItem,
+  type LowStockItem,
+  lowStockListResponse,
+  type LowStockListResponse,
+} from './contracts/dashboard.js';
 
 // Constants — locked vocabularies shared FE+BE
 export { ROLES, roleEnum, type Role } from './constants/roles.js';
