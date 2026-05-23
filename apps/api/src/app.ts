@@ -78,12 +78,18 @@ export async function buildApp(): Promise<FastifyInstance> {
     max: parseInt(process.env.RATE_LIMIT_LOGIN_PER_IP_PER_MINUTE ?? '30', 10),
     timeWindow: '1 minute',
     keyGenerator: (req) => `ip:${req.ip}`,
-    errorResponseBuilder: (_req, context) => ({
-      error: {
-        code: 'rate_limited',
-        message: `För många försök från denna IP. Försök igen om ${context.after}.`,
-      },
-    }),
+    errorResponseBuilder: (_req, context) => {
+      // @fastify/rate-limit THROWS the return value of errorResponseBuilder through
+      // Fastify's error pipeline. Returning a plain object means `err.statusCode`
+      // is undefined in setErrorHandler — the 429 check wouldn't fire.
+      // Returning an Error with statusCode: 429 lets our errorHandlerPlugin format
+      // it with the D-19 canonical envelope {error: {code: 'rate_limited', message}}.
+      const err = new Error(
+        `För många försök från denna IP. Försök igen om ${context.after}.`,
+      ) as Error & { statusCode: number };
+      err.statusCode = 429;
+      return err;
+    },
   });
 
   // Routes.

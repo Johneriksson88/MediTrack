@@ -69,15 +69,24 @@ export async function authRoutes(app: FastifyInstance) {
             // the global per-IP guard (app.ts) also bounds IP fan-out.
             return `login:${email}|${req.ip}`;
           },
-          // D-19 strict alignment (W5): response body is the canonical
-          // envelope {error: {code, message}} — no top-level statusCode.
-          // The plugin sets HTTP 429 via its own header path.
-          errorResponseBuilder: (_req, context) => ({
-            error: {
-              code: 'rate_limited',
-              message: `För många inloggningsförsök. Försök igen om ${context.after}.`,
-            },
-          }),
+          // Run the rate-limit check in the preHandler hook (NOT the default onRequest).
+          // Fastify parses the JSON body between onRequest and preHandler, so req.body
+          // is populated by the time preHandler fires. Without this, req.body is always
+          // undefined in the keyGenerator and ALL requests share the same 'unknown' key.
+          hook: 'preHandler',
+          // D-19 strict alignment (W5): errorResponseBuilder returns an Error
+          // object with statusCode: 429. @fastify/rate-limit THROWS this value
+          // through Fastify's error pipeline; our errorHandlerPlugin intercepts
+          // statusCode === 429 and wraps it in the canonical D-19 envelope
+          // {error: {code: 'rate_limited', message}} using err.message for the
+          // localized Swedish text.
+          errorResponseBuilder: (_req, context) => {
+            const err = new Error(
+              `För många inloggningsförsök. Försök igen om ${context.after}.`,
+            ) as Error & { statusCode: number };
+            err.statusCode = 429;
+            return err;
+          },
         },
       },
     },

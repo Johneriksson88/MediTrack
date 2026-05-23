@@ -159,6 +159,20 @@ function send(
 
 export const errorHandlerPlugin = fp(async (app: FastifyInstance) => {
   app.setErrorHandler((err, req, reply) => {
+    // Plan 05-09 / D-19 — Rate-limit 429 handling.
+    // @fastify/rate-limit throws the return value of errorResponseBuilder (or its
+    // default Error object) via Fastify's error pipeline. We intercept 429s here
+    // and format them with the canonical D-19 envelope {error: {code, message}}.
+    // The error.message is the human-readable Swedish message from the route's
+    // errorResponseBuilder; falling back to a generic message if absent.
+    if (err.statusCode === 429) {
+      const message =
+        (err as { rateLimit?: { message?: string }; message?: string }).rateLimit?.message ??
+        err.message ??
+        'För många förfrågningar. Försök igen senare.';
+      return send(reply, 429, envelope('rate_limited', message));
+    }
+
     // Phase 3 D-56 — OrderLockedError (409) and ValidationFailedError (422) MUST
     // be checked BEFORE the Zod branch so they are not swallowed by the generic
     // 400 validation_failed fallthrough. D-56 explicitly maps ValidationFailedError
