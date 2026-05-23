@@ -347,6 +347,34 @@ Both layers are asserted in lockstep by integration test #7
 ("auth.login + auth.logout entityId equals User.id, NEVER the raw
 Session.id").
 
+### Defense-in-depth guards (Plan 05-08)
+
+Three additional guards close gaps the two layers above didn't cover:
+
+- **`createMany` is banned outside `apps/api/prisma/seed.ts`** (ESLint
+  `no-restricted-syntax`, 05-REVIEWS.md HIGH #4). D-93 deliberately skipped
+  intercepting `createMany` in the audit extension because seed was the only
+  known consumer. The ESLint ban operationalises that decision — a future
+  contributor adding a `prisma.medication.createMany([...])` call in a service
+  file gets a PR-time lint error directing them to either (a) decompose into N
+  individual `prisma.<model>.create({data})` calls (which ARE intercepted) or
+  (b) reopen D-93 and intercept `createMany` in the extension.
+
+- **`$executeRaw` / `$executeRawUnsafe` are subject to a CI allowlist**
+  (integration test `audit.integration.test.ts` Test 15, 05-REVIEWS.md MEDIUM
+  #5). Raw queries bypass the audit extension; a CI grep asserts every
+  production-code match is in a documented allowlist. The allowlist is currently
+  empty — Phase 4 D-79's `FOR UPDATE` uses `$queryRaw` (READ form), which is
+  not subject to the ban. A future raw-write must be added to the allowlist
+  consciously, surfacing the architectural decision at PR time.
+
+- **`audit_events.entityId` cannot be empty or NULL** (migration 0011 BEFORE
+  INSERT trigger, 05-REVIEWS.md LOW #12). Plan 05-05's WR-07 split path closed
+  the sentinel-empty-string case in the application code (`auth.service.ts` now
+  sets `entityId` to the attempted email for unknown-email login failures). The
+  trigger is the DB-layer backstop — any future code path that forgets to set
+  `entityId` hits SQLSTATE 23514 instead of writing a meaningless row.
+
 ### Known gap (honest disclosure)
 
 `prisma.$queryRaw` and `prisma.$executeRaw` are **not** intercepted by
@@ -355,11 +383,12 @@ boundary, not the raw-SQL boundary.
 
 Today this is harmless: the only raw queries in the codebase are
 Phase 4's `FOR UPDATE` row lock (a read, not a mutation — the actual
-UPDATE goes through Prisma's `updateMany` which IS audited). But a
-**future** raw write would silently bypass the audit log. v2
-mitigation: a CI grep banning `$executeRaw` outside an allowlist
-(Phase 4's `FOR UPDATE` would be allowlisted; future raw-writes would
-force a code-review discussion).
+UPDATE goes through Prisma's `updateMany` which IS audited), and some
+read-only `$queryRaw` calls in `medication.service.ts` (column-vs-column
+predicates Prisma ORM cannot express). No `$executeRaw` write calls exist
+in production code — enforced by the CI grep in Test 15 above. A future
+raw write that needs to land must be added to the allowlist with a
+documented reason, surfacing the audit-bypass decision at PR time.
 
 **One-shot orphan-row cleanup (migration 0009).** The initial Phase 5
 ship had a bug in the Prisma extension where the audit-row INSERT and
@@ -413,6 +442,12 @@ with `permission denied`. Two layers, both asserted by tests:
 - Integration test #3 — grep for the banned patterns, asserts zero matches.
 - Integration test #4 — raw-SQL UPDATE against AuditEvent, asserts rejection.
 
+Plan 05-08 deepened the enforcement with three additional guards: an ESLint
+ban on `*.createMany` outside `seed.ts` (HIGH #4), a CI grep enforcing an
+allowlist on `$executeRaw` writes (MEDIUM #5), and a BEFORE INSERT trigger
+rejecting empty-string `entityId` rows with SQLSTATE 23514 (LOW #12). The
+three guards are independently tested (Tests 15 and 16 join Tests 3 and 4).
+
 The Plan 05-06 per-concern ALS refactor is also something I'm proud of.
 The original design used a single merged `RequestContext` store with an
 `activeTx` slot that was mutated in a `finally` block — safe for the
@@ -426,12 +461,13 @@ failure modes, then refactor — is a pattern I'd repeat on any audit
 system.
 
 **"What I'm least proud of".**
-The Prisma extension can't see `$queryRaw` mutations. No such mutations
-exist today — Phase 4's `FOR UPDATE` is read-only — but a future raw
-write would silently bypass the audit log. v2: a CI grep banning
-`$executeRaw` outside an allowlist. I picked the smallest blast radius
-I could find for a one-week budget, and chose to document the gap
-honestly rather than hide it.
+The Prisma extension can't see `$queryRaw` mutations. No `$executeRaw`
+writes exist today — Phase 4's `FOR UPDATE` is read-only — and Plan 05-08
+ships a CI grep (Test 15) that asserts zero off-allowlist `$executeRaw`
+calls; a future raw write must be allowlisted at PR time. The gap is now
+documented and guarded rather than hidden, but the underlying limitation
+(the `$extends` boundary) remains. I picked the smallest blast radius
+I could find for a one-week budget.
 
 The original Plan 05-01 design also used `als.enterWith()` in a Fastify
 `onRequest` hook. `enterWith` binds a store to the _surrounding_ async
@@ -455,7 +491,6 @@ What I'd add with more time, in rough priority order:
   (D-101). A TTL or archival cron would need a separately-grantable
   purge role to bypass the REVOKE without breaking the architectural
   append-only story.
-- **`$executeRaw` allowlist CI grep** — Closes the known gap above.
 - **Hash-chained rows for cryptographic append-only proof** — Each row
   carries `sha256(prev_row || this_row)`; tampering with row N
   invalidates the chain from N onward.
