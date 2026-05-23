@@ -21,6 +21,7 @@ A nurse can place an order for a low-stock medication and, when delivered, the s
 - [x] Medication registry with name, ATC code, form, strength, current stock — list / create / edit / delete. *Validated in Phase 2: medication-catalog* (CAT-01..07, STK-03, STK-04; Prisma `Medication` + `CareUnitMedication` with `@@unique([careUnitId, medicationId])` + `pg_trgm` GIN index; 43 538-row NPL seed with deterministic ~8% below-threshold PRNG; GET/POST/PATCH/DELETE `/api/medications` with RBAC + `careUnitId` scoping + soft-delete-with-restore; 40/40 web tests green; 5 items in `02-HUMAN-UAT.md` await live-stack walkthrough)
 - [x] Search and filter on name, ATC code, or form. *Validated in Phase 2: medication-catalog* (LakemedelFilter: 200ms-debounced search, ATC combobox, Form select, "Visa endast under tröskel" chip; all four combine into one query and round-trip through URL search params — deep-linkable)
 - [x] Low-stock warning when current stock < per-medication threshold. *Validated in Phase 2: medication-catalog* (LowStockBadge with AlertTriangle icon on Lager cell; LowStockBanner above the list; `defaultLowStockThreshold(form)` heuristic in shared package; InlineEditThreshold with optimistic update + rollback)
+- [x] Append-only audit log of every mutation (who / what / when) with admin view. *Validated in Phase 5: audit-log* (AUD-01..03; Prisma `$extends` middleware + per-concern `AsyncLocalStorage` instances writing audit rows inside the same tx as the originating mutation; `/admin/audit` browse page with three URL-as-state combobox filters, cursor pagination, and request-grouped diff panel; three-layer append-only enforcement — owner-binding BEFORE triggers (0008), named non-owner `meditrack_app` role REVOKE (0010), empty-entityId BEFORE INSERT trigger (0011) — plus ESLint bans on `update*/delete*/upsert/createMany` outside seed; per-email + per-IP login rate-limit via `@fastify/rate-limit`; 102/102 vitest green including 17 audit + 4 rate-limit integration tests covering nested-tx, parallel-tx, keep-alive frame isolation, and rollback isolation invariants)
 
 ### Active
 
@@ -39,7 +40,7 @@ A nurse can place an order for a low-stock medication and, when delivered, the s
 **Chosen optionals (from brief §2.2):**
 
 - [ ] AI auto-categorization of medications into therapeutic class from name/ATC
-- [ ] Append-only audit log of every mutation (who / what / when) with admin view
+- [x] Append-only audit log of every mutation (who / what / when) with admin view *(validated in Phase 5)*
 - [x] Role-based auth with three roles — `apotekare`, `sjuksköterska`, `admin` — with route guards and BE policy enforcement *(validated in Phase 1)*
 - [ ] In-app low-stock notification banner on the dashboard
 
@@ -121,4 +122,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-22 after Phase 3 (draft-orders) completion*
+*Last updated: 2026-05-23 after Phase 5 (audit-log) completion — gap closure across 6 plans (05-06..05-11) closed all 19 review findings*
