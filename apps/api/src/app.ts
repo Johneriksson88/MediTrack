@@ -3,6 +3,7 @@ import {
   serializerCompiler,
   validatorCompiler,
 } from 'fastify-type-provider-zod';
+import fastifyRateLimit from '@fastify/rate-limit';
 import { env } from './env.js';
 import { cookiesPlugin } from './plugins/cookies.js';
 import { errorHandlerPlugin } from './plugins/errorHandler.js';
@@ -57,6 +58,33 @@ export async function buildApp(): Promise<FastifyInstance> {
   // routes (so the ALS scope exists for the whole request lifecycle —
   // including any auth.login_failed audit writes that need requestId).
   await app.register(requestContextPlugin);
+
+  // Plan 05-09 / 05-REVIEWS.md MEDIUM #8 — rate-limit plugin registered
+  // globally with `global: false` so only routes that explicitly opt in
+  // via `config: { rateLimit: ... }` are rate-limited. Currently only
+  // POST /api/auth/login opts in (auth.ts). Other routes (medications,
+  // orders, audit, etc.) are unaffected.
+  //
+  // Per-IP global guard: 30 attempts per minute from any single IP across
+  // ALL opted-in routes. The per-email bucket is configured at the route
+  // level in auth.ts (10 attempts per minute per (email, IP)).
+  //
+  // D-19 strict alignment (W5): the errorResponseBuilder returns
+  // `{error: {code, message}}` — the canonical envelope — without a
+  // top-level `statusCode` field. The plugin sets HTTP 429 via its own
+  // header path; the body stays strictly D-19-shaped.
+  await app.register(fastifyRateLimit, {
+    global: false, // opt-in per route via config.rateLimit
+    max: parseInt(process.env.RATE_LIMIT_LOGIN_PER_IP_PER_MINUTE ?? '30', 10),
+    timeWindow: '1 minute',
+    keyGenerator: (req) => `ip:${req.ip}`,
+    errorResponseBuilder: (_req, context) => ({
+      error: {
+        code: 'rate_limited',
+        message: `För många försök från denna IP. Försök igen om ${context.after}.`,
+      },
+    }),
+  });
 
   // Routes.
   await app.register(authRoutes);
