@@ -23,7 +23,7 @@
 | 3 | Draft Orders | 4/4 | Complete | 2026-05-22 |
 | 4 | Confirm, Deliver & Stock | 3/3 | Complete   | 2026-05-22 |
 | 5 | Audit Log | 11/11 | Complete   | 2026-05-23 |
-| 6 | AI Categorization & Low-Stock Notifications | 2/3 | In Progress|  |
+| 6 | AI Categorization & Low-Stock Notifications | 3/3 | Complete   | 2026-05-23 |
 | 7 | Ops & Submission Polish | One-command Docker Compose runs the full stack with seed data; README explains decisions; git history is review-ready | OPS-01, OPS-02, OPS-04 | no |
 
 ## Phase Details
@@ -128,10 +128,10 @@
 3. Dashboard renders a low-stock banner listing every medication for the current `vårdenhet` whose current stock < threshold; the banner refetches after any stock-changing mutation (delivery) and updates without a manual reload.
 4. LLM call is isolated behind a single service interface so swapping providers (or mocking in tests) is one change in one file.
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
   - [x] 06-01-PLAN.md — Slice A (Wave 1): dashboard low-stock banner end-to-end — new dedicated GET /api/dashboard/low-stock endpoint + DashboardLowStockCard with three-layer refresh (mutation invalidation + window focus + 30s poll) + sibling invalidations in deliver/medication mutations (NTF-01, NTF-02)
   - [x] 06-02-PLAN.md — Slice B (Wave 1, [BLOCKING] migration): therapeuticClass schema + filter combobox — Postgres TherapeuticClass enum + Medication.therapeuticClass column + shared constants + audit allowlist extension + leftmost LakemedelFilter combobox with URL-as-state ?class=N + medication.service extensions (AI-03)
-  - [ ] 06-03-PLAN.md — Slice C (Wave 2, depends on 06-02): AI service single-seam + suggest endpoint + Sheet integration — aiCategorization.service.ts with Anthropic Claude Haiku 4.5 + tool_use + 5s AbortController + ai_unavailable/ai_timeout error codes + ai:suggest permission + AiSuggestionChip + ConfidenceBadge + MedicationSheet two-field AI layout + useAiAvailability + useSuggestTherapeuticClass (AI-01, AI-02)
+  - [x] 06-03-PLAN.md — Slice C (Wave 2, depends on 06-02): AI service single-seam + suggest endpoint + Sheet integration — aiCategorization.service.ts with Anthropic Claude Haiku 4.5 + tool_use + 5s AbortController + ai_unavailable/ai_timeout error codes + ai:suggest permission + AiSuggestionChip + ConfidenceBadge + MedicationSheet two-field AI layout + useAiAvailability + useSuggestTherapeuticClass (AI-01, AI-02)
 
 ### Phase 7: Ops & Submission Polish
 **Goal:** The repo is submission-ready — one command runs the full stack with seed data, the README answers every question the brief and §6 reviewer will ask, and the git history reads as a narrative.

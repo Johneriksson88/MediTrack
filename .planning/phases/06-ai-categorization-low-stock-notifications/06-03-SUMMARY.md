@@ -114,12 +114,14 @@ documentation (CLAUDE.md elevates the README to a primary deliverable —
 Phase 6 reframes AI-02 per D-113 and that reframing is documented up
 front in the README's ## AI Categorization section).
 
-Tasks 1–4 landed in **12 atomic commits**. Task 5 is a BLOCKING
-`checkpoint:human-verify` end-to-end demo-path gate — orchestrator
-returns to the user for live verification against a real
-`docker compose up`.
+Tasks 1–4 landed in **12 atomic commits**. Task 5 (the BLOCKING
+`checkpoint:human-verify` end-to-end demo-path gate) was **approved by
+the user on 2026-05-23** — the 12-step demo path passed live against a
+fresh `docker compose up`: AI-01, AI-02 (override-by-enum-bucket), AI-03
+(?class filter), NTF-01, NTF-02 (deliver + focus refetch), audit
+integration, D-107/D-108 fallback, and sjukskoterska RBAC all verified.
 
-## Task-by-Task Outcome (Tasks 1–4)
+## Task-by-Task Outcome (Tasks 1–5)
 
 | Task | Commit | Subject | Done |
 | ---- | ------ | ------- | ---- |
@@ -135,6 +137,7 @@ returns to the user for live verification against a real
 | 3.3 | d546933 | feat(06): MedicationSheet AI block + Slutgiltig klass field via shared combobox | AiCategoryBlock + TherapeuticClassField helpers; wired into 4 form variants + view-mode read-only |
 | 3.4 | ad5b4c4 | test(06): MedicationSheet AI flow (7 tests incl. override-by-enum-bucket) | 7/7 PASS; jsdom shims added to vitest.setup.ts (ResizeObserver + hasPointerCapture + scrollIntoView) |
 | 4 | ccc6e6f | docs(06): README — AI categorization, low-stock banner, error envelope, env vars, AI-02 reframing | 5 new top-level sections; all 6 grep gates pass |
+| 5 | (this commit) | chore(06): phase 6 demo-path verified — AI-01/02/03 + NTF-01/02 reachable | [x] verified by user on 2026-05-23 — 12-step demo path approved by user — AI-01, AI-02 (override-by-enum-bucket), AI-03 (?class filter), NTF-01, NTF-02 (deliver + focus refetch), audit integration, D-107/D-108 fallback, and sjukskoterska RBAC all verified live against fresh `docker compose up` |
 
 ## Anthropic SDK Dependency
 
@@ -364,12 +367,12 @@ demo-path verification on a fresh `docker compose up`):
 | **SC #3** (therapeuticClass filter combobox) | Satisfied (Plan 02) | LakemedelFilter ?class=N URL deep-link |
 | **SC #4** (LLM call behind single service interface) | Satisfied | `grep -r '@anthropic-ai/sdk' apps/api/src/` matches ONLY aiCategorization.service.ts |
 
-Phase 6 is **complete pending Task 5's BLOCKING end-to-end
-verification** on a fresh `docker compose down -v && docker compose up
---build` with `ANTHROPIC_API_KEY` set. The orchestrator presents the
-12-step demo-path checklist to the user; on approval, a continuation
-agent commits `chore(06): phase 6 demo-path verified` and updates the
-ROADMAP for Plan 03's progress row.
+Phase 6 is **complete** — Task 5's BLOCKING end-to-end verification on
+a fresh `docker compose down -v && docker compose up --build` with
+`ANTHROPIC_API_KEY` set was **approved by the user on 2026-05-23**. The
+12-step demo-path checklist passed live; this closeout commit
+(`chore(06): phase 6 demo-path verified — AI-01/02/03 + NTF-01/02
+reachable`) updates the ROADMAP for Plan 03's progress row.
 
 ## Threat Flags
 
