@@ -128,6 +128,11 @@
 3. Dashboard renders a low-stock banner listing every medication for the current `vårdenhet` whose current stock < threshold; the banner refetches after any stock-changing mutation (delivery) and updates without a manual reload.
 4. LLM call is isolated behind a single service interface so swapping providers (or mocking in tests) is one change in one file.
 
+**Plans:** 0/3 plans complete
+  - [ ] 06-01-PLAN.md — Slice A (Wave 1): dashboard low-stock banner end-to-end — new dedicated GET /api/dashboard/low-stock endpoint + DashboardLowStockCard with three-layer refresh (mutation invalidation + window focus + 30s poll) + sibling invalidations in deliver/medication mutations (NTF-01, NTF-02)
+  - [ ] 06-02-PLAN.md — Slice B (Wave 1, [BLOCKING] migration): therapeuticClass schema + filter combobox — Postgres TherapeuticClass enum + Medication.therapeuticClass column + shared constants + audit allowlist extension + leftmost LakemedelFilter combobox with URL-as-state ?class=N + medication.service extensions (AI-03)
+  - [ ] 06-03-PLAN.md — Slice C (Wave 2, depends on 06-02): AI service single-seam + suggest endpoint + Sheet integration — aiCategorization.service.ts with Anthropic Claude Haiku 4.5 + tool_use + 5s AbortController + ai_unavailable/ai_timeout error codes + ai:suggest permission + AiSuggestionChip + ConfidenceBadge + MedicationSheet two-field AI layout + useAiAvailability + useSuggestTherapeuticClass (AI-01, AI-02)
+
 ### Phase 7: Ops & Submission Polish
 **Goal:** The repo is submission-ready — one command runs the full stack with seed data, the README answers every question the brief and §6 reviewer will ask, and the git history reads as a narrative.
 **Mode:** mvp
