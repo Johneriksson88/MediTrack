@@ -34,6 +34,14 @@ export {
   medicationUpdateRequest,
   type MedicationUpdateRequest,
 } from './contracts/medication.js';
+// Phase 6 D-113 / D-114 / D-115 — therapeutic class vocabulary (closed enum
+// of the 14 WHO ATC level-1 anatomical groups).
+export {
+  THERAPEUTIC_CLASSES,
+  THERAPEUTIC_CLASS_LABELS,
+  therapeuticClassEnum,
+  type TherapeuticClass,
+} from './constants/therapeuticClass.js';
 // Order contracts — Zod schemas + inferred TS types for the FE↔BE order contract (D-08, Phase 3)
 export {
   orderLineResponse,
