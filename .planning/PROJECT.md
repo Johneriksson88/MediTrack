@@ -22,6 +22,8 @@ A nurse can place an order for a low-stock medication and, when delivered, the s
 - [x] Search and filter on name, ATC code, or form. *Validated in Phase 2: medication-catalog* (LakemedelFilter: 200ms-debounced search, ATC combobox, Form select, "Visa endast under tröskel" chip; all four combine into one query and round-trip through URL search params — deep-linkable)
 - [x] Low-stock warning when current stock < per-medication threshold. *Validated in Phase 2: medication-catalog* (LowStockBadge with AlertTriangle icon on Lager cell; LowStockBanner above the list; `defaultLowStockThreshold(form)` heuristic in shared package; InlineEditThreshold with optimistic update + rollback)
 - [x] Append-only audit log of every mutation (who / what / when) with admin view. *Validated in Phase 5: audit-log* (AUD-01..03; Prisma `$extends` middleware + per-concern `AsyncLocalStorage` instances writing audit rows inside the same tx as the originating mutation; `/admin/audit` browse page with three URL-as-state combobox filters, cursor pagination, and request-grouped diff panel; three-layer append-only enforcement — owner-binding BEFORE triggers (0008), named non-owner `meditrack_app` role REVOKE (0010), empty-entityId BEFORE INSERT trigger (0011) — plus ESLint bans on `update*/delete*/upsert/createMany` outside seed; per-email + per-IP login rate-limit via `@fastify/rate-limit`; 102/102 vitest green including 17 audit + 4 rate-limit integration tests covering nested-tx, parallel-tx, keep-alive frame isolation, and rollback isolation invariants)
+- [x] In-app low-stock notification banner on the dashboard with auto-refresh. *Validated in Phase 6: ai-categorization-low-stock-notifications* (NTF-01, NTF-02; dedicated `GET /api/dashboard/low-stock` returning `{rows, total}` with its own `['dashboard', 'low-stock']` cache key, careUnit-scoped via `req.user!.careUnitId`, sorted server-side by urgency ratio; three-layer refresh per D-119 — sibling invalidations on `useDeliverOrder` + 4 sites in `useMedicationMutations`, `refetchOnWindowFocus: true`, `refetchInterval: 30_000`; full enumeration with celebratory empty state)
+- [x] AI auto-categorization of medications into therapeutic class from name/ATC. *Validated in Phase 6: ai-categorization-low-stock-notifications* (AI-01, AI-02, AI-03; single-seam `aiCategorization.service.ts` is the only file importing `@anthropic-ai/sdk`; `POST /api/ai/suggest-therapeutic-class` uses Claude Haiku 4.5 + `tool_use` structured output + 5s `AbortController` (overridable via test-only `env.AI_TIMEOUT_MS`); confidence bucketed server-side to `hog/medel/lag` per D-111; `ANTHROPIC_API_KEY` optional per D-107 — without it the FE button is hidden, not disabled; `requirePermission('ai:suggest')` gates apotekare+admin, sjukskoterska 403; AI-02 reframed per D-113 as override-by-enum-bucket from the 14-value `TherapeuticClass` enum (Postgres + Prisma + Zod) — documented up front in README; shared `<TherapeuticClassCombobox>` consumed by both LakemedelFilter and MedicationSheet; `?class=N` URL-as-state on /lakemedel; migration 0012 preserves the CR-02 trgm GIN index via hand-edit; Phase 5 audit middleware automatically surfaces `therapeuticClass: null → X` via the D-95 + D-97 diff-at-read pipeline; 22/22 verifier must-haves passed, 12-step end-to-end demo approved live)
 
 ### Active
 
@@ -39,10 +41,10 @@ A nurse can place an order for a low-stock medication and, when delivered, the s
 
 **Chosen optionals (from brief §2.2):**
 
-- [ ] AI auto-categorization of medications into therapeutic class from name/ATC
+- [x] AI auto-categorization of medications into therapeutic class from name/ATC *(validated in Phase 6)*
 - [x] Append-only audit log of every mutation (who / what / when) with admin view *(validated in Phase 5)*
 - [x] Role-based auth with three roles — `apotekare`, `sjuksköterska`, `admin` — with route guards and BE policy enforcement *(validated in Phase 1)*
-- [ ] In-app low-stock notification banner on the dashboard
+- [x] In-app low-stock notification banner on the dashboard *(validated in Phase 6)*
 
 **Interview deliverables (from brief §3.3 + §4):**
 
@@ -96,10 +98,10 @@ A nurse can place an order for a low-stock medication and, when delivered, the s
 | React + Vite + TanStack Query + Tailwind + shadcn/ui | Vite for fast dev loop; TanStack Query gives loading/error states (brief §3.2) almost for free; shadcn for stressed-nurse UX without writing CSS | ✓ Done (Phase 1) |
 | Vitest for tests | Lightweight, Vite-native, satisfies §3.1's "minst en enhets-/integrationstest" requirement | ✓ Done (Phase 1, 18/18 green) |
 | Swedish UI, English code identifiers | UI matches the domain spec verbatim; code stays portable and readable for non-Swedish reviewers | ✓ Done (Phase 1) |
-| AI optional = auto-categorization by name/ATC | Cheapest of the three AI suboptions; most testable; useful in the UI (filter by therapeutic class) | — Pending (Phase 6) |
+| AI optional = auto-categorization by name/ATC | Cheapest of the three AI suboptions; most testable; useful in the UI (filter by therapeutic class) | ✓ Done (Phase 6 — Claude Haiku 4.5 + tool_use, single-seam service, override-by-enum-bucket per D-113) |
 | Auth = email/password + sessions + 3-role enum | Real RBAC enforced on BE every mutation; no OAuth; brief §6 question on retrofitting auth answered by *doing* it | ✓ Done (Phase 1) |
 | Audit log = append-only `audit_events` table via BE middleware | Cheap to build, hard to bypass, demos well; admin role can view | — Pending (Phase 5) |
-| Notifications = in-app banner on dashboard from a stock-level computed field | Email skipped; smaller scope, fast win, no extra infra | — Pending (Phase 6) |
+| Notifications = in-app banner on dashboard from a stock-level computed field | Email skipped; smaller scope, fast win, no extra infra | ✓ Done (Phase 6 — dedicated endpoint + own cache key + three-layer refresh per D-119) |
 | Multi-tenant data model from day 1 (`care_unit_id` on orders + `user_care_unit` join) | Brief §6 "50 vårdenheter" question is answered architecturally, not via UI | ✓ Done (User+CareUnit in Phase 1; Order.careUnitId + careUnit-scoped queries in Phase 3 with 404 existence-probe protection) |
 | Stock decrement uses Postgres transaction + `SELECT … FOR UPDATE` on medication row | Brief §6 "two nurses ordering simultaneously" question gets a real answer | — Pending (Phase 4) |
 | Docker Compose: `postgres` + `api` + `web` services, with a seed script | One command to run; reviewer doesn't fight with local setup | ✓ Done (Phase 1; api on `node:20-bookworm-slim` after Prisma 5 / Alpine incompat) |
@@ -122,4 +124,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-23 after Phase 5 (audit-log) completion — gap closure across 6 plans (05-06..05-11) closed all 19 review findings*
+*Last updated: 2026-05-23 after Phase 6 (ai-categorization-low-stock-notifications) completion — all 4 chosen brief §2.2 optionals now validated (AI auto-categorization + low-stock banner alongside Phase 1 RBAC + Phase 5 audit log); 6 of 7 phases complete (86%), Phase 7 ops/submission polish remaining*
