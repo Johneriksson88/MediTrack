@@ -1,15 +1,17 @@
-import { LayoutDashboard } from 'lucide-react';
-
-import { EmptyStateCard } from '@/components/EmptyStateCard';
+import { DashboardLowStockCard } from './DashboardLowStockCard';
 
 /**
- * UI-SPEC §Empty State / §Route Map — Phase 1 dashboard stub.
+ * Phase 6 D-118 / NTF-01 — dashboard route.
  *
- * Plan 02 shipped a temporary dashboard that rendered `Inloggad som …`
- * to prove the walking-skeleton slice end-to-end. Plan 04 replaces that
- * stub with the canonical EmptyStateCard. Phase 6 (low-stock banner) is
- * where the real dashboard content lands.
+ * Replaces the Phase 1 `<EmptyStateCard heading="Dashboard"/>` stub
+ * with `<DashboardLowStockCard />`. Per UI-SPEC §IA Changes there is
+ * no separate `<h1>` here — the CardTitle inside DashboardLowStockCard
+ * ("Läkemedel under tröskel") serves as the page's primary heading.
+ *
+ * No layout chrome changes: AppShell, RoleRoute, and the bottom-tab
+ * nav are untouched (D-118 — the change is contained to this one
+ * route).
  */
 export function DashboardPage() {
-  return <EmptyStateCard icon={LayoutDashboard} heading="Dashboard" />;
+  return <DashboardLowStockCard />;
 }
