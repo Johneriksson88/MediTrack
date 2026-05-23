@@ -17,7 +17,11 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { TOP_MEDICATION_FORMS, OVRIGA_FILTER_VALUE } from '@meditrack/shared';
+import {
+  TOP_MEDICATION_FORMS,
+  OVRIGA_FILTER_VALUE,
+  type TherapeuticClass,
+} from '@meditrack/shared';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -40,6 +44,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { TherapeuticClassCombobox } from '@/components/TherapeuticClassCombobox';
 
 export interface LakemedelFilterProps {
   /** Current search query (empty string = unset). */
@@ -51,6 +56,12 @@ export interface LakemedelFilterProps {
   /** When true, only medications with currentStock < lowStockThreshold are shown. */
   belowThreshold: boolean;
   /**
+   * Phase 6 AI-03 / D-116 — current therapeuticClass filter. Empty string
+   * means "unset" (so the page can drive the prop from a URL param that
+   * defaults to '' without needing a wrapper conversion).
+   */
+  therapeuticClass: TherapeuticClass | '';
+  /**
    * Optional: distinct ATC prefixes (5-char) derived from the current page rows.
    * Used as suggestion list in the ATC combobox. When omitted, the combobox
    * accepts free text only.
@@ -59,12 +70,16 @@ export interface LakemedelFilterProps {
   /**
    * Single patch emitter — every control calls this with the minimal changed
    * fields plus `page: 1` to reset pagination on any filter change.
+   *
+   * `therapeuticClass: undefined` clears the filter; any TherapeuticClass
+   * value sets it. The page maps undefined ↔ URL param absence.
    */
   onChange: (patch: {
     q?: string;
     atc?: string;
     form?: string;
     belowThreshold?: boolean;
+    therapeuticClass?: TherapeuticClass | undefined;
     page?: number;
   }) => void;
 }
@@ -74,6 +89,7 @@ export function LakemedelFilter({
   atc,
   form,
   belowThreshold,
+  therapeuticClass,
   atcSuggestions,
   onChange,
 }: LakemedelFilterProps): JSX.Element {
@@ -140,6 +156,20 @@ export function LakemedelFilter({
         onChange={(e) => setLocalQ(e.target.value)}
         className="w-full sm:w-[240px]"
         aria-label="Sök läkemedel på namn"
+      />
+
+      {/* Phase 6 D-116 — Terapeutisk klass combobox positioned LEFT of the
+          ATC filter (leftmost combobox among the four-filter strip). The
+          shared TherapeuticClassCombobox owns the 14-option Popover+Command
+          shell; this file only owns the URL-state glue. */}
+      <TherapeuticClassCombobox
+        value={therapeuticClass || undefined}
+        onChange={(next) => onChange({ therapeuticClass: next, page: 1 })}
+        placeholder="Alla klasser"
+        searchPlaceholder="Sök klass…"
+        ariaLabel="Filtrera på terapeutisk klass"
+        triggerClassName="min-w-[160px] flex-shrink-0"
+        clearable
       />
 
       {/* B. ATC-kod combobox — shadcn Popover + Command, UI-SPEC §8b */}

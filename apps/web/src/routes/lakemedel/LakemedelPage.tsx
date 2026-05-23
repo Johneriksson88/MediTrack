@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Pill } from 'lucide-react';
-import type { MedicationListItem } from '@meditrack/shared';
+import {
+  THERAPEUTIC_CLASSES,
+  type MedicationListItem,
+  type TherapeuticClass,
+} from '@meditrack/shared';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Can } from '@/auth/Can';
@@ -37,11 +41,20 @@ export function LakemedelPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const canUpdate = useCan('medication:update');
 
-  // All four filter values read directly from URL — no local state for filter values.
+  // All filter values read directly from URL — no local state for filter values.
   const q = searchParams.get('q') ?? '';
   const atc = searchParams.get('atc') ?? '';
   const form = searchParams.get('form') ?? '';
   const belowThreshold = searchParams.get('belowThreshold') === 'true';
+  // Phase 6 AI-03 / D-116 — URL param name is `class` (single letter, matches
+  // the Postgres enum value and keeps the URL short per D-116). Narrow the
+  // raw string to TherapeuticClass via membership check; an out-of-list
+  // value (e.g. `?class=X`) is treated as "no class selected".
+  const classParam = searchParams.get('class') ?? '';
+  const therapeuticClass: TherapeuticClass | '' =
+    (THERAPEUTIC_CLASSES as readonly string[]).includes(classParam)
+      ? (classParam as TherapeuticClass)
+      : '';
   const page = Number(searchParams.get('page') ?? '1');
 
   /**
@@ -55,10 +68,29 @@ export function LakemedelPage() {
     atc?: string;
     form?: string;
     belowThreshold?: boolean;
+    therapeuticClass?: TherapeuticClass | undefined;
     page?: number;
     pageSize?: number;
   }) {
     setSearchParams((prev) => {
+      // Phase 6 D-116 — `therapeuticClass` patch semantics:
+      //   - patch.therapeuticClass undefined AND the patch object HAS a
+      //     `therapeuticClass` key (i.e. the consumer explicitly cleared)
+      //     → clear the URL param.
+      //   - patch.therapeuticClass undefined AND the patch object has NO key
+      //     → preserve the existing URL param (carry-over from other filter
+      //     changes).
+      //   - patch.therapeuticClass set → write `?class=<letter>`.
+      // We model this by checking `'therapeuticClass' in patch` to
+      // distinguish "explicitly cleared" from "not touched".
+      const prevClass = prev.get('class') ?? '';
+      let nextClass: string;
+      if ('therapeuticClass' in patch) {
+        nextClass = patch.therapeuticClass ?? '';
+      } else {
+        nextClass = prevClass;
+      }
+
       const merged = {
         q: patch.q !== undefined ? patch.q : (prev.get('q') ?? ''),
         atc: patch.atc !== undefined ? patch.atc : (prev.get('atc') ?? ''),
@@ -67,6 +99,7 @@ export function LakemedelPage() {
           patch.belowThreshold !== undefined
             ? patch.belowThreshold
             : prev.get('belowThreshold') === 'true',
+        therapeuticClass: nextClass,
         page:
           patch.page !== undefined
             ? patch.page
@@ -82,6 +115,9 @@ export function LakemedelPage() {
       if (merged.atc) next.set('atc', merged.atc);
       if (merged.form) next.set('form', merged.form);
       if (merged.belowThreshold) next.set('belowThreshold', 'true');
+      // Phase 6 D-116 — URL param name is the short `class` (single-letter
+      // value); the in-FE prop name stays `therapeuticClass` for clarity.
+      if (merged.therapeuticClass) next.set('class', merged.therapeuticClass);
       if (merged.page > 1) next.set('page', String(merged.page));
       if (merged.pageSize !== DEFAULT_PAGE_SIZE)
         next.set('pageSize', String(merged.pageSize));
@@ -94,6 +130,10 @@ export function LakemedelPage() {
     atc: atc || undefined,
     form: form || undefined,
     belowThreshold: belowThreshold || undefined,
+    // Phase 6 AI-03 — empty string means "not filtered"; we map to undefined
+    // so the request URL omits the param (matches the FE clean-URL policy
+    // used by the other four filters above).
+    therapeuticClass: therapeuticClass || undefined,
     page,
     pageSize: DEFAULT_PAGE_SIZE,
   };
@@ -131,10 +171,12 @@ export function LakemedelPage() {
   }
 
   /**
-   * hasActiveFilters: any of the four filter values is set.
-   * Used to distinguish "no rows match filters" from "vårdenhet has no medications".
+   * hasActiveFilters: any of the five filter values is set (including the
+   * new Phase 6 Terapeutisk klass — D-116). Used to distinguish "no rows
+   * match filters" from "vårdenhet has no medications".
    */
-  const hasActiveFilters = !!q || !!atc || !!form || belowThreshold;
+  const hasActiveFilters =
+    !!q || !!atc || !!form || belowThreshold || !!therapeuticClass;
 
   /**
    * rowsEmpty: the loaded response has zero rows.
@@ -164,12 +206,15 @@ export function LakemedelPage() {
         <LowStockBanner belowThresholdTotal={belowThresholdTotal} />
       )}
 
-      {/* Filter row — search input + ATC combobox + form select + threshold chip (Slice 2) */}
+      {/* Filter row — search + Terapeutisk klass (D-116) + ATC + form select +
+          threshold chip. Phase 6 inserts the TherapeuticClassCombobox left
+          of ATC. */}
       <LakemedelFilter
         q={q}
         atc={atc}
         form={form}
         belowThreshold={belowThreshold}
+        therapeuticClass={therapeuticClass}
         atcSuggestions={atcSuggestions}
         onChange={updateFilters}
       />
