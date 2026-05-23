@@ -1,14 +1,14 @@
 ---
-status: partial
+status: complete
 phase: 05-audit-log
 source: [05-VERIFICATION.md]
 started: 2026-05-23T12:30:00Z
-updated: 2026-05-23T12:30:00Z
+updated: 2026-05-23T13:15:00Z
 ---
 
 ## Current Test
 
-[awaiting human testing — /admin/audit UI]
+[testing complete]
 
 ## Tests
 
@@ -19,8 +19,8 @@ notes: Executed during gap-closure waves — `pnpm --filter @meditrack/api test`
 
 ### 2. Verify /admin/audit page renders audit rows in browser
 expected: Audit events table appears in reverse-chronological order; three combobox filters (Användare, Entitetstyp, Åtgärd) populate with live DB values; clicking an event row opens the Fält/Före/Efter diff panel; Kopiera permalink copies a URL to clipboard.
-result: pending
-notes: Requires `docker compose up` + browser session at /admin/audit while logged in as an admin actor.
+result: passed
+notes: Verified manually at /admin/audit after `docker compose up --build` rebuilt the web image (initial run was serving the pre-Phase-5 stub bundle). User confirmed 2026-05-23T13:15:00Z.
 
 ### 3. Verify rate-limiting on POST /api/auth/login with a real running server
 expected: 11th attempt within 60 seconds from same (email, IP) returns HTTP 429 with Swedish error message. 1st attempt returns 200 or 400 (not 429). Different email on same IP is not limited after 10 attempts.
@@ -31,9 +31,9 @@ notes: Covered by auth.ratelimit.test.ts Tests A-D via Fastify `app.inject` agai
 ## Summary
 
 total: 3
-passed: 2
+passed: 3
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
