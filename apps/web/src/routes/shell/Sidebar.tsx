@@ -25,7 +25,7 @@ export function Sidebar() {
 
   return (
     <aside className="hidden md:flex md:w-16 lg:w-60 bg-[#F1F5F9] border-r border-[#E2E8F0] flex-col py-4 shrink-0">
-      <nav className="flex flex-col" aria-label="Primary">
+      <nav className="flex flex-col" aria-label="Primary" data-test="primary-nav">
         {items.map((item) => (
           <NavLink
             key={item.to}
