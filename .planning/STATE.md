@@ -4,12 +4,12 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 05
 status: in_progress
-last_updated: "2026-05-22T22:30:39.168Z"
-last_activity: 2026-05-22
+last_updated: "2026-05-23T00:04:17.411Z"
+last_activity: 2026-05-23
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 21
+  total_plans: 26
   completed_plans: 20
   percent: 57
 ---
@@ -132,7 +132,7 @@ Phase 5 complete (all 5 plans including gap-closure plans 04 + 05). Run `/gsd:di
 - CR-04 closed: DELETE /api/auth/session now uses lookup-before-destroy (findSessionById before logout()); setActor() called with session.userId/careUnitId so auth.logout audit rows carry correct actorUserId
 - WR-07 closed: AUDIT_ENTITY_TYPES extended with 'auth_attempt' (Swedish: 'inloggningsförsök'); unknown-email failed-login writes entityType='auth_attempt', entityId=attemptedEmail for forensic brute-force filtering
 
-Last activity: 2026-05-22
+Last activity: 2026-05-23
 
 ---
 *Last updated: 2026-05-22 after 05-04-d91-gap-closure*
