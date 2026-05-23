@@ -194,32 +194,58 @@ A Prisma `$extends` middleware (`apps/api/src/db/auditExtension.ts`)
 intercepts `create`, `update`, `updateMany`, `delete`, `deleteMany` on
 six audited models (`Medication`, `CareUnitMedication`, `Order`,
 `OrderLine`, `User`, `Session`). Each per-model handler resolves the
-active client surface from the `AsyncLocalStorage` store's `activeTx`
-slot — when the caller is inside `prisma.$transaction(async (tx) => ...)`,
-that slot holds the tx client; for bare calls, it falls back to the
-captured root client from `Prisma.defineExtension`. The extension
-intercepts `$transaction` calls at runtime (via `patchTransactionForAudit`,
+active Prisma client by reading the top of `activeTxStackALS` — when
+the caller is inside `prisma.$transaction(async (tx) => ...)`, that
+stack holds the tx client; for bare calls it falls back to the captured
+root client from `Prisma.defineExtension`. The extension intercepts
+`$transaction` calls at runtime (via `patchTransactionForAudit`,
 defined in `apps/api/src/db/auditExtension.ts`, applied once in
-`apps/api/src/db/client.ts`) to push the tx into the `activeTx` slot
-before the user's callback runs, then clears it in the finally block. The
-handler then routes BOTH the `findUnique` / `findMany` `before`-row
-pre-loads AND the final `auditEvent.create` audit-row INSERT through that
-resolved context — routing through the captured root `client` is what the
-original Plan 01 ship did and what caused D-91 to fail. **If the mutation rolls back, the audit row rolls back with it**
-— integration test #2 forces a throw inside a
-`prisma.$transaction(async (tx) => { await tx.careUnitMedication.update(...); throw new Error('forced rollback'); })`
+`apps/api/src/db/client.ts`) and calls `withActiveTx(tx, fn)` which
+pushes the tx onto `activeTxStackALS` via a new `.run([...prev, tx], fn)`
+frame — nested and parallel transactions each get their own independent
+ALS frame so they never cross-attribute (CR-01). The handler then routes
+BOTH the `findUnique` / `findMany` `before`-row pre-loads AND the final
+`auditEvent.create` audit-row INSERT through that resolved context —
+routing through the captured root `client` is what the original Plan 01
+ship did and what caused D-91 to fail. **If the mutation rolls back, the
+audit row rolls back with it** — integration test #2 forces a throw inside
+a `prisma.$transaction(async (tx) => { await tx.careUnitMedication.update(...); throw new Error('forced rollback'); })`
 block and asserts zero `audit_events` rows for the rolled-back entity
 (D-91: "the audit log doesn't lie").
 
-Actor identity is carried from the Fastify `onRequest` hook to the
-Prisma middleware via `AsyncLocalStorage`
-(`apps/api/src/plugins/requestContext.ts`) — store payload
-`{ actorUserId, careUnitId, requestId, requestSource, ipAddress, actionOverride, activeTx }`.
-The actor is **never** sourced from a request body. When the ALS store
-is empty (seed scripts, migration runners), the middleware skips audit
-row creation entirely (D-92) — `apps/api/prisma/seed.ts` runs outside
-the ALS scope, so the audit table starts empty on a fresh
-`docker compose up`.
+Actor identity and action overrides are carried from the Fastify
+`onRequest` hook to the Prisma middleware via three independent
+`AsyncLocalStorage` instances in
+`apps/api/src/plugins/requestContext.ts`:
+
+- **`actorALS`** — `{ actorUserId, careUnitId, requestId, requestSource, ipAddress }`.
+  Seeded once per request in the `onRequest` hook (3-arg Fastify form:
+  `actorALS.run(scope, () => done())`); updated by `setActor()` after
+  cookie verification. When the store is absent (seed scripts, migration
+  runners), the middleware skips audit row creation entirely (D-92) —
+  `apps/api/prisma/seed.ts` runs outside the ALS scope, so the audit
+  table starts empty on a fresh `docker compose up`.
+- **`activeTxStackALS`** — a `readonly PrismaClient[]` stack managed by
+  `withActiveTx(tx, fn)` / `currentActiveTx()`. Push and pop are
+  implemented as immutable `.run([...prev, tx], fn)` frames rather than
+  mutating a shared slot, so nested `$transaction` calls never overwrite
+  each other's tx reference (CR-01 fix).
+- **`actionOverrideALS`** — a single `string` frame (or absent). Set by
+  `withActionOverride(action, fn)` which uses
+  `actionOverrideALS.run(action, async () => fn())`. The `async` wrapper
+  is critical: Prisma's `PrismaPromise` is lazy — without it, `.run()`
+  only covers the synchronous `fn()` call that creates the lazy Promise;
+  the actual `$extends` handler fires later when the Promise is
+  `.then()`-ed, at which point the bare `.run()` frame would already be
+  gone.
+
+The actor is **never** sourced from a request body. Three regression
+tests guard the per-concern ALS design: test #12 (nested `$transaction`
+— outer rollback drops its audit row while the inner independent tx
+keeps its own), test #13 (parallel `$transaction` with setImmediate
+interleaving — each tx audits to its own actor, not the other's),
+and test #14 (parallel requests on keep-alive connections — ALS frames
+stay isolated across requests, CR-04).
 
 The `auth.login_failed` path is the one place explicit `prisma.auditEvent.create`
 calls live (in `apps/api/src/services/auth.service.ts`) — those events
@@ -330,6 +356,18 @@ with `permission denied`. Two layers, both asserted by tests:
 - Integration test #3 — grep for the banned patterns, asserts zero matches.
 - Integration test #4 — raw-SQL UPDATE against AuditEvent, asserts rejection.
 
+The Plan 05-06 per-concern ALS refactor is also something I'm proud of.
+The original design used a single merged `RequestContext` store with an
+`activeTx` slot that was mutated in a `finally` block — safe for the
+simple case but incorrect under nested or parallel `$transaction` calls
+(CR-01) and under keep-alive TCP connections where the store persists
+across requests (CR-04). The fix splits concerns into three independent
+`AsyncLocalStorage` instances (`actorALS`, `activeTxStackALS`,
+`actionOverrideALS`) so each concern has exactly the lifetime it needs.
+The iterative process — ship, write regression tests that expose the
+failure modes, then refactor — is a pattern I'd repeat on any audit
+system.
+
 **"What I'm least proud of".**
 The Prisma extension can't see `$queryRaw` mutations. No such mutations
 exist today — Phase 4's `FOR UPDATE` is read-only — but a future raw
@@ -337,6 +375,20 @@ write would silently bypass the audit log. v2: a CI grep banning
 `$executeRaw` outside an allowlist. I picked the smallest blast radius
 I could find for a one-week budget, and chose to document the gap
 honestly rather than hide it.
+
+The original Plan 05-01 design also used `als.enterWith()` in a Fastify
+`onRequest` hook. `enterWith` binds a store to the _surrounding_ async
+context rather than running a callback inside a new scope — it works for
+simple request-response cases but makes the store's lifetime ambiguous
+under connection reuse (the store from request N can bleed into request
+N+1 on a keep-alive socket if the hook fires before the previous store
+drains). The lesson: when wrapping async work in Node.js, prefer
+`als.run(store, fn)` with a callback that covers the full scope of the
+work. `enterWith` is the right tool only when you genuinely have no
+callback boundary — the Fastify 3-arg hook (`(req, reply, done)`) gives
+exactly the boundary needed: `actorALS.run(scope, () => done())`.
+Reading the Node.js docs more carefully before the initial ship would
+have avoided the CR-04 retro.
 
 ### v2 candidates
 
