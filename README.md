@@ -245,7 +245,39 @@ SC#4 Playwright-layoutverifieringen ingår **inte** i `pnpm verify` — den krä
 
 ## Mobil-först verifiering
 
-<!-- Populated by Slice 4 -->
+360 px är det breakpoint som brifen föreskriver tydligast ("mobil-först"), och
+det är den vy en sjuksköterska som tar fram sin telefon under ett patientbesök
+ser. Skärmdumparna nedan fångades av det automatiserade
+`apps/web/scripts/captureSc04Screenshots.ts`-skriptet mot en körande
+`docker compose up`-stack och verifierar att ingen vy scrollar horisontellt
+(`scrollWidth ≤ innerWidth`) och att primärnavigeringen är nåbar via
+`[data-test="primary-nav"]` på samtliga fyra breakpoints och alla sex primärvyer.
+Den fullständiga 4-breakpointsmatrisen redovisas i verifieringstabellen nedan.
+
+<img src="docs/screenshots/sc04-360-login.png" alt="Login vid 360 px" width="240">
+<img src="docs/screenshots/sc04-360-lakemedel.png" alt="Katalog vid 360 px" width="240">
+<img src="docs/screenshots/sc04-360-bestallningsskapande.png" alt="Beställningsskapande vid 360 px" width="240">
+<img src="docs/screenshots/sc04-360-bestallningshistorik.png" alt="Beställningshistorik vid 360 px" width="240">
+<img src="docs/screenshots/sc04-360-audit.png" alt="Audit vid 360 px" width="240">
+<img src="docs/screenshots/sc04-360-dashboard.png" alt="Dashboard vid 360 px" width="240">
+
+| Skärm | 360 px | 768 px | 1024 px | 1440 px |
+|-------|--------|--------|---------|---------|
+| Login | ✓ | ✓ | ✓ | ✓ |
+| Katalog (`/lakemedel`) | ✓¹ | ✓ | ✓ | ✓ |
+| Beställningsskapande (`/bestallningar/ny`) | ✓² | ✓ | ✓ | ✓ |
+| Beställningshistorik (`/bestallningar`) | ✓³ | ✓ | ✓ | ✓ |
+| Audit (`/admin/audit`) | ✓⁴ | ✓ | ✓ | ✓ |
+| Dashboard (`/dashboard`) | ✓ | ✓ | ✓ | ✓ |
+
+¹ Filterlistan scrollar horisontellt; kortlayout ersätter tabell vid `<md`.
+² Multi-radsbeställning stackar vertikalt; `QuantityStepper` har 44 px touch-target.
+³ Tabell växlar till `DraftsCardList` vid `<md`; status-tabs förblir nåbara.
+⁴ `FilterBar`:s tre comboboxer staplar vertikalt; diff-panelen kollapsar till expanderbart accordion.
+
+Fångstdatum: 2026-05-24.
+Kör om suiten: `pnpm --filter @meditrack/web exec tsx scripts/captureSc04Screenshots.ts` (kräver `docker compose up` igång).
+Förstegångsinstallation av Chromium: `pnpm --filter @meditrack/web exec playwright install chromium`.
 
 ## Kända luckor
 
