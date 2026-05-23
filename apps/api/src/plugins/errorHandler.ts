@@ -125,6 +125,37 @@ export class OrderTransitionError extends Error {
   }
 }
 
+/**
+ * Phase 6 D-107 / D-19 — thrown when an AI route is hit but
+ * `env.ANTHROPIC_API_KEY` is unset / empty. Mapped to HTTP 503 with
+ * code `ai_unavailable`. The FE conditional render via
+ * `useAiAvailability` should normally hide the button before this is
+ * reachable; the 503 covers the race where availability flipped between
+ * the FE check and the POST.
+ */
+export class AiUnavailableError extends Error {
+  readonly code = 'ai_unavailable' as const;
+  constructor() {
+    super('AI-tjänsten är inte tillgänglig.');
+    this.name = 'AiUnavailableError';
+  }
+}
+
+/**
+ * Phase 6 D-112 / D-19 — thrown when the service-layer AbortController
+ * (5-second budget by default; overridable to ~50ms via `env.AI_TIMEOUT_MS`
+ * strictly for Vitest per Warning 11 mitigation) aborts the Anthropic
+ * Messages call. Mapped to HTTP 504 with code `ai_timeout`. The FE toasts
+ * "AI-förslaget tog för lång tid — försök igen." on this code.
+ */
+export class AiTimeoutError extends Error {
+  readonly code = 'ai_timeout' as const;
+  constructor() {
+    super('AI-förslaget tog för lång tid.');
+    this.name = 'AiTimeoutError';
+  }
+}
+
 function envelope(
   code: string,
   message: string,
@@ -233,6 +264,17 @@ export const errorHandlerPlugin = fp(async (app: FastifyInstance) => {
 
     if (err instanceof ForbiddenScopeError) {
       return send(reply, 403, envelope('forbidden', err.message));
+    }
+
+    // Phase 6 D-107 / D-112 / D-19 — AI categorization error codes.
+    // Both classes carry no `details` payload; the toast message comes
+    // from the FE switching on `code`, not from the envelope `message`.
+    if (err instanceof AiUnavailableError) {
+      return send(reply, 503, envelope('ai_unavailable', err.message));
+    }
+
+    if (err instanceof AiTimeoutError) {
+      return send(reply, 504, envelope('ai_timeout', err.message));
     }
 
     // Unknown errors: log full detail server-side, surface a generic envelope.

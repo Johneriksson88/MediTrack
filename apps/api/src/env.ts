@@ -13,6 +13,11 @@ const envSchema = z.object({
   NODE_ENV: z
     .enum(['development', 'production', 'test'])
     .default('development'),
+  // Phase 6 D-107 — OPTIONAL. When undefined or empty, the AI affordance
+  // hides itself (isAvailable() returns false). `docker compose up` on a
+  // fresh clone works without setting this; AI degrades gracefully.
+  // NO `.min(1)` — empty string must also pass.
+  ANTHROPIC_API_KEY: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
