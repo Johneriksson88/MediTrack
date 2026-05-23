@@ -226,6 +226,20 @@ calls live (in `apps/api/src/services/auth.service.ts`) — those events
 fire BEFORE the `Session.create`, so the `$extends` middleware can't
 observe them. Two writes, both inside the failure branches.
 
+### Why `$extends` over `$use`?
+
+Two Prisma middleware mechanisms exist:
+
+- **`$use(middleware)`** — the original middleware API. Wraps every Prisma operation in a chain of functions; an audit middleware would intercept by registering a `$use` function that wraps the operation.
+- **`$extends({query: {...}})`** — the typed-extension API introduced in Prisma 4 and the documented forward path in Prisma 5+.
+
+Phase 5 uses `$extends` because:
+- `$extends` ships typed extensions per model + per method — `prisma.medication.create` and `prisma.order.update` get distinct extension handlers with type-safe arg shapes. `$use` has a single generic middleware function with untyped args.
+- `$extends` is documented as the long-term API; `$use` is being phased out (the Prisma 5.0 release notes name `$extends` as the recommended replacement).
+- The trade-off: `$extends` does NOT natively intercept `prisma.$transaction` callbacks (the extension's interceptors fire on the EXTENDED client; calling `prisma.$transaction(async (tx) => tx.x.y())` invokes `tx.x.y()` on the inner unextended client). Plan 05-04 closed this gap with the runtime `$transaction` patch in `auditExtension.ts:patchTransactionForAudit`; Plan 05-06 hardened it under nested + parallel + keep-alive concurrency via per-concern ALS instances.
+
+Closes 05-REVIEWS.md MEDIUM #18.
+
 ### What's audited
 
 | Model              | Allowlisted columns                                                                                                                                                         | Notes                                                                              |
@@ -350,6 +364,11 @@ What I'd add with more time, in rough priority order:
   before/after; v2 could store a compact patch to save space at scale.
 - **`auth.login_failed` brute-force banner** — Surface N failed-logins
   from one email in M minutes as an admin-page banner.
+- **SECURITY DEFINER purge function for audit retention** — Plan 05-04 shipped a one-shot orphan-purge migration (0009) that disables the AuditEvent BEFORE-trigger inside a tx. That pattern is the precedent for v2: a `purge_audit_events_before(cutoff_date)` SECURITY DEFINER function that suspends the trigger via a transaction-local GUC (`SET LOCAL meditrack.allow_purge = on`), runs the purge, and re-enables. The trigger short-circuits when the GUC is set; admins running the function explicitly opt in. Closes 05-REVIEWS.md MEDIUM #10 — the architectural append-only story stays intact even when retention work lands.
+- **"FailedLogins" union view at /admin/audit** — Plan 05-05's WR-07 split failed-logins into two entityTypes (`auth_attempt` for unknown email, `session` for known-user wrong-password). An admin investigating brute-force has to apply two separate filters. v2: a "FailedLogins" tab that unions both entityTypes server-side, OR a `GET /api/audit/failed-logins` endpoint returning the union. 05-REVIEWS.md LOW #14.
+- **`Kopiera filterlänk` label rename** — The current Swedish label `Kopiera permalink` overstates what's copied (it's a filter URL, not a deep-link to the expanded event). v2: rename to `Kopiera filterlänk` after revisiting the Swedish-copy lock in `.planning/phases/05-audit-log/05-CONTEXT.md <specifics>`. 05-REVIEWS.md LOW #15.
+- **Swedish translation of §6 answers** — This README is in English; the UI copy is locked in Swedish per CONTEXT.md `<specifics>`. §6 phrasings in English can be translated live in the interview if Swedish is preferred. v2: pre-translate the §6 paragraphs so the interview answer reads from the README verbatim. 05-REVIEWS.md LOW #17.
+- **Per-vårdenhet admin scope toggle** — Phase 5's admin sees ALL careUnits (cross-tenant per D-16's documented exception). v2: a toggle in the FilterBar that scopes to a specific careUnit, gated by a per-careUnit admin role. Useful when the system scales to 50 vårdenheter (§6 question). Tracked in `.planning/phases/05-audit-log/05-CONTEXT.md <deferred>`.
 
 ## Vad ligger var?
 

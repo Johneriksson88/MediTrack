@@ -285,6 +285,26 @@ Phase 1+2+3+4 shipped a working monorepo with auth, RBAC, medication catalog, dr
 - **`ipAddress` column** — Claude's discretion noted as recommended; if skipped, v2 candidate.
 - **`auth.login_failed` rate-limit signal surfacing** — The audit log captures every failed-login. v2: a banner on the admin page if N failed-logins from one email in M minutes. Brute-force detection.
 
+### Review-driven deferrals (added by /gsd:plan-phase 5 --reviews on 2026-05-23)
+
+The following entries were added during the cross-AI review-replan pass after the verifier identified
+Tier C findings in `05-REVIEWS.md`. They are NOT user-locked decisions in the same sense as the entries
+above — they are reviewer-suggested deferrals that the planner accepted and the user implicitly
+approved by allowing the review-driven replan to proceed. Each entry cites its 05-REVIEWS.md source
+and a one-line deferral rationale.
+
+- **Test-skepticism process retro (05-REVIEWS.md MEDIUM #6)** — Plan 05-04's verifier re-audited Tests 1, 4, 5, 6, 7 from Plan 03 with the "does this test fail loudly if the SUT is broken in the way the test claims to verify?" lens. The re-audit confirmed those tests are not vacuous (the vacuous Test 2 was an isolated incident). The PROCESS retro — adding test-skepticism to the checker's lens — is captured in README §Lessons learned (Plan 05-10), not as code work. Deferred FROM additional code action; documented as a process improvement.
+
+- **SECURITY DEFINER purge precedent (05-REVIEWS.md MEDIUM #10)** — Plan 05-04's migration 0009 disabled the AuditEvent BEFORE-trigger inside a tx to purge orphan rows from the verifier's bug discovery. The pattern itself ("temporarily disable the append-only guard to do a maintenance purge") is the precedent for a v2 retention-purge job. The v2 implementation: a SECURITY DEFINER function `purge_audit_events_before(cutoff_date timestamptz)` that briefly suspends the trigger via `SET LOCAL meditrack.allow_purge = on` (with the trigger short-circuiting when the GUC is set), inside a single tx, then re-enables. Documented in README §What I'd do with more time. Deferred TO v2 — the v1 keep-forever policy doesn't need this yet.
+
+- **FailedLogins union view (05-REVIEWS.md LOW #14)** — Plan 05-05's WR-07 split unknown-email failed-logins (entityType='auth_attempt') from known-user wrong-password (entityType='session'). An admin investigating "every failed attempt for alice@example.test" has to apply two separate filters. The v2 polish: either a frontend "FailedLogins" tab in /admin/audit that unions both entityTypes, OR a backend `GET /api/audit/failed-logins` endpoint that returns the union. Deferred TO v2 — UI polish, not architecturally meaningful for the demo.
+
+- **Permalink label clarity (05-REVIEWS.md LOW #15)** — The Swedish label `Kopiera permalink` overstates what's copied (it's a filter URL, not a deep-link to the expanded event). A renamed label `Kopiera filterlänk` would be more accurate. Renaming requires revisiting the Swedish-copy lock in CONTEXT.md `<specifics>` — a 1-line change but it triggers re-review of the locked vocabulary. Deferred TO v2 — the current label is acceptable for the demo; the misnomer is documented in README §What I'd do with more time so the interviewer sees the awareness.
+
+- **English vs Swedish README (05-REVIEWS.md LOW #17)** — The README is in English while the UI copy is locked in Swedish per CONTEXT.md `<specifics>`. The interviewer may prefer English (they read English code comments) but the §6 answers can't be quoted verbatim in a Swedish interview. Deferred FROM translation work — README adds a sentence noting "§6 phrasings are English; Swedish translations are available on request" so the interviewer reads the language choice up-front.
+
+- **$use vs $extends justification paragraph (05-REVIEWS.md MEDIUM #18)** — Plan 01 chose Prisma `$extends({query})` over the older `$use` middleware. The review suggested a README paragraph naming the trade-off. NOT deferred — this plan ADDS the paragraph to README §Architecture choices (or as a footnote to §How the audit hook works). Two-sentence justification: $extends gives type-safe extensions and is the documented forward path in Prisma 5+; $use is being deprecated. Resolved IN this plan (Task 2).
+
 </deferred>
 
 ---
