@@ -39,6 +39,8 @@ export const PERMISSIONS: Record<ActionKey, Role[]> = {
   'order:deliver': ['apotekare', 'admin'],
   // Phase 5 D-15 — admin-only audit log read.
   'audit:read': ['admin'],
+  // Phase 6 D-15 — apotekare + admin can fetch AI suggestions.
+  'ai:suggest': ['apotekare', 'admin'],
 };
 
 /**

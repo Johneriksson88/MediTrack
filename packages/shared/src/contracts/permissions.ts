@@ -38,6 +38,8 @@ export const ACTION_KEYS = [
   'order:deliver',
   // Phase 5 D-15 — admin-only audit log read.
   'audit:read',
+  // Phase 6 D-15 — AI categorization; apotekare + admin can fetch suggestions.
+  'ai:suggest',
 ] as const;
 export type ActionKey = (typeof ACTION_KEYS)[number];
 
