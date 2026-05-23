@@ -12,7 +12,6 @@ import type {
   MedicationSearchResult,
   MedicationCreateRequest,
   MedicationUpdateRequest,
-  TherapeuticClass,
 } from '@meditrack/shared';
 import { OVRIGA_FILTER_VALUE, TOP_MEDICATION_FORMS } from '@meditrack/shared';
 
@@ -61,15 +60,12 @@ export function toListItem(row: MedicationWithJoin): MedicationListItem {
     currentStock: row.currentStock,
     lowStockThreshold: row.lowStockThreshold,
     source: row.medication.source as 'npl' | 'user',
-    // Phase 6 D-115 — Prisma client regen lands in Task 2 alongside the
-    // 0012 migration; until then the live row type has no
-    // `therapeuticClass` field, so we surface null. Once the migration is
-    // applied the Prisma `Medication` model picks up the new nullable
-    // column and this expression becomes
-    // `row.medication.therapeuticClass` without further narrowing.
-    therapeuticClass:
-      (row.medication as Medication & { therapeuticClass?: TherapeuticClass | null })
-        .therapeuticClass ?? null,
+    // Phase 6 D-115 — therapeuticClass is a nullable closed enum on the global
+    // Medication row (column added in migration 0012). The shared contract
+    // declares `therapeuticClass: TherapeuticClass | null`; the Prisma
+    // generated client matches this shape verbatim ($Enums.TherapeuticClass |
+    // null), so no narrowing is needed here.
+    therapeuticClass: row.medication.therapeuticClass,
   };
 }
 
@@ -90,7 +86,7 @@ export async function listMedicationsForUnit(
   careUnitId: string,
   filters: MedicationListQuery,
 ): Promise<MedicationListResponse> {
-  const { q, atc, form, belowThreshold, page, pageSize } = filters;
+  const { q, atc, form, belowThreshold, therapeuticClass, page, pageSize } = filters;
   const skip = (page - 1) * pageSize;
 
   // ---- Build the Prisma `where` clause ----
@@ -108,6 +104,13 @@ export async function listMedicationsForUnit(
     medicationWhereConditions.form = { notIn: [...TOP_MEDICATION_FORMS] };
   } else if (form) {
     medicationWhereConditions.form = form;
+  }
+  // Phase 6 AI-03 / D-116 — therapeutic-class filter joins via Medication.
+  // Zod already constrained the value to one of the 14 enum letters at the
+  // request boundary; Postgres' enum column rejects anything else as defense
+  // in depth (D-114). Single-select; combines AND with the other filters.
+  if (therapeuticClass) {
+    medicationWhereConditions.therapeuticClass = therapeuticClass;
   }
 
   const baseWhere = {
@@ -152,6 +155,15 @@ export async function listMedicationsForUnit(
     } else if (form) {
       extraClauses.push(`m."form" = $${paramIdx}`);
       params.push(form);
+      paramIdx++;
+    }
+    if (therapeuticClass) {
+      // Phase 6 AI-03 / D-116 — cast the parameter to the Postgres enum type
+      // explicitly so the bind binds to enum, not text (the column is enum).
+      // The Zod enum on `medicationListQuery` already restricts the input to
+      // one of the 14 letters; Postgres enum validation is the second layer.
+      extraClauses.push(`m."therapeuticClass" = $${paramIdx}::"TherapeuticClass"`);
+      params.push(therapeuticClass);
       paramIdx++;
     }
 
@@ -364,6 +376,9 @@ export async function createCareUnitMedication(
 
     // source === 'user' — "Skapa nytt läkemedel" path (D-31).
     // Create Medication{source:'user'} + CareUnitMedication in one tx.
+    // Phase 6 D-115 — therapeuticClass is optional on create (the AI-suggest
+    // flow lands the value separately via PATCH); nullable column on the
+    // global Medication row.
     const newMed = await tx.medication.create({
       data: {
         name: payload.name,
@@ -372,6 +387,7 @@ export async function createCareUnitMedication(
         strength: payload.strength ?? null,
         source: 'user',
         nplId: null,
+        therapeuticClass: payload.therapeuticClass ?? null,
       },
     });
 
@@ -406,6 +422,13 @@ export async function createCareUnitMedication(
  * request body includes them. The FE for NPL meds also hides those fields,
  * but the service is the canonical enforcement point.
  *
+ * Phase 6 D-115 + D-32 carve-out: `therapeuticClass` IS editable on NPL meds
+ * (classification is metadata, not pharmaceutical identity). It is written
+ * UNCONDITIONALLY — outside the `source === 'user'` branch where the four
+ * NPL-locked identity fields are gated. The audit allowlist extension
+ * (auditAllowlist.ts) surfaces the before/after value automatically via the
+ * Phase 5 D-95 diff-at-read pipeline.
+ *
  * D-19 / T-02-13: returns 404 (never 403) when the row belongs to another
  * vårdenhet. Same response shape as truly-not-found rows — existence-probing
  * yields nothing.
@@ -438,12 +461,21 @@ export async function updateCareUnitMedication(
 
   // user-source rows: also accept name/atcCode/form/strength.
   // npl-source rows: those four fields are silently dropped.
-  const medData: Partial<Pick<Medication, 'name' | 'atcCode' | 'form' | 'strength'>> = {};
+  const medData: Partial<
+    Pick<Medication, 'name' | 'atcCode' | 'form' | 'strength' | 'therapeuticClass'>
+  > = {};
   if (row.medication.source === 'user') {
     if (payload.name !== undefined) medData.name = payload.name;
     if (payload.atcCode !== undefined) medData.atcCode = payload.atcCode;
     if (payload.form !== undefined) medData.form = payload.form;
     if (payload.strength !== undefined) medData.strength = payload.strength;
+  }
+  // Phase 6 D-115 + D-32 carve-out — therapeuticClass write is UNCONDITIONAL.
+  // Lives OUTSIDE the source==='user' branch above so an apotekare can
+  // categorize an NPL-sourced med via the AI-suggest flow without bumping
+  // into the NPL identity-field lock.
+  if (payload.therapeuticClass !== undefined) {
+    medData.therapeuticClass = payload.therapeuticClass;
   }
 
   // Short-circuit: if nothing to update, return the current row unchanged.
