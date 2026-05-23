@@ -342,7 +342,47 @@ Förstegångsinstallation av Chromium: `pnpm --filter @meditrack/web exec playwr
 
 ## §6-svar (intervjudiskussion)
 
-<!-- Populated by Slice 5 -->
+De fyra brief-§6-frågorna och tre förväntade följdfrågor, var och en med en hisspitch på 2–4 meningar; djupet finns under `## Feature deep dives`.
+
+### Hur hanterar systemet att två sjuksköterskor beställer samtidigt?
+
+Postgres' radlås via `SELECT ... FOR UPDATE` löser kapplöpningen. När en beställning levereras tas en CUM-batch-låsning på alla berörda läkemedel i samma transaktion (D-79); samtidiga leveranser serialiseras istället för att race-a — förloraren rullas tillbaka. Eftersom Phase 5:s audit-middleware skriver in i samma transaktion rullas audit-raden tillbaka med den (D-91 — "audit-loggen ljuger inte"). Bevisas av `apps/api/test/orders.deliver.integration.test.ts` (`pg_locks`-snapshot, Test 8) och Test 2 i `audit.integration.test.ts` (rollback ger noll `audit_events`-rader).
+
+[Läs mer: §Audit log §Hur audit-hooken fungerar](#hur-audit-hooken-fungerar)
+
+### Hur skulle du skala upp till 50 vårdenheter?
+
+Datamodellen är multi-tenant från dag 1 — `careUnitId` på alla resurser, service-signaturer tar `careUnitId` som första argument (D-16), index på alla scope-kolumner. Admin-vyn för audit är medvetet cross-tenant (D-16 undantag); v2-tillägget "scope to my vårdenhet" är ett WHERE-tillägg eftersom kolumnen redan är där. Cursor-paginering (D-105) ger O(page-size) snarare än O(skip+limit), så audit-tabellen tål storleksordningar fler rader. Inga `careUnitId`-kopplade in-memory-cachar delas mellan request — horisontell skalning är drop-in.
+
+[Läs mer: §Audit log §Vad granskas?](#vad-granskas)
+
+### Hur skulle du eftermontera autentisering?
+
+Phase 5 är beviset: vi eftermonterade audit-logging utan att röra en enda Phase 2/3/4-service-fil. Mönstret är Prisma:s `$extends` typed-extensions som inskjuter modellnivå-mellanhand utan att service-koden vet om det (D-83 + D-90). Samma mönster bär per-rad-auktorisering — `$extends` på `findMany` injicerar en `where: { tenantId }`-klausul; service-koden påverkas inte. Den här kodbasen har redan gjort eftermonteringen en gång, för audit.
+
+[Läs mer: §Audit log §Hur audit-hooken fungerar](#hur-audit-hooken-fungerar)
+
+### Vad är du mest stolt över?
+
+Append-only-skyddet på audit-tabellen är fysiskt erforderligt av Postgres, inte av applikationen. Två oberoende lager: migration `0010` skapar rollen `meditrack_app` med REVOKE på UPDATE/DELETE/TRUNCATE på `AuditEvent`, och migration `0008` lägger en BEFORE-trigger som fångar OWNER-sessioner som annars kringgår GRANT/REVOKE. Bägge lager assertas av `audit.integration.test.ts` Test 4 (`UPDATE` rejectas med `permission denied`) och Test 3 (`git grep` för förbjudna patterns returnerar noll). Även om en framtida bidragsgivare skriver `prisma.auditEvent.delete(...)` stoppas hen av tre lager: ESLint på commit, CI-grep på PR, Postgres på runtime.
+
+[Läs mer: §Audit log §Lager 2 — DB-rollbehörigheter + BEFORE-trigger](#lager-2--db-rollbehörigheter--before-trigger)
+
+### Vad är du minst stolt över?
+
+Prisma:s `$extends`-mellanhand ser inte `$queryRaw`-skrivningar — `$executeRaw`-gränsen är blind. Idag är det skadefritt: inga `$executeRaw`-skrivningar finns i produktionskoden och en CI-grep (Test 15 i `audit.integration.test.ts`) assertar det vid varje körning. Men det underliggande gapet finns kvar — en framtida raw-skrivning måste in i en explicit allowlist vid PR-tid, vilket synliggör arkitekturbeslutet snarare än döljer det. Ett v2-fix vore att intercepta `$executeRaw` i mellanhanden eller route alla raw-skrivningar via en service-funktion som är avlyssnad.
+
+[Läs mer: §Audit log §§6 supporting bullets](#6-supporting-bullets)
+
+### Vad kostar systemet att köra?
+
+En PostgreSQL-instans och två Node-containers — ingen Redis, ingen meddelandekö, ingen SSE/WebSocket-infrastruktur. På en small DigitalOcean-droplet eller motsvarande hamnar grundkostnaden under $30/mån. AI-tilläget tillkommer endast när användaren klickar `Hämta AI-förslag`: cirka `$0.0001 per claude-haiku-4-5 tool_use`-anrop; vi har medvetet inte backfill-klassificerat de 43 538 NPL-läkemedlen vid seed eftersom kostnaden ($4 per `docker compose up`) inte motiverades på en demo (D-115). Stockholms-vårdenhet med 100 beställningar/dag ger AI-kostnad under $1/månad.
+
+### Hur skulle du övervaka det i produktion?
+
+Idag har vi audit-log (säkerhets-observability) och strukturerade Fastify-loggar till stdout — det berättar exakt vem som gjorde vad och när. Produktion skulle lägga till en OpenTelemetry-collector för traces, en log-shipper till Loki eller Splunk för aggregering, och en Prometheus-exporter för per-route latens och felfrekvens. Vi har medvetet INTE byggt observability-infrastrukturen i denna byggnad eftersom den lägger till tre tjänster för marginellt signalvärde i en demo (D-125).
+
+[Läs mer: §Audit log §Hur audit-hooken fungerar](#hur-audit-hooken-fungerar)
 
 ## Vad ligger var?
 
