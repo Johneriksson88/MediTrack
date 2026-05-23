@@ -209,7 +209,26 @@ export async function withActionOverride<T>(
   action: string,
   fn: () => Promise<T>,
 ): Promise<T> {
-  return actionOverrideALS.run(action, fn);
+  // IMPORTANT: `actionOverrideALS.run(action, fn)` calls `fn` synchronously and
+  // returns its result (a Promise). For `PrismaPromise` (Prisma's lazy promise), the
+  // actual query execution only happens when the Promise is `.then()`-ed — which occurs
+  // AFTER `actionOverrideALS.run()` returns. At that point, the ALS frame is gone, so
+  // `actionOverrideALS.getStore()` returns `undefined` inside the Prisma `$extends`
+  // query handler.
+  //
+  // The fix: wrap `fn()` in an `async` function. The async wrapper starts executing
+  // WITHIN the `actionOverrideALS.run()` context, and its async continuation chain
+  // (including the resolution of `fn()`'s Promise) inherits that context. Node.js's
+  // async context tracking propagates ALS values through async function continuations
+  // even when the synchronous execution has left the `.run()` frame.
+  //
+  // This is consistent with how `withActiveTx` works: `patchTransactionForAudit`
+  // wraps the user callback in `async (tx) => withActiveTx(tx, () => userFn(tx))`,
+  // and `userFn` is an `async` function — so its entire body executes within the
+  // `activeTxStackALS` context via the async continuation chain.
+  return actionOverrideALS.run(action, async () => {
+    return fn();
+  });
 }
 
 /**
@@ -255,9 +274,11 @@ export async function withActiveTx<T>(
  * actorALS.run frame — this is how we keep the frame alive across all
  * subsequent hooks. An `async` hook body would need to call actorALS.enterWith
  * to achieve the same effect, but Node docs explicitly discourage enterWith.
- * With 3-arg + done() inside .run(), the frame lifetime is naturally bounded
- * by the request pipeline continuation. Subsequent requests on a keep-alive
- * TCP connection each get their own actorALS frame from their own invocation.
+ * With 3-arg + done() inside .run(), `done()` is called synchronously from
+ * within the ALS frame; Fastify's hook runner processes the next hook from
+ * within the same execution context, so the frame propagates naturally.
+ * Subsequent requests on a keep-alive TCP connection each get their own
+ * actorALS frame from their own onRequest hook invocation.
  * (CR-04 + 05-REVIEWS.md HIGH #1)
  *
  * The activeTxStackALS and actionOverrideALS are NOT entered at the request
