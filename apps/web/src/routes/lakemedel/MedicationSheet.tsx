@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller, type Control } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Sparkles } from 'lucide-react';
 import {
   medicationCreateFromNplRequest,
   medicationCreateUserRequest,
   medicationUpdateRequest,
   TOP_MEDICATION_FORMS,
+  THERAPEUTIC_CLASS_LABELS,
   defaultLowStockThreshold,
   type MedicationListItem,
   type MedicationCreateFromNplRequest,
@@ -14,6 +15,8 @@ import {
   type MedicationCreateRequest,
   type MedicationUpdateRequest,
   type MedicationSearchResult,
+  type TherapeuticClass,
+  type AiSuggestionResponse,
 } from '@meditrack/shared';
 import {
   Sheet,
@@ -25,7 +28,15 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { NplBadge } from '@/components/NplBadge';
+import { AiSuggestionChip } from '@/components/AiSuggestionChip';
+import { TherapeuticClassCombobox } from '@/components/TherapeuticClassCombobox';
 import { Can } from '@/auth/Can';
 import { useAuth } from '@/auth/useAuth';
 import { ApiError } from '@/lib/api';
@@ -35,6 +46,8 @@ import {
   useUpdateMedication,
   useDeleteMedication,
 } from '@/features/medications/useMedicationMutations';
+import { useAiAvailability } from '@/features/ai/useAiAvailability';
+import { useSuggestTherapeuticClass } from '@/features/ai/useSuggestTherapeuticClass';
 import { DeleteMedicationDialog } from './DeleteMedicationDialog';
 
 /**
@@ -113,6 +126,187 @@ function useIsDesktop(): boolean {
   return isDesktop;
 }
 
+// ---- AI categorization block (Phase 6 Plan 03 / D-109 / D-110 / UI-SPEC §4) ----
+//
+// Reused across the three create/edit forms (NPL edit, user edit, user create).
+// The block has four rows wrapped in <Can action="ai:suggest">:
+//   Row 0: AI-kategorisering section label
+//   Row 1: "Hämta AI-förslag" button (Tooltip-wrapped when disabled)
+//   Row 2: AiSuggestionChip (only when aiSuggestion state is set)
+//   Row 3: "Använd förslag" Apply button (only when aiSuggestion state is set)
+// The Slutgiltig klass combobox is rendered SEPARATELY OUTSIDE this block
+// per UI-SPEC §4 (and OUTSIDE the <Can> wrap so sjuksköterska sees the field
+// without the AI affordance).
+
+interface AiCategoryBlockProps {
+  /** Current name field value — controls the disabled state of the Hämta button. */
+  name: string;
+  /** Current ATC field value — controls the disabled state of the Hämta button. */
+  atcCode: string;
+  /** Local AI-suggestion state held by the parent form. */
+  aiSuggestion: AiSuggestionResponse | null;
+  /** Setter the parent uses to clear/replace the chip. */
+  setAiSuggestion: (next: AiSuggestionResponse | null) => void;
+  /** Apply callback — writes the suggested class into Slutgiltig klass via react-hook-form setValue. */
+  onApply: (cls: TherapeuticClass) => void;
+  /** Disables the button while the parent form is saving. */
+  formIsSaving: boolean;
+}
+
+function AiCategoryBlock({
+  name,
+  atcCode,
+  aiSuggestion,
+  setAiSuggestion,
+  onApply,
+  formIsSaving,
+}: AiCategoryBlockProps) {
+  const { data: aiStatus } = useAiAvailability();
+  const aiAvailable = aiStatus?.available ?? false;
+  const suggestMut = useSuggestTherapeuticClass();
+
+  // D-108: when the AI affordance is unavailable, hide the entire block
+  // (NOT disabled — hidden). The Slutgiltig klass field still renders
+  // because it lives OUTSIDE this component in the parent form.
+  if (!aiAvailable) return null;
+
+  const isFetching = suggestMut.isPending;
+  const fieldsEmpty = !name || !atcCode;
+  const buttonDisabled = fieldsEmpty || isFetching || formIsSaving;
+
+  // D-109 — manual button trigger; no debounce, no on-blur, no on-save.
+  async function handleFetchSuggestion() {
+    try {
+      const result = await suggestMut.mutateAsync({ name, atcCode });
+      setAiSuggestion(result);
+    } catch {
+      // The mutation's onError already toasted; chip state unchanged.
+    }
+  }
+
+  // UI-SPEC §4 — tooltip switches based on disable reason; suppressed
+  // while the button is in isFetching state.
+  // (aiAvailable === false path is unreachable here because we early-return above.)
+  const tooltipText = fieldsEmpty
+    ? 'Fyll i namn och ATC-kod för att hämta förslag.'
+    : null;
+
+  const buttonInner = (
+    <Button
+      variant="outline"
+      type="button"
+      onClick={handleFetchSuggestion}
+      disabled={buttonDisabled}
+      className="w-full"
+    >
+      {isFetching ? (
+        <>
+          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+          Hämtar förslag…
+        </>
+      ) : (
+        <>
+          <Sparkles className="h-4 w-4 mr-2" />
+          Hämta AI-förslag
+        </>
+      )}
+    </Button>
+  );
+
+  return (
+    <Can action="ai:suggest">
+      <div className="space-y-2 my-4 border-t border-b border-border py-4">
+        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          AI-kategorisering
+        </Label>
+        {tooltipText ? (
+          <TooltipProvider>
+            <Tooltip>
+              {/* When the trigger is a disabled button, asChild + a wrapping
+                  span is the standard Radix pattern so the tooltip still shows. */}
+              <TooltipTrigger asChild>
+                <span tabIndex={0}>{buttonInner}</span>
+              </TooltipTrigger>
+              <TooltipContent>{tooltipText}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : (
+          buttonInner
+        )}
+        {aiSuggestion && (
+          <>
+            <AiSuggestionChip
+              therapeuticClass={aiSuggestion.therapeuticClass}
+              confidence={aiSuggestion.confidence}
+            />
+            {/* h-9 intentional: secondary affordance in Sheet; primary touch
+                target is the Sheet itself. UI-SPEC §2 documents this deviation. */}
+            <Button
+              variant="outline"
+              size="sm"
+              type="button"
+              onClick={() => onApply(aiSuggestion.therapeuticClass)}
+              className="mt-1"
+            >
+              Använd förslag
+            </Button>
+          </>
+        )}
+      </div>
+    </Can>
+  );
+}
+
+// ---- Slutgiltig klass field (Phase 6 Plan 03 — reuses Plan 02 shared combobox) ----
+//
+// Lives OUTSIDE the <Can action="ai:suggest"> gate so sjuksköterska sees
+// the field even without the AI affordance — they can still view the
+// existing therapeuticClass even if they cannot edit (read-only via
+// disabled fieldset in view mode).
+//
+// Per Warning 7 anti-duplication contract: this component reuses the
+// shared TherapeuticClassCombobox from Plan 02 — no new Popover+Command
+// JSX is introduced anywhere in Plan 03.
+
+interface TherapeuticClassFieldProps<TForm extends { therapeuticClass?: TherapeuticClass | null }> {
+  control: Control<TForm>;
+  disabled?: boolean;
+}
+
+function TherapeuticClassField<TForm extends { therapeuticClass?: TherapeuticClass | null }>({
+  control,
+  disabled = false,
+}: TherapeuticClassFieldProps<TForm>) {
+  return (
+    <div>
+      <Label htmlFor="therapeutic-class">Slutgiltig klass</Label>
+      <div className="mt-1">
+        <Controller
+          // @ts-expect-error — generic Controller name typing in RHF is hard to satisfy
+          // without an explicit Path<TForm> import; the form types both extend the
+          // therapeuticClass field per Plan 02's contract extension.
+          name="therapeuticClass"
+          control={control}
+          render={({ field }) => (
+            <TherapeuticClassCombobox
+              value={(field.value as TherapeuticClass | null | undefined) ?? undefined}
+              onChange={(next) => field.onChange(next ?? null)}
+              placeholder="Välj terapeutisk klass"
+              searchPlaceholder="Sök klass…"
+              ariaLabel="Välj terapeutisk klass"
+              triggerClassName="w-full"
+              clearable
+            />
+          )}
+        />
+        {disabled && (
+          <span className="sr-only">Slutgiltig klass-fältet är inte redigerbart</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ---- Edit mode sub-component ----
 
 interface EditSheetProps {
@@ -139,11 +333,20 @@ function EditSheet({
   // useAuth provides careUnit.name for the dialog title + toast template literal
   const { user } = useAuth();
 
+  // Phase 6 Plan 03 — local AI suggestion state. Not persisted; reset
+  // when the Sheet opens or the careUnitMedication changes (the
+  // suggestion is for the row being edited).
+  const [aiSuggestion, setAiSuggestion] = useState<AiSuggestionResponse | null>(null);
+
   const editForm = useForm<MedicationUpdateRequest>({
     resolver: zodResolver(medicationUpdateRequest),
     defaultValues: {
       currentStock: careUnitMedication.currentStock,
       lowStockThreshold: careUnitMedication.lowStockThreshold,
+      // Phase 6 D-115 / D-32 carve-out — therapeuticClass is editable on
+      // BOTH NPL- and user-sourced meds (classification is metadata, not
+      // pharmaceutical identity).
+      therapeuticClass: careUnitMedication.therapeuticClass ?? null,
       ...(isNpl
         ? {}
         : {
@@ -158,9 +361,11 @@ function EditSheet({
   // Reset form when careUnitMedication changes or sheet reopens
   useEffect(() => {
     if (open) {
+      setAiSuggestion(null);
       editForm.reset({
         currentStock: careUnitMedication.currentStock,
         lowStockThreshold: careUnitMedication.lowStockThreshold,
+        therapeuticClass: careUnitMedication.therapeuticClass ?? null,
         ...(isNpl
           ? {}
           : {
@@ -177,13 +382,16 @@ function EditSheet({
   const isDeleting = deleteMutation.isPending;
 
   async function onSubmitEdit(values: MedicationUpdateRequest) {
-    // For NPL meds, only send stock/threshold fields.
+    // For NPL meds, only send stock/threshold + therapeuticClass fields
+    // (the D-115 / D-32 carve-out: classification IS editable on NPL,
+    // unlike the NPL-locked identity fields name/atcCode/form/strength).
     const payload: MedicationUpdateRequest = isNpl
       ? {
           ...(values.currentStock !== undefined && { currentStock: values.currentStock }),
           ...(values.lowStockThreshold !== undefined && {
             lowStockThreshold: values.lowStockThreshold,
           }),
+          ...('therapeuticClass' in values && { therapeuticClass: values.therapeuticClass }),
         }
       : values;
 
@@ -279,6 +487,19 @@ function EditSheet({
                     </p>
                   )}
                 </div>
+                {/* Phase 6 Plan 03 — AI block + Slutgiltig klass field (D-115/D-32
+                    carve-out: classification IS editable on NPL meds). */}
+                <AiCategoryBlock
+                  name={careUnitMedication.name}
+                  atcCode={careUnitMedication.atcCode}
+                  aiSuggestion={aiSuggestion}
+                  setAiSuggestion={setAiSuggestion}
+                  onApply={(cls) =>
+                    editForm.setValue('therapeuticClass', cls, { shouldDirty: true })
+                  }
+                  formIsSaving={isPending}
+                />
+                <TherapeuticClassField control={editForm.control} disabled={isPending} />
               </div>
             ) : (
               // User-sourced: all six fields editable
@@ -374,6 +595,19 @@ function EditSheet({
                     </p>
                   )}
                 </div>
+                {/* Phase 6 Plan 03 — AI block + Slutgiltig klass field. name + atcCode
+                    are live form-state values (user-source meds permit editing them). */}
+                <AiCategoryBlock
+                  name={editForm.watch('name') ?? ''}
+                  atcCode={editForm.watch('atcCode') ?? ''}
+                  aiSuggestion={aiSuggestion}
+                  setAiSuggestion={setAiSuggestion}
+                  onApply={(cls) =>
+                    editForm.setValue('therapeuticClass', cls, { shouldDirty: true })
+                  }
+                  formIsSaving={isPending}
+                />
+                <TherapeuticClassField control={editForm.control} disabled={isPending} />
               </div>
             )}
           </form>
@@ -528,6 +762,14 @@ function ViewSheet({
             <Label>Tröskel</Label>
             <p className="text-sm text-foreground mt-1">{careUnitMedication.lowStockThreshold}</p>
           </div>
+          <div>
+            <Label>Slutgiltig klass</Label>
+            <p className="text-sm text-foreground mt-1">
+              {careUnitMedication.therapeuticClass
+                ? THERAPEUTIC_CLASS_LABELS[careUnitMedication.therapeuticClass]
+                : '—'}
+            </p>
+          </div>
         </fieldset>
 
         <SheetFooter className="border-t border-border p-4 flex items-center justify-end gap-2 pb-[calc(1rem+56px+env(safe-area-inset-bottom))]">
@@ -565,6 +807,9 @@ export function MedicationSheet({
   const [conflictError, setConflictError] = useState<string | null>(null);
   const [showResults, setShowResults] = useState(false);
 
+  // Phase 6 Plan 03 — local AI suggestion state (one per Sheet open; cleared on reset).
+  const [aiSuggestion, setAiSuggestion] = useState<AiSuggestionResponse | null>(null);
+
   // Search query — only fires when debouncedQ is non-empty and no NPL med is selected
   const searchQuery = useMedicationSearchQuery(
     debouncedQ,
@@ -573,9 +818,13 @@ export function MedicationSheet({
 
   // ---- Create forms ----
 
-  // NPL path: only Lager + Tröskel are user-entered
-  const nplForm = useForm<Pick<MedicationCreateFromNplRequest, 'currentStock' | 'lowStockThreshold'>>({
-    defaultValues: { currentStock: 0, lowStockThreshold: 10 },
+  // NPL path: Lager + Tröskel + therapeuticClass (D-115 / D-32 carve-out — classification IS editable on NPL).
+  const nplForm = useForm<
+    Pick<MedicationCreateFromNplRequest, 'currentStock' | 'lowStockThreshold'> & {
+      therapeuticClass?: TherapeuticClass | null;
+    }
+  >({
+    defaultValues: { currentStock: 0, lowStockThreshold: 10, therapeuticClass: null },
   });
 
   // User-created path: full form
@@ -589,6 +838,7 @@ export function MedicationSheet({
       strength: '',
       currentStock: 0,
       lowStockThreshold: 10,
+      therapeuticClass: null,
     },
   });
 
@@ -600,7 +850,8 @@ export function MedicationSheet({
       setShowCreateForm(false);
       setConflictError(null);
       setShowResults(false);
-      nplForm.reset({ currentStock: 0, lowStockThreshold: 10 });
+      setAiSuggestion(null);
+      nplForm.reset({ currentStock: 0, lowStockThreshold: 10, therapeuticClass: null });
       userForm.reset({
         source: 'user',
         name: '',
@@ -609,6 +860,7 @@ export function MedicationSheet({
         strength: '',
         currentStock: 0,
         lowStockThreshold: 10,
+        therapeuticClass: null,
       });
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -630,7 +882,11 @@ export function MedicationSheet({
 
   // ---- Create submit handlers ----
 
-  async function onSubmitNpl(values: Pick<MedicationCreateFromNplRequest, 'currentStock' | 'lowStockThreshold'>) {
+  async function onSubmitNpl(
+    values: Pick<MedicationCreateFromNplRequest, 'currentStock' | 'lowStockThreshold'> & {
+      therapeuticClass?: TherapeuticClass | null;
+    },
+  ) {
     if (!selectedNpl) return;
     setConflictError(null);
     const payload: MedicationCreateRequest = {
@@ -638,6 +894,9 @@ export function MedicationSheet({
       medicationId: selectedNpl.id,
       currentStock: Number(values.currentStock),
       lowStockThreshold: Number(values.lowStockThreshold),
+      // Phase 6 D-115 / D-32 carve-out — therapeuticClass is settable on
+      // NPL meds. Only include if the user actually chose a value.
+      ...(values.therapeuticClass != null && { therapeuticClass: values.therapeuticClass }),
     };
     try {
       await createMutation.mutateAsync(payload);
@@ -854,6 +1113,19 @@ export function MedicationSheet({
                     className="mt-1"
                   />
                 </div>
+                {/* Phase 6 Plan 03 — AI block + Slutgiltig klass field. NPL meds
+                    expose name + atcCode via the read-only selectedNpl row above. */}
+                <AiCategoryBlock
+                  name={selectedNpl.name}
+                  atcCode={selectedNpl.atcCode}
+                  aiSuggestion={aiSuggestion}
+                  setAiSuggestion={setAiSuggestion}
+                  onApply={(cls) =>
+                    nplForm.setValue('therapeuticClass', cls, { shouldDirty: true })
+                  }
+                  formIsSaving={isPending}
+                />
+                <TherapeuticClassField control={nplForm.control} disabled={isPending} />
               </div>
             </form>
           )}
@@ -953,6 +1225,19 @@ export function MedicationSheet({
                     className="mt-1"
                   />
                 </div>
+                {/* Phase 6 Plan 03 — AI block + Slutgiltig klass field. name +
+                    atcCode are live user-form values (the user is typing them). */}
+                <AiCategoryBlock
+                  name={userForm.watch('name') ?? ''}
+                  atcCode={userForm.watch('atcCode') ?? ''}
+                  aiSuggestion={aiSuggestion}
+                  setAiSuggestion={setAiSuggestion}
+                  onApply={(cls) =>
+                    userForm.setValue('therapeuticClass', cls, { shouldDirty: true })
+                  }
+                  formIsSaving={isPending}
+                />
+                <TherapeuticClassField control={userForm.control} disabled={isPending} />
               </div>
 
               {conflictError && (
