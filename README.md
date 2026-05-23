@@ -171,12 +171,17 @@ Migration `0008_audit_events_revoke_grants` runs two things:
    function which `RAISE EXCEPTION ... USING ERRCODE = '42501'`. 42501
    is the canonical SQLSTATE behind "permission denied for table".
 
-The trigger is the binding layer in practice because the `meditrack`
+The runtime role is `meditrack_app` — a named non-owner role whose
+REVOKE on AuditEvent UPDATE/DELETE/TRUNCATE binds it physically
+(Layer 2b, migration 0010). The OWNER role hits the BEFORE-trigger guard
+(Layer 2a, migration 0008). See §Database roles below for the env-var split.
+
+The trigger is the binding layer for owner sessions because the `meditrack`
 role **owns** the table — Postgres bypasses GRANT/REVOKE checks for
-owners, so REVOKE alone is ineffective today. The trigger fires
+owners, so REVOKE alone is ineffective for owner connections. The trigger fires
 unconditionally and produces the verbatim "permission denied" message
 D-98 promised. Integration test #4 ("Postgres rejects UPDATE on
-audit_events") asserts this from the test runner:
+audit_events") now asserts both layers:
 
 ```ts
 await expect(
@@ -205,6 +210,40 @@ Migration 0008's SQL is intentionally left unmodified: editing any byte of an ap
 migration changes its SHA-256 checksum and causes `prisma migrate status` to report drift.
 The cross-reference between the two migrations is documented in 0010's header instead.
 See §Database roles below for the env-var split between the two roles.
+
+### Database roles
+
+The Postgres database has two roles:
+
+- **`meditrack`** — the owner role. Used by `prisma migrate deploy` (migrations) and
+  `prisma db seed` (seed scripts). Has full privileges on every table. Connection string lives
+  in `DIRECT_URL`.
+- **`meditrack_app`** — the application runtime role. Used by the api container's PrismaClient
+  for ALL request-handling queries. Has SELECT / INSERT / UPDATE / DELETE on every table
+  **EXCEPT** `AuditEvent`, where the role has SELECT + INSERT only — UPDATE / DELETE / TRUNCATE
+  have been explicitly REVOKEd by migration 0010. Connection string lives in `DATABASE_URL`.
+
+This split is the named-role half of the append-only audit-log story (D-98 Layer 2b). The
+runtime role physically cannot mutate audit rows; the OWNER role can technically mutate them
+but hits the BEFORE-trigger installed by migration 0008 (Layer 2a) which raises
+`permission denied`. Either layer alone is sufficient for its role; the two compose for
+defense-in-depth.
+
+**The REVOKE is bound to a NAMED role, not to whichever role happened to run the migration.**
+A future deployment swapping to a different role must consciously regrant the privileges,
+surfacing the architectural decision instead of accidentally relaxing it. See
+`apps/api/prisma/migrations/20260523000000_0010_audit_events_named_app_role/migration.sql`
+for the GRANTs and the REVOKE; integration test #4 in
+`apps/api/test/audit.integration.test.ts` asserts both layers (HIGH #3, Plan 05-07).
+
+For local development, the role passwords are hardcoded in `docker-compose.yml`
+(`meditrack` / `meditrack_app_dev`). Production deployments would substitute these with real
+secrets via docker-compose `env_file` or a secret manager — out of scope for this demo.
+
+| Role             | Used by                                  | Env var      | AuditEvent privileges |
+|------------------|------------------------------------------|--------------|-----------------------|
+| `meditrack`      | migrations, seed, admin psql sessions    | `DIRECT_URL` | Full (trigger guards) |
+| `meditrack_app`  | api PrismaClient (all runtime queries)   | `DATABASE_URL` | SELECT + INSERT only |
 
 ### How the audit hook works
 
