@@ -32,7 +32,95 @@ tidsbudget).
 
 ## Arkitekturval (motivera dina val)
 
-<!-- Populated by Slice 2 -->
+Nedan sammanfattas varje teknikval i en skanbar tabell — varför vi valde det vi
+valde, vad vi övervägde, och vad valet kostade oss att välja annorlunda. Tre
+beslutsområden djupas efter tabellen: de som direkt svarar på intervjufrågorna
+i §6.
+
+| Val | Alternativ övervägda | Varför vi valde så | Följdeffekt |
+|-----|----------------------|--------------------|-------------|
+| **Frontend** — TS + React | Vue 3 + TS, Svelte+Kit, Next.js, Remix | Låst av användaren; matchar Medovias interna stack; React + Vite ger snabbaste utvecklingsloop på en veckas tidsbudget | shadcn/ui-komponenter, TanStack Query för server-state, react-hook-form + Zod för formulärvalidering |
+| **Backend** — Node.js + Fastify + TS | Express, NestJS, Go (Gin/Echo), Ruby on Rails | Samma språk över FE+BE → delade Zod-kontrakt; Fastify är TS-native, snabbare än Express, har plugin-arkitektur som matchade `@fastify/rate-limit` + `@fastify/cookie` rent | File-per-endpoint route-mönster (D-65); plugin-baserad request-context (D-92); auth + rate-limit + audit som plugins |
+| **Database** — PostgreSQL 16 | MySQL 8, SQLite, MongoDB | Domänen är obestridligt relationell; `SELECT ... FOR UPDATE` ger ett verkligt svar på §6-frågan om två samtidiga beställningar | Phase 4 D-79 CUM-batch lock; Phase 5 named-role split; `pg_trgm` GIN-index för fritextsökning (Phase 2 CR-02) |
+| **ORM** — Prisma 5 | Drizzle, Kysely, TypeORM, raw SQL | Schema-first migrationer; genererade TS-typer; `$extends` typed extensions möjliggjorde Phase 5 audit-middleware utan att röra service-koden | Audit via `$extends` (D-90..D-97); migrationer i Git-historiken berättar datamodellens historia |
+| **Server-state** — TanStack Query 5 | Redux Toolkit, SWR, Zustand, Apollo | Server-state är fundamentalt async; cache-key + invalidations + refetch-on-focus löser låg-lager-banner-uppdatering i Phase 6 utan en client-state-store | D-69 query-key-konventioner; D-119 sibling-invalidations; D-105 `useInfiniteQuery` för audit-paginering |
+| **UI-kit** — shadcn/ui + Tailwind CSS 4 | MUI, Chakra, Mantine, Ant Design | shadcn ger kopierade komponenter i koden (ingen runtime-dep), Tailwind ger mobil-först responsivitet i klassnamn; matchar brief-§3.2 "responsivt UI" utan en custom-CSS-budget | Phase 1 UI-SPEC (slate + new-york), touch-targets ≥44 px; Combobox + Sheet + Dialog + Tabs återanvänds över alla 6 sidor |
+| **Tester** — Vitest 2 | Jest, Mocha + Chai, Node:test | Vite-native (delar config med apps/web); Fastify `app.inject` mot riktig Postgres ger integrationstest utan att starta en server | Plan 05-03 har 17 audit-integration-tester; Plan 04 har 7 deliver-tester inkl. `pg_locks`-bevis; Plan 06 har 5 AI + 3 dashboard-integration-tester |
+| **Monorepo** — pnpm workspaces 9 | Nx, Turborepo, npm + Lerna, plain folders | Inga extra config-filer; `pnpm -r` räcker för parallella scripts; symlinks för `@meditrack/shared` ger typedelning utan publicering | `apps/api`, `apps/web`, `packages/shared`; root `pnpm verify` kör hela suiten på ett kommando (D-129) |
+| **Container** — Docker Compose v2 | Kubernetes, Podman Compose, Vagrant, devcontainers | Brief §3.3 nämner explicit "ett plus"; ett kommando (`docker compose up --build`) startar postgres + api + web + seed; ingen orkestrerings-overhead för en demo | pgdata-volym; healthcheck-baserad `depends_on`; named role split via env-var-injektion |
+
+### Postgres + row-level FOR UPDATE
+
+Domänen är obestridligt relationell: beställningar kopplar till beställningsrader
+som kopplar till läkemedel och audit-händelser, och användare kopplar till
+vårdenheter. En dokumentdatabas eller SQLite hade krävt applikationslagret att
+upprätthålla referensintegritet som Postgres ger gratis via `FOREIGN KEY` och
+`CHECK`-begränsningar.
+
+Den verkliga vinsten är svaret på §6-frågan om samtida beställningar. När en
+beställning levereras låser systemet *alla* berörda läkemedel i *samma*
+transaktion via `SELECT ... FOR UPDATE` — en CUM-batch-låsning per D-79.
+Förloraren vid kapplöpning serialiseras och väntar; den återupptas inte förrän
+låset frigörs. Beviset ligger i `apps/api/test/orders.deliver.integration.test.ts`:
+`pg_locks`-snapshot-testet observerar att lås faktiskt hålls under transaktionen,
+inte att koden *hoppas* på att de hålls.
+
+Postgres lägger till operationell kostnad jämfört med SQLite — men svaret på
+§6 + multi-tenant-scoping av alla resurser via `careUnitId` motiverar den
+kostnaden.
+
+### Prisma $extends typed extensions
+
+Phase 5 är den direkta demonstrationen av svaret på §6-frågan om att
+eftermontera autentisering. Audit-loggning lades till i Phase 5 *utan att röra
+en enda service-fil från Phase 2, 3 eller 4* (D-83). Mönstret är Prisma:s
+`$extends({ query: ... })` — en middleware som interceptar anrop på modellnivå
+för de sex granskade modellerna (D-90: `Medication`, `CareUnitMedication`,
+`Order`, `OrderLine`, `Session`, `AuditEvent`). Service-koden är omedveten om
+att mellanhanden finns.
+
+Samma mönster bär per-rad-auktorisering: ett `$extends` på `findMany` kan
+injicera en `where: { careUnitId }`-klausul utan att tjänstekoden vet om det.
+Vi har redan gjort eftermonteringen en gång i det här repot — för audit. Filen
+`apps/api/src/db/auditExtension.ts` är mönstret.
+
+Den ärliga begränsningen (§6 "minst stolt över"): `$extends`-mellanhanden ser
+inte `$queryRaw`-skrivningar. Idag finns inga `$executeRaw`-skrivningar i
+produktionskoden, och `audit.integration.test.ts` Test 3 assertar det vid varje
+körning via ett `git grep`. Begränsningen är dokumenterad, inte dold.
+
+### Named `meditrack_app` non-owner role
+
+Append-only-skyddet på audit-tabellen är fysiskt enforcerat av Postgres, inte
+av applikationen. Två oberoende lager verkar samtidigt:
+
+**(a)** Migration `0010_audit_events_named_app_role` skapar rollen `meditrack_app`
+som en non-owner och återkallar `UPDATE`, `DELETE` och `TRUNCATE` på
+`AuditEvent`. Applikationen kör som `meditrack_app`; normala `REVOKE`-regler
+gäller.
+
+**(b)** Migration `0008_audit_events_revoke_grants` lägger till en `BEFORE`-trigger
+som fångar OWNER-sessioner — Postgres ägare kringgår annars `GRANT`/`REVOKE`
+och kan skriva direkt. Triggern kastar `SQLSTATE 42501` oavsett vem som
+anropar.
+
+Bägge lager assertas i `audit.integration.test.ts` Test 4: en rå `UPDATE` mot
+en riktig audit-rad rejectas med `permission denied`. Test 3 assertar att ingen
+applikationskod ens *försöker* — via `git grep` som returnerar noll träffar på
+de förbjudna mönstren. Försvarsdjupet är tre lager: ESLint på commit, CI-grep
+på PR, Postgres på runtime.
+
+Det är det svar jag är mest stolt över.
+
+### Vad vi medvetet avstått från
+
+- **Kubernetes** — Docker Compose räcker för en demo + en vårdenhet; orkestrering är overhead utan multi-region eller hög trafik. Ompröva när: > 1 region eller > 10 vårdenheter parallellt.
+- **Meddelandekö (Redis/RabbitMQ)** — Postgres `LISTEN/NOTIFY` eller cron räcker för v1; ingen async-fanout-pipeline behövs idag. Ompröva när: e-postnotifikationer (NTF-03) eller batch-jobb läggs till.
+- **Mikrotjänster** — En process per app räcker; en monolitisk Fastify-app testas och deployas atomiskt. Ompröva när: oberoende skalning per domän krävs (t.ex. AI-tjänst lyfter med egen autoscaling).
+- **GraphQL-federation** — Zod-kontrakt + tunna REST-routes ger samma typsäkerhet utan en federations-gateway. Ompröva när: > 3 klienter konsumerar samma API och queries divergerar.
+- **Real-time push (SSE/WebSocket)** — TanStack Query refetch-on-mutation + 30-sekunders polling (D-119) ger färska data utan en pubsub-infrastruktur. Ompröva när: latensbudget under 5 sekunder krävs eller multi-user simultaneous editing.
+- **E-postinfrastruktur** — Mailprovider + kö + mallar = för mycket yta för marginalt signalvärde mot in-app banner (NTF-01). Ompröva när: notifikationer ska gå utanför sessionen.
+- **OAuth / SSO** — E-post + lösenord räcker för internt verktyg; OAuth lägger till infra utan att ändra demo-storyn. Ompröva när: integration mot landstingets identitetsprovider (BankID, ADFS) blir krav.
 
 ## Snabbstart med Docker Compose
 
