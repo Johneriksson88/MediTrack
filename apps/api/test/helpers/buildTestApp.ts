@@ -27,8 +27,19 @@ if (!process.env.COOKIE_SECRET) {
   vi.stubEnv('COOKIE_SECRET', 'test-cookie-secret-32-bytes-min-len-xxx');
 }
 if (!process.env.DATABASE_URL) {
+  // Plan 05-07: runtime queries use the named non-owner role meditrack_app.
+  // REVOKE on AuditEvent UPDATE/DELETE/TRUNCATE binds this role (D-98 Layer 2b).
   vi.stubEnv(
     'DATABASE_URL',
+    'postgres://meditrack_app:meditrack_app_dev@localhost:5432/meditrack',
+  );
+}
+if (!process.env.DIRECT_URL) {
+  // The owner role is used by prisma migrate deploy; in tests we only need
+  // it for the schema.prisma datasource directUrl field (no migrations run
+  // during vitest). Stub it so Prisma doesn't complain about a missing env var.
+  vi.stubEnv(
+    'DIRECT_URL',
     'postgres://meditrack:meditrack@localhost:5432/meditrack',
   );
 }

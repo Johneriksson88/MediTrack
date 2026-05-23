@@ -34,7 +34,16 @@ services:
       dockerfile: apps/api/Dockerfile
     container_name: meditrack-api
     environment:
-      DATABASE_URL: postgres://meditrack:meditrack@postgres:5432/meditrack
+      # Runtime queries connect as the named non-owner role (Plan 05-07 / HIGH #3).
+      # The REVOKE on AuditEvent UPDATE/DELETE/TRUNCATE binds this role; the app
+      # cannot mutate audit rows even if a code path tries (D-98 Layer 2b).
+      DATABASE_URL: postgres://meditrack_app:meditrack_app_dev@postgres:5432/meditrack
+      # Migration runner + seed script use the owner role so they can create
+      # roles, alter privileges, and bypass the REVOKE during data loads.
+      # Both URLs point at the SAME database; only the connection role differs.
+      # Prisma uses DIRECT_URL for prisma migrate deploy and prisma db seed;
+      # runtime PrismaClient queries use DATABASE_URL.
+      DIRECT_URL: postgres://meditrack:meditrack@postgres:5432/meditrack
       COOKIE_SECRET: ${COOKIE_SECRET:-dev-cookie-secret-please-replace-32b-min}
       PORT: "3000"
       NODE_ENV: production
