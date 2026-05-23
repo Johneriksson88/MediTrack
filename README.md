@@ -188,6 +188,24 @@ If a future code change tries an UPDATE — even one that ESLint and the
 grep test missed — Postgres physically rejects it. **Append-only is
 enforced by Postgres GRANTs and triggers, not by the application.**
 
+#### Two-migration sequence (Migration 0008 → Migration 0010)
+
+The append-only enforcement landed in two migrations:
+
+- **Migration 0008** (Plan 01) installed an OWNER-binding `BEFORE UPDATE OR DELETE OR TRUNCATE`
+  trigger on `AuditEvent` (Layer 2a) plus a no-op `REVOKE ... FROM CURRENT_USER` (Plan 01's
+  SUMMARY documents the no-op finding — `CURRENT_USER` evaluated to the table owner, which
+  Postgres bypasses for GRANT/REVOKE checks).
+- **Migration 0010** (Plan 05-07) adds the NAMED-role `REVOKE UPDATE, DELETE, TRUNCATE ON
+  "AuditEvent" FROM meditrack_app` (Layer 2b) and switches the application's runtime
+  `DATABASE_URL` to connect as `meditrack_app`. The trigger in 0008 remains active and
+  remains the OWNER-side guard (admin `psql` sessions, migrations, seed scripts).
+
+Migration 0008's SQL is intentionally left unmodified: editing any byte of an applied Prisma
+migration changes its SHA-256 checksum and causes `prisma migrate status` to report drift.
+The cross-reference between the two migrations is documented in 0010's header instead.
+See §Database roles below for the env-var split between the two roles.
+
 ### How the audit hook works
 
 A Prisma `$extends` middleware (`apps/api/src/db/auditExtension.ts`)
