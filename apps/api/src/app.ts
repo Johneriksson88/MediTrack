@@ -15,6 +15,7 @@ import { healthzRoutes } from './routes/healthz.js';
 import { medicationRoutes } from './routes/medications/index.js';
 import { orderRoutes } from './routes/orders/index.js';
 import { auditRoutes } from './routes/audit/index.js';
+import { dashboardRoutes } from './routes/dashboard/index.js';
 
 /**
  * Pattern B — application composition.
@@ -102,6 +103,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(orderRoutes);
   // Phase 5 — audit log read endpoints (admin-only).
   await app.register(auditRoutes);
+  // Phase 6 — dashboard low-stock banner endpoint (all roles, careUnit-scoped, D-120).
+  await app.register(dashboardRoutes);
   await app.register(healthzRoutes);
 
   return app;
