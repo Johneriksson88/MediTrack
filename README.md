@@ -483,6 +483,44 @@ exactly the boundary needed: `actorALS.run(scope, () => done())`.
 Reading the Node.js docs more carefully before the initial ship would
 have avoided the CR-04 retro.
 
+### Login rate-limiting
+
+`POST /api/auth/login` is rate-limited by `@fastify/rate-limit` with two independent
+buckets (Plan 05-09 / 05-REVIEWS.md MEDIUM #8):
+
+- **Per-(email, IP) bucket**: 10 attempts per minute, configurable via
+  `RATE_LIMIT_LOGIN_PER_EMAIL_PER_MINUTE` (default 10). Bounds brute-force against
+  a single account — an attacker spraying passwords at one email from one IP hits the
+  limit after 10 attempts within any 60-second window.
+- **Per-IP bucket**: 30 attempts per minute across all rate-limited routes (currently
+  only login), configurable via `RATE_LIMIT_LOGIN_PER_IP_PER_MINUTE` (default 30).
+  Bounds slow-scan attacks iterating across emails from one source IP.
+
+Rate-limited requests return HTTP 429 with the canonical D-19 error envelope
+`{error: {code: 'rate_limited', message: '...'}}`. The message is Swedish and
+user-displayable ("För många inloggningsförsök. Försök igen om N sekunder.").
+
+Rate-limited attempts do **NOT** write an `audit.login_failed` row — the rejection
+happens BEFORE `verifyCredentials` runs. This bounds `audit_events` row growth from a
+brute-force attacker (the concern in 05-REVIEWS.md MEDIUM #8). Real attempts (within
+the bucket) continue to write audit rows as before.
+
+The rate-limit store is in-memory (per-process). A multi-process or HA deployment would
+swap to the documented `@fastify/rate-limit` Redis store — out of scope for this
+single-process Docker Compose demo. Production deployments would also add CDN-layer
+rate-limiting (Cloudflare, nginx) for defense in depth.
+
+Integration tests in `apps/api/test/auth.ratelimit.test.ts` cover four scenarios:
+11th attempt returns 429 (Test A), rate-limited attempt does not write an audit row
+(Test B), per-email bucket isolation across emails from the same IP (Test C), and
+a legitimate first-time login is unaffected (Test D).
+
+**§6 narrative.** "The `audit.login_failed` row growth from brute-force is bounded
+by the rate-limit: 10 attempts per (email, IP) per minute. After 10 failed attempts,
+the attacker sees 429 and no further audit rows are written for that (email, IP) pair
+until the window resets. The table grows at most 10 rows per minute per attacker
+email — not unbounded. Real failures (within the bucket) are still audited as before."
+
 ### v2 candidates
 
 What I'd add with more time, in rough priority order:
