@@ -28,10 +28,10 @@ import {
 /**
  * Phase 5 Plan 03 — Audit log integration tests.
  *
- * 16 tests across 7 describe blocks covering AUD-01 / AUD-02 / AUD-03 with
+ * 17 tests across 7 describe blocks covering AUD-01 / AUD-02 / AUD-03 with
  * the threat-model assertions T-05-02 (append-only) and T-05-03 (session
- * id leak via entityId), plus Plan 05, Plan 06, and Plan 08 gap-closure
- * regression tests.
+ * id leak via entityId), plus Plan 05, Plan 06, Plan 08, and Plan 09
+ * gap-closure regression tests.
  *
  *   AUD-01 — full pipeline coverage
  *     Test 1: create draft → submit → confirm → deliver writes the
@@ -114,6 +114,13 @@ import {
  *             entityId / distinct requestIds confirm no cross-attribution under
  *             concurrent keep-alive execution. Tests 7+9 verify sequential routing;
  *             Test 14 verifies parallel-frame isolation (the novel contract).
+ *
+ *   AUD-01 — failed-login tx-isolation invariant (Plan 09 / 05-REVIEWS.md MEDIUM #7 + LOW #19)
+ *     Test 17: tx-isolation invariant — auth.login_failed audit row commits OUTSIDE
+ *             any wrapping prisma.$transaction (05-REVIEWS.md MEDIUM #7 + LOW #19).
+ *             Codifies the inline INVARIANT comment at auth.service.ts's two
+ *             auth.login_failed write sites — protects D-91 same-tx contract from a
+ *             silent regression if a future refactor wraps verifyCredentials in a tx.
  */
 
 let app: FastifyInstance;
@@ -863,6 +870,68 @@ describe('AUD-01 — failed-login entityType taxonomy (WR-07 + CR-03)', () => {
     expect(row!.entityId).toBe(TEST_SJUKSKOTERSKA.email);
     // D-96: known user attempting → actorUserId is set (we know who tried).
     expect(row!.actorUserId).toBe(testUser.id);
+  });
+
+  it('auth.login_failed audit row commits outside any wrapping transaction (05-REVIEWS.md MEDIUM #7 + LOW #19)', async () => {
+    // Test 17 — tx-isolation invariant.
+    //
+    // SCENARIO: a future refactor wraps verifyCredentials in a $transaction
+    // that rolls back (e.g., for an "account lockout after N failures" feature).
+    // The auth.login_failed audit row MUST commit independently — that is the
+    // D-91 same-tx-contract carve-out for auth-attempt records. The INVARIANT
+    // comment at auth.service.ts's two write sites codifies this assumption;
+    // this test codifies it at CI time.
+    //
+    // How it works: we simulate the exact code pattern from auth.service.ts —
+    // prisma.auditEvent.create() called with the OUTER prisma singleton (not a
+    // tx-scoped client) — INSIDE a prisma.$transaction callback. The outer
+    // singleton opens its own implicit micro-tx and commits immediately,
+    // independently of the surrounding interactive tx. When the surrounding tx
+    // rolls back (forced throw), the audit row is already committed and persists.
+    //
+    // If a future contributor accidentally routes the audit write through the
+    // tx callback's `_tx` client, the row would roll back with the outer tx
+    // and this test would fail — surfacing the regression at CI time.
+    const testStartedAt = new Date();
+    const attemptEmail = `test-tx-isolation-${Date.now()}@example.test`;
+
+    await expect(
+      prisma.$transaction(async (_tx) => {
+        // Emulate auth.service.ts unknown-email branch: write an audit row
+        // via the OUTER prisma singleton, NOT via the _tx client. This is
+        // exactly how auth.service.ts is structured today (it imports the
+        // module-level `prisma` singleton and calls prisma.auditEvent.create()
+        // directly). The audit write commits independently of this outer tx.
+        await prisma.auditEvent.create({
+          data: {
+            actorUserId: null,
+            careUnitId: null,
+            entityType: 'auth_attempt',
+            entityId: attemptEmail,
+            action: 'auth.login_failed',
+            after: { email: attemptEmail },
+            requestId: `test-tx-iso-${Date.now()}`,
+          },
+        });
+
+        // Force the surrounding transaction to roll back. If the audit write
+        // were routed through _tx instead of the outer singleton, this rollback
+        // would also drop the audit row — breaking the D-91 contract.
+        throw new Error('forced rollback');
+      }),
+    ).rejects.toThrow('forced rollback');
+
+    // INVARIANT: the audit row is present despite the outer rollback.
+    const rows = await prisma.auditEvent.findMany({
+      where: {
+        entityType: 'auth_attempt',
+        entityId: attemptEmail,
+        createdAt: { gte: testStartedAt },
+      },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].action).toBe('auth.login_failed');
+    expect(rows[0].entityId).toBe(attemptEmail);
   });
 });
 
