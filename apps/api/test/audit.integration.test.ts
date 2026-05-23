@@ -51,9 +51,12 @@ import {
  *             `delete`, `updateMany`, `deleteMany`, or `upsert` calls
  *             in `apps/` and `packages/` (Layer 1 — architectural
  *             absence).
- *     Test 4: `prisma.$executeRawUnsafe('UPDATE "AuditEvent" SET ...')`
- *             is rejected by Postgres with `permission denied` (Layer 2
- *             — REVOKE + BEFORE-trigger at the DB role).
+ *     Test 4: DB-layer rejection — UPDATE rejected with permission denied;
+ *             runtime role is meditrack_app (named-role REVOKE binds, Layer 2b);
+ *             owner role also rejects via trigger (Layer 2a, Plan 05-07 HIGH #3).
+ *             Asserts: (a) current_user === 'meditrack_app', (b) meditrack_app
+ *             lacks UPDATE privilege on AuditEvent, (c) if DIRECT_URL is set,
+ *             the owner role (meditrack) ALSO rejects UPDATE via the trigger.
  *
  *   AUD-01 — sensitive-field redaction (D-97 + T-05-03)
  *     Test 5: The `auth.login` audit row's `after` JSON does NOT contain
@@ -479,10 +482,9 @@ describe('AUD-03 — append-only enforcement', () => {
     // Plan 01's migration 0008 installs BEFORE UPDATE/DELETE/TRUNCATE
     // triggers on AuditEvent that RAISE EXCEPTION ... USING ERRCODE='42501'
     // (the canonical SQLSTATE behind "permission denied for table").
-    // Even though the meditrack role OWNS the table (so REVOKE alone is
-    // bypassed by owner privileges), the trigger fires UNCONDITIONALLY
-    // on the matched-row UPDATE path and produces the verbatim
-    // "permission denied" message D-98 promised.
+    // Plan 05-07 adds migration 0010 which REVOKEs UPDATE/DELETE/TRUNCATE
+    // FROM meditrack_app — the named runtime role. After this plan, the
+    // GRANT check fires BEFORE the trigger for the meditrack_app role.
     //
     // We need a REAL row id so the BEFORE-trigger fires (FOR EACH ROW
     // triggers only fire when at least one row is affected). A login
@@ -495,6 +497,9 @@ describe('AUD-03 — append-only enforcement', () => {
     });
     expect(target).not.toBeNull();
 
+    // Existing assertion (D-100): UPDATE is rejected with permission denied.
+    // After migration 0010, this fires via the REVOKE grant-check (Layer 2b),
+    // not the trigger (Layer 2a) — but the observable error is identical.
     await expect(
       prisma.$executeRawUnsafe(
         `UPDATE "AuditEvent" SET action = $1 WHERE id = $2`,
@@ -502,6 +507,40 @@ describe('AUD-03 — append-only enforcement', () => {
         target!.id,
       ),
     ).rejects.toThrow(/permission denied/i);
+
+    // Plan 05-07 HIGH #3 — extended assertions:
+
+    // (a) Assert the runtime role is meditrack_app (proves the role swap landed).
+    // The named-role REVOKE binds this role; the REVOKE is what rejected the
+    // UPDATE above (Layer 2b), not the trigger (Layer 2a).
+    const [{ current_user }] = await prisma.$queryRaw<Array<{ current_user: string }>>`SELECT current_user`;
+    expect(current_user).toBe('meditrack_app');
+
+    // (b) Assert meditrack_app lacks UPDATE on AuditEvent (the REVOKE from
+    // migration 0010 is in effect). This confirms the privilege state
+    // independently of the rejection test above.
+    const [{ has_update }] = await prisma.$queryRaw<Array<{ has_update: boolean }>>`SELECT has_table_privilege('meditrack_app', '"AuditEvent"', 'UPDATE') AS has_update`;
+    expect(has_update).toBe(false);
+
+    // (c) Optionally assert the OWNER role ALSO cannot UPDATE due to the
+    // trigger guard (Layer 2a — migration 0008). Only runs if DIRECT_URL
+    // is exposed to the test environment. Guards with if() so the test does
+    // NOT fail in environments where the owner URL is unavailable.
+    if (process.env.DIRECT_URL) {
+      const { PrismaClient } = await import('@prisma/client');
+      const ownerPrisma = new PrismaClient({ datasourceUrl: process.env.DIRECT_URL });
+      try {
+        await expect(
+          ownerPrisma.$executeRawUnsafe(
+            `UPDATE "AuditEvent" SET action = $1 WHERE id = $2`,
+            'hacked',
+            target!.id,
+          ),
+        ).rejects.toThrow(/permission denied/i);
+      } finally {
+        await ownerPrisma.$disconnect();
+      }
+    }
   });
 });
 
