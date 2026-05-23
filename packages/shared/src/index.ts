@@ -89,6 +89,17 @@ export {
   lowStockListResponse,
   type LowStockListResponse,
 } from './contracts/dashboard.js';
+// AI categorization contracts — Phase 6 D-08 / D-106 / D-111 (FE↔BE AI suggestion API)
+export {
+  aiSuggestionRequest,
+  type AiSuggestionRequest,
+  aiSuggestionResponse,
+  type AiSuggestionResponse,
+  aiStatusResponse,
+  type AiStatusResponse,
+  llmToolUseSchema,
+  type LlmToolUse,
+} from './contracts/ai.js';
 
 // Constants — locked vocabularies shared FE+BE
 export { ROLES, roleEnum, type Role } from './constants/roles.js';
