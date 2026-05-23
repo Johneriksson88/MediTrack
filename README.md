@@ -698,7 +698,29 @@ producerar en orphan.
 
 #### §6 supporting bullets
 
-<!-- §6 supporting bullets — populated by Slice 5 -->
+1. **Samtidighet — `pg_locks`-baserad serialisering.** `apps/api/test/orders.deliver.integration.test.ts` Test 8 observerar Postgres' radlås under en konkurrerande leverans via en `pg_locks`-poll som bekräftar att Tx-B blockeras på DB-nivå; vinnaren commitar, förloraren rullas tillbaka (D-79 CUM-batch `FOR UPDATE`).
+
+2. **Audit-loggen ljuger inte — rollback-säkerhet.** `audit.integration.test.ts` Test 2 framtvingar ett `Error` inuti `prisma.$transaction`; resultat: noll `audit_events`-rader skrivs för den rullbackade mutationen (D-91 transaktionskontrakt — mellanhanden routar `auditEvent.create` genom samma tx-klient).
+
+3. **Append-only — kodfrånvaro.** `audit.integration.test.ts` Test 3 kör `git grep -nE 'prisma\.auditEvent\.(update|delete|deleteMany|updateMany|upsert)\b' apps packages`; matchar noll. ESLint-regel `no-restricted-syntax` i `.eslintrc.cjs` skär bort patterns före commit (D-99).
+
+4. **Append-only — DB-lager.** `audit.integration.test.ts` Test 4 utför `UPDATE "AuditEvent" SET ...` via `prisma.$executeRawUnsafe`; Postgres returnerar `permission denied` med SQLSTATE `42501` från BEFORE-triggern i migration `0008_audit_events_revoke_grants` (aktiv för OWNER-sessioner) och från REVOKE i migration `0010_audit_events_named_app_role` (aktiv för `meditrack_app` runtime-sessioner).
+
+5. **Named role split — REVOKE-skydd.** Migration `0010_audit_events_named_app_role` skapar `meditrack_app` som non-owner-roll och REVOKE:ar UPDATE/DELETE/TRUNCATE på `AuditEvent`; `DATABASE_URL` ansluter som `meditrack_app` (runtime), `DIRECT_URL` ansluter som owner (migrationer + seed) (D-98).
+
+6. **Per-concern ALS — request-context utan globals.** `actorALS`, `activeTxStackALS` och `actionOverrideALS` är tre oberoende `AsyncLocalStorage`-instanser sådda av Fastify `onRequest`-hook via `als.run(scope, () => done())` (3-arg-signaturen, NOT `enterWith`; Plan 05-06 review fix som stänger CR-04).
+
+7. **Multi-tenancy — `careUnitId`-first.** Service-signaturer tar `careUnitId` som första argument överallt (D-16); admin-vyn för audit är medvetet cross-tenant (D-16 undantag); ett v2 "scope to my vårdenhet"-toggle är ett WHERE-tillägg — kolumnen finns redan på varje `audit_events`-rad.
+
+8. **Cursor-paginering — O(page-size).** `GET /api/audit/events` använder base64-encodad `{createdAt, id}`-cursor med deterministisk OR-pair WHERE för same-millisecond tiebreak; `take: limit+1` detekterar `hasMore` utan COUNT (D-105); skalar till storleksordningar fler rader än offset-paginering.
+
+9. **Eftermontering av authz — samma `$extends`-mönster.** Phase 5 eftermonterade audit-logging utan att röra Phase 2/3/4 service-filer; samma `query: { findMany: ... }`-mellanhand injicerar en `where: { tenantId }`-klausul för per-rad authz (D-83 + D-90 — `apps/api/src/db/auditExtension.ts` är mönstret).
+
+10. **CR-02 — entityId backstop.** Migration `0011` BEFORE INSERT-trigger förkastar `audit_events.entityId` = '' eller NULL; `auth.ratelimit.test.ts` täcker att `auth_attempt`-events skriver attemptedEmail som `entityId` (WR-07 closure från Plan 05-05).
+
+11. **`$queryRaw` blind-spot — CI grep guard.** `audit.integration.test.ts` Test 15 kör `git grep` efter `$executeRaw` i `apps/` och `packages/` med en allowlist; matchar noll utanför allowlisten vid varje körning — detta är den underliggande begränsningen i `$extends`-mellanhanden (§6 "minst stolt över"-svaret).
+
+12. **Login rate-limit — bucket-isolerad.** `@fastify/rate-limit` per-(email, IP)-bucket och per-IP-bucket på `POST /api/auth/login`; `auth.ratelimit.test.ts` (4 tester: 11:e försöket ger 429, rate-limited försök skriver ingen audit-rad, per-email-bucket-isolering, legitimt första inlogg opåverkat) verifierar nested- och parallel-invariants.
 
 #### Lärdomar
 
