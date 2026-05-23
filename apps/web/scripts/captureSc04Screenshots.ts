@@ -113,15 +113,26 @@ async function main(): Promise<void> {
 
         // --- Assertion 2: primary nav reachability ---
         // Carve-out: /login does not render AppShell, so no primary nav is present.
+        // AppShell renders BOTH Sidebar (hidden md:flex) and BottomTabBar (md:hidden);
+        // exactly one is visible per viewport. The assertion is "at least one nav with
+        // data-test=primary-nav is visible", so enumerate all matches and OR-reduce
+        // isVisible() — checking only the first match would always fail at <md because
+        // the Sidebar is rendered first in the DOM and is display:none on mobile.
         if (!route.anonymous) {
-          const navHandle = await page.$('[data-test="primary-nav"]');
-          if (!navHandle) {
+          const navHandles = await page.$$('[data-test="primary-nav"]');
+          if (navHandles.length === 0) {
             failures.push(
               `primary nav (data-test="primary-nav") not found at ${viewport.width}x${viewport.height} on ${route.path}`,
             );
           } else {
-            const visible = await navHandle.isVisible();
-            if (!visible) {
+            let anyVisible = false;
+            for (const h of navHandles) {
+              if (await h.isVisible()) {
+                anyVisible = true;
+                break;
+              }
+            }
+            if (!anyVisible) {
               failures.push(
                 `primary nav not visible at ${viewport.width}x${viewport.height} on ${route.path}`,
               );
