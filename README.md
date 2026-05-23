@@ -180,7 +180,25 @@ genereras per användare och rotaras vid första inlogg — se
 
 ## Demo-rundtur (5 minuter)
 
-<!-- Populated by Slice 5 -->
+Den här rundturen tar fem minuter och täcker varje brief-§2.1-krav i en sammanhängande demo. Förutsättning: `docker compose up` är igång och alla tre demo-användare är seedade.
+
+1. **Logga in som sjuksköterska** — använd `sjukskoterska@example.test` / `demo1234` på `http://localhost:5173/login`. Sessionen överlever en sidomladdning (AUTH-02). Navigera till [§ Mobil-först verifiering](#mobil-först-verifiering) ovan om du vill se inloggningen vid 360 px.
+
+2. **Lägg en multi-radsbeställning** — på `/bestallningar/ny` (eller via `Ny beställning` från `/bestallningar`). Öppna `MedicationPickerSheet` med `Lägg till läkemedel`; välj 2–3 läkemedel; ändra kvantiteter via `QuantityStepper` (44 px touch-targets, optimistisk uppdatering med debounce). Klicka `Skicka` — statusen skiftar `Utkast → Skickad` med en bekräftelsebanner på toppen (ORD-01 + ORD-02 + ORD-03).
+
+3. **Försök redigera den skickade beställningen** — observera att raderna är immutable och att API:t returnerar `HTTP 409 order_locked`. Detta är ORD-06 och Phase 3:s D-54 atomic compare-and-swap-precondition i praktiken.
+
+4. **Logga ut och logga in som apotekare** — `apotekare@example.test` / `demo1234`. Navigera till `/bestallningar` och se den nyss skickade beställningen i tabben `Skickad`.
+
+5. **Bekräfta och leverera beställningen** — klicka in på beställningen, tryck `Bekräfta` (status `Skickad → Bekräftad`), sedan `Leverera` som öppnar `DeliverConfirmDialog`. Bekräfta i dialogen — statusen skiftar till `Levererad` (ORD-04 + ORD-05), och samma transaktion ökar lagersaldot på alla berörda läkemedel (STK-01 + STK-02 + D-79 CUM-batch lock). `OrderActorTrail` visar vem som gjort vilken transition och när.
+
+6. **Se lagret uppdateras** — navigera till `/lakemedel` och hitta ett av de levererade läkemedlen; lagersaldot är nu inkrementerat. Navigera till `/dashboard` — `DashboardLowStockCard` visar de under-tröskel-läkemedel som fortfarande är kritiska (NTF-01 + NTF-02). Om ett läkemedel precis steg över sin tröskel har det försvunnit från bannern (refetchad vid mutation-invalidation per D-119).
+
+7. **AI-förslag på ett nytt läkemedel** — på `/lakemedel`, klicka `Lägg till läkemedel` för att öppna sheeten i create-läge; fyll i namn och ATC-kod; klicka `Hämta AI-förslag`. Servern returnerar en strukturerad rekommendation (`tool_use` mot `claude-haiku-4-5`) med konfidens-band (`Hög säkerhet` / `Medel säkerhet` / `Låg säkerhet` per D-111). Acceptera förslaget eller välj om i `Slutgiltig klass`-dropdown (override-by-enum-bucket per D-113). Spara — `therapeuticClass` persisteras (AI-01 + AI-02).
+
+8. **Logga ut och logga in som admin** — `admin@example.test` / `demo1234`. Navigera till `/admin/audit`. Filtrera på "Användare = sjukskoterska@example.test" — se beställningsraden som skapades i steg 2. Klicka in på den för att se `AuditDiffPanel` (Fält / Före / Efter). Klicka `Kopiera permalink` — URL:en innehåller alla filter-koordinater (men inte before/after-payload, per D-104). RequestId-chip:en länkar till alla syskon-events från samma HTTP-request (AUD-01 + AUD-02 + AUD-03).
+
+Hela rundturen täcker mandatory-omfattningen och 4/4 valda optionals; total walltime cirka 5 minuter vid normal interaktionshastighet.
 
 ## Lokal utveckling utan Docker
 
@@ -324,7 +342,47 @@ Förstegångsinstallation av Chromium: `pnpm --filter @meditrack/web exec playwr
 
 ## §6-svar (intervjudiskussion)
 
-<!-- Populated by Slice 5 -->
+De fyra brief-§6-frågorna och tre förväntade följdfrågor, var och en med en hisspitch på 2–4 meningar; djupet finns under `## Feature deep dives`.
+
+### Hur hanterar systemet att två sjuksköterskor beställer samtidigt?
+
+Postgres' radlås via `SELECT ... FOR UPDATE` löser kapplöpningen. När en beställning levereras tas en CUM-batch-låsning på alla berörda läkemedel i samma transaktion (D-79); samtidiga leveranser serialiseras istället för att race-a — förloraren rullas tillbaka. Eftersom Phase 5:s audit-middleware skriver in i samma transaktion rullas audit-raden tillbaka med den (D-91 — "audit-loggen ljuger inte"). Bevisas av `apps/api/test/orders.deliver.integration.test.ts` (`pg_locks`-snapshot, Test 8) och Test 2 i `audit.integration.test.ts` (rollback ger noll `audit_events`-rader).
+
+[Läs mer: §Audit log §Hur audit-hooken fungerar](#hur-audit-hooken-fungerar)
+
+### Hur skulle du skala upp till 50 vårdenheter?
+
+Datamodellen är multi-tenant från dag 1 — `careUnitId` på alla resurser, service-signaturer tar `careUnitId` som första argument (D-16), index på alla scope-kolumner. Admin-vyn för audit är medvetet cross-tenant (D-16 undantag); v2-tillägget "scope to my vårdenhet" är ett WHERE-tillägg eftersom kolumnen redan är där. Cursor-paginering (D-105) ger O(page-size) snarare än O(skip+limit), så audit-tabellen tål storleksordningar fler rader. Inga `careUnitId`-kopplade in-memory-cachar delas mellan request — horisontell skalning är drop-in.
+
+[Läs mer: §Audit log §Vad granskas?](#vad-granskas)
+
+### Hur skulle du eftermontera autentisering?
+
+Phase 5 är beviset: vi eftermonterade audit-logging utan att röra en enda Phase 2/3/4-service-fil. Mönstret är Prisma:s `$extends` typed-extensions som inskjuter modellnivå-mellanhand utan att service-koden vet om det (D-83 + D-90). Samma mönster bär per-rad-auktorisering — `$extends` på `findMany` injicerar en `where: { tenantId }`-klausul; service-koden påverkas inte. Den här kodbasen har redan gjort eftermonteringen en gång, för audit.
+
+[Läs mer: §Audit log §Hur audit-hooken fungerar](#hur-audit-hooken-fungerar)
+
+### Vad är du mest stolt över?
+
+Append-only-skyddet på audit-tabellen är fysiskt erforderligt av Postgres, inte av applikationen. Två oberoende lager: migration `0010` skapar rollen `meditrack_app` med REVOKE på UPDATE/DELETE/TRUNCATE på `AuditEvent`, och migration `0008` lägger en BEFORE-trigger som fångar OWNER-sessioner som annars kringgår GRANT/REVOKE. Bägge lager assertas av `audit.integration.test.ts` Test 4 (`UPDATE` rejectas med `permission denied`) och Test 3 (`git grep` för förbjudna patterns returnerar noll). Även om en framtida bidragsgivare skriver `prisma.auditEvent.delete(...)` stoppas hen av tre lager: ESLint på commit, CI-grep på PR, Postgres på runtime.
+
+[Läs mer: §Audit log §Lager 2 — DB-rollbehörigheter + BEFORE-trigger](#lager-2--db-rollbehörigheter--before-trigger)
+
+### Vad är du minst stolt över?
+
+Prisma:s `$extends`-mellanhand ser inte `$queryRaw`-skrivningar — `$executeRaw`-gränsen är blind. Idag är det skadefritt: inga `$executeRaw`-skrivningar finns i produktionskoden och en CI-grep (Test 15 i `audit.integration.test.ts`) assertar det vid varje körning. Men det underliggande gapet finns kvar — en framtida raw-skrivning måste in i en explicit allowlist vid PR-tid, vilket synliggör arkitekturbeslutet snarare än döljer det. Ett v2-fix vore att intercepta `$executeRaw` i mellanhanden eller route alla raw-skrivningar via en service-funktion som är avlyssnad.
+
+[Läs mer: §Audit log §§6 supporting bullets](#6-supporting-bullets)
+
+### Vad kostar systemet att köra?
+
+En PostgreSQL-instans och två Node-containers — ingen Redis, ingen meddelandekö, ingen SSE/WebSocket-infrastruktur. På en small DigitalOcean-droplet eller motsvarande hamnar grundkostnaden under $30/mån. AI-tilläget tillkommer endast när användaren klickar `Hämta AI-förslag`: cirka `$0.0001 per claude-haiku-4-5 tool_use`-anrop; vi har medvetet inte backfill-klassificerat de 43 538 NPL-läkemedlen vid seed eftersom kostnaden ($4 per `docker compose up`) inte motiverades på en demo (D-115). Stockholms-vårdenhet med 100 beställningar/dag ger AI-kostnad under $1/månad.
+
+### Hur skulle du övervaka det i produktion?
+
+Idag har vi audit-log (säkerhets-observability) och strukturerade Fastify-loggar till stdout — det berättar exakt vem som gjorde vad och när. Produktion skulle lägga till en OpenTelemetry-collector för traces, en log-shipper till Loki eller Splunk för aggregering, och en Prometheus-exporter för per-route latens och felfrekvens. Vi har medvetet INTE byggt observability-infrastrukturen i denna byggnad eftersom den lägger till tre tjänster för marginellt signalvärde i en demo (D-125).
+
+[Läs mer: §Audit log §Hur audit-hooken fungerar](#hur-audit-hooken-fungerar)
 
 ## Vad ligger var?
 
@@ -640,7 +698,29 @@ producerar en orphan.
 
 #### §6 supporting bullets
 
-<!-- §6 supporting bullets — populated by Slice 5 -->
+1. **Samtidighet — `pg_locks`-baserad serialisering.** `apps/api/test/orders.deliver.integration.test.ts` Test 8 observerar Postgres' radlås under en konkurrerande leverans via en `pg_locks`-poll som bekräftar att Tx-B blockeras på DB-nivå; vinnaren commitar, förloraren rullas tillbaka (D-79 CUM-batch `FOR UPDATE`).
+
+2. **Audit-loggen ljuger inte — rollback-säkerhet.** `audit.integration.test.ts` Test 2 framtvingar ett `Error` inuti `prisma.$transaction`; resultat: noll `audit_events`-rader skrivs för den rullbackade mutationen (D-91 transaktionskontrakt — mellanhanden routar `auditEvent.create` genom samma tx-klient).
+
+3. **Append-only — kodfrånvaro.** `audit.integration.test.ts` Test 3 kör `git grep -nE 'prisma\.auditEvent\.(update|delete|deleteMany|updateMany|upsert)\b' apps packages`; matchar noll. ESLint-regel `no-restricted-syntax` i `.eslintrc.cjs` skär bort patterns före commit (D-99).
+
+4. **Append-only — DB-lager.** `audit.integration.test.ts` Test 4 utför `UPDATE "AuditEvent" SET ...` via `prisma.$executeRawUnsafe`; Postgres returnerar `permission denied` med SQLSTATE `42501` från BEFORE-triggern i migration `0008_audit_events_revoke_grants` (aktiv för OWNER-sessioner) och från REVOKE i migration `0010_audit_events_named_app_role` (aktiv för `meditrack_app` runtime-sessioner).
+
+5. **Named role split — REVOKE-skydd.** Migration `0010_audit_events_named_app_role` skapar `meditrack_app` som non-owner-roll och REVOKE:ar UPDATE/DELETE/TRUNCATE på `AuditEvent`; `DATABASE_URL` ansluter som `meditrack_app` (runtime), `DIRECT_URL` ansluter som owner (migrationer + seed) (D-98).
+
+6. **Per-concern ALS — request-context utan globals.** `actorALS`, `activeTxStackALS` och `actionOverrideALS` är tre oberoende `AsyncLocalStorage`-instanser sådda av Fastify `onRequest`-hook via `als.run(scope, () => done())` (3-arg-signaturen, NOT `enterWith`; Plan 05-06 review fix som stänger CR-04).
+
+7. **Multi-tenancy — `careUnitId`-first.** Service-signaturer tar `careUnitId` som första argument överallt (D-16); admin-vyn för audit är medvetet cross-tenant (D-16 undantag); ett v2 "scope to my vårdenhet"-toggle är ett WHERE-tillägg — kolumnen finns redan på varje `audit_events`-rad.
+
+8. **Cursor-paginering — O(page-size).** `GET /api/audit/events` använder base64-encodad `{createdAt, id}`-cursor med deterministisk OR-pair WHERE för same-millisecond tiebreak; `take: limit+1` detekterar `hasMore` utan COUNT (D-105); skalar till storleksordningar fler rader än offset-paginering.
+
+9. **Eftermontering av authz — samma `$extends`-mönster.** Phase 5 eftermonterade audit-logging utan att röra Phase 2/3/4 service-filer; samma `query: { findMany: ... }`-mellanhand injicerar en `where: { tenantId }`-klausul för per-rad authz (D-83 + D-90 — `apps/api/src/db/auditExtension.ts` är mönstret).
+
+10. **CR-02 — entityId backstop.** Migration `0011` BEFORE INSERT-trigger förkastar `audit_events.entityId` = '' eller NULL; `auth.ratelimit.test.ts` täcker att `auth_attempt`-events skriver attemptedEmail som `entityId` (WR-07 closure från Plan 05-05).
+
+11. **`$queryRaw` blind-spot — CI grep guard.** `audit.integration.test.ts` Test 15 kör `git grep` efter `$executeRaw` i `apps/` och `packages/` med en allowlist; matchar noll utanför allowlisten vid varje körning — detta är den underliggande begränsningen i `$extends`-mellanhanden (§6 "minst stolt över"-svaret).
+
+12. **Login rate-limit — bucket-isolerad.** `@fastify/rate-limit` per-(email, IP)-bucket och per-IP-bucket på `POST /api/auth/login`; `auth.ratelimit.test.ts` (4 tester: 11:e försöket ger 429, rate-limited försök skriver ingen audit-rad, per-email-bucket-isolering, legitimt första inlogg opåverkat) verifierar nested- och parallel-invariants.
 
 #### Lärdomar
 
