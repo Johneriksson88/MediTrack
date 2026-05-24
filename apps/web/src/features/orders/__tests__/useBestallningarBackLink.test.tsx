@@ -87,12 +87,14 @@ describe('useBestallningarBackLink', () => {
 
   describe('(5) recompute on rerender (D-154)', () => {
     it('updates `to` when fallbackStatus changes between renders', () => {
+      type StatusTab = 'utkast' | 'skickad' | 'bekraftad' | 'levererad' | 'alla';
+      type Props = { fallbackStatus?: StatusTab };
+      const initialProps: Props = { fallbackStatus: 'skickad' };
       const { result, rerender } = renderHook(
-        ({ fallbackStatus }: { fallbackStatus?: 'utkast' | 'skickad' | 'bekraftad' | 'levererad' | 'alla' }) =>
-          useBestallningarBackLink({ fallbackStatus }),
+        ({ fallbackStatus }: Props) => useBestallningarBackLink({ fallbackStatus }),
         {
           wrapper: makeWrapper('/'),
-          initialProps: { fallbackStatus: 'skickad' as const },
+          initialProps,
         },
       );
       expect(result.current.to).toBe('/bestallningar?status=skickad');
