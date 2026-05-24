@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
  * Card geometry: the summary header (chip row, actor, time, diff summary)
  * is the click target — implemented as a <button> nested inside the card
  * frame. The expanded diff panel sits OUTSIDE the button so its internal
- * interactive elements (<Link> requestId chip, <Button> Kopiera permalink)
+ * interactive elements (<Link> requestId chip, <Button> Kopiera filterlänk)
  * are valid HTML (no nested interactive content).
  *
  * a11y label mirrors AuditTable: `Visa detaljer för ... ` / `Dölj detaljer för ...`.

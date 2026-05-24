@@ -27,7 +27,7 @@ import { computeChangedKeys } from './auditDiffSummary';
  *       left: <RequestIdGroupChip> when siblingCount > 1 OR requestId set
  *       right: ISO timestamp (text-xs font-mono)
  *   - Diff <Table>: Fält | Före | Efter (locked widths)
- *   - Footer (flex justify-end): <Button variant="ghost"> "Kopiera permalink"
+ *   - Footer (flex justify-end): <Button variant="ghost"> "Kopiera filterlänk"
  *
  * Value rendering rules per UI-SPEC §5:
  *   string/number/boolean/Date → font-mono whitespace-pre-wrap break-all
@@ -199,7 +199,7 @@ export function AuditDiffPanel({ event, siblingCount = 1 }: AuditDiffPanelProps)
         </Table>
       </div>
 
-      {/* Footer — Kopiera permalink */}
+      {/* Footer — Kopiera filterlänk */}
       <div className="flex justify-end mt-3">
         <Button
           variant="ghost"
@@ -208,7 +208,7 @@ export function AuditDiffPanel({ event, siblingCount = 1 }: AuditDiffPanelProps)
           type="button"
         >
           <Link2 className="h-3.5 w-3.5 mr-1" aria-hidden="true" />
-          Kopiera permalink
+          Kopiera filterlänk
         </Button>
       </div>
     </div>
