@@ -34,6 +34,13 @@ import type { LowStockListResponse, TherapeuticClass } from '@meditrack/shared';
  *   concatenation. `therapeuticClass` is selected as `NULL::text`
  *   because Plan 02's migration has not landed yet; Plan 02 swaps
  *   that to `m."therapeuticClass"`.
+ *
+ * Phase 8 D-138 — SELECT widened with `atcCode` / `form` / `strength` so
+ *   `order.service.listPickerSuggestions` consumes this function verbatim for
+ *   its Lågt lager half. Single source of truth for the urgency-sorted
+ *   low-stock query — no duplicate `$queryRaw` exists anywhere in the codebase.
+ *   The existing dashboard banner ignores the new fields; the order picker
+ *   renders them in its row subtitle.
  */
 
 /**
@@ -54,6 +61,9 @@ export async function listLowStockForUnit(
       careUnitMedicationId: string;
       medicationId: string;
       name: string;
+      atcCode: string;
+      form: string;
+      strength: string | null;
       currentStock: number;
       lowStockThreshold: number;
       therapeuticClass: TherapeuticClass | null;
@@ -62,6 +72,9 @@ export async function listLowStockForUnit(
     SELECT cum."id" AS "careUnitMedicationId",
            m."id" AS "medicationId",
            m."name",
+           m."atcCode",
+           m."form",
+           m."strength",
            cum."currentStock",
            cum."lowStockThreshold",
            -- Phase 6 Plan 02: column is now present on Medication (migration

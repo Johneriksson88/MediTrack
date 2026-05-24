@@ -14,7 +14,10 @@ import type {
   OrderListResponse,
   OrderLineResponse,
   PickerOption,
+  PickerSuggestion,
+  PickerSuggestionsResponse,
 } from '@meditrack/shared';
+import { listLowStockForUnit } from './dashboard.service.js';
 
 /**
  * Phase 3 D-16 / D-66 — careUnitId-first service layer for Order CRUD.
@@ -885,6 +888,110 @@ export async function searchPickerOptions(
     currentStock: r.currentStock,
     lowStockThreshold: r.lowStockThreshold,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Picker suggestions — GET /api/orders/picker-suggestions (D-135, D-136, D-138, ORD-08)
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns deduplicated pre-search suggestions for the MedicationPickerSheet.
+ *
+ * D-16: careUnitId is the FIRST argument (cross-tenant isolation).
+ * D-135: Service-layer dedupe — no careUnitMedicationId appears in both
+ *   arrays. Lågt lager wins; Mest beställda pulls the 6th-ranked when a
+ *   top-5 row collides with the low-stock set.
+ * D-136: Most-ordered uses ALL-TIME window (no date filter). LIMIT 6 so the
+ *   dedupe pass can pull the 6th-ranked entry when a top-5 collides.
+ * D-138: Reuses `listLowStockForUnit` (dashboard.service) for the Lågt lager
+ *   half — no duplicate $queryRaw anywhere in the codebase. The dashboard
+ *   SELECT was widened (Phase 8) to include atcCode/form/strength so the
+ *   returned rows conform to PickerSuggestion shape.
+ * T-08-02: (1) requirePermission('order:create') preHandler on the route.
+ *   (2) Scope assertion: loads the order and throws NotFoundError if it does
+ *   not belong to careUnitId — same disclosure-safe pattern as loadOrder.
+ *   (3) Parameterized WHERE cum."careUnitId" = ${careUnitId} on the raw query.
+ *   (4) listLowStockForUnit inherits the same parameterized WHERE binding.
+ */
+export async function listPickerSuggestions(
+  careUnitId: string,
+  orderId: string,
+): Promise<PickerSuggestionsResponse> {
+  // T-08-02 scope assertion: the order must belong to the caller's careUnit.
+  // NotFoundError (404) rather than 403 — D-73 disclosure-safe pattern.
+  const orderRow = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { careUnitId: true },
+  });
+  if (!orderRow || orderRow.careUnitId !== careUnitId) {
+    throw new NotFoundError('Beställning hittades inte.');
+  }
+
+  // Most-ordered query (D-136): LIMIT 6 so dedupe can pull the 6th-ranked.
+  // Parameterized ${careUnitId} — no string concatenation (T-08-02 layer 4).
+  const mostOrderedRaw = await prisma.$queryRaw<
+    Array<{
+      careUnitMedicationId: string;
+      medicationId: string;
+      name: string;
+      atcCode: string;
+      form: string;
+      strength: string | null;
+      currentStock: number;
+      lowStockThreshold: number;
+      orderCount: bigint;
+    }>
+  >`
+    SELECT cum."id" AS "careUnitMedicationId",
+           m."id" AS "medicationId",
+           m."name",
+           m."atcCode",
+           m."form",
+           m."strength",
+           cum."currentStock",
+           cum."lowStockThreshold",
+           COUNT(ol."id") AS "orderCount"
+    FROM "CareUnitMedication" cum
+    JOIN "Medication" m ON cum."medicationId" = m."id"
+    LEFT JOIN "OrderLine" ol ON ol."careUnitMedicationId" = cum."id"
+    WHERE cum."careUnitId" = ${careUnitId}
+      AND cum."deletedAt" IS NULL
+    GROUP BY cum."id", m."id", m."name", m."atcCode", m."form", m."strength", cum."currentStock", cum."lowStockThreshold"
+    ORDER BY COUNT(ol."id") DESC, LOWER(m."name") ASC
+    LIMIT 6
+  `;
+
+  // Low-stock half (D-138): reuse listLowStockForUnit verbatim — no second $queryRaw.
+  const lowStockResult = await listLowStockForUnit(careUnitId);
+  const lowStock: PickerSuggestion[] = lowStockResult.rows.slice(0, 5).map((r) => ({
+    careUnitMedicationId: r.careUnitMedicationId,
+    medicationId: r.medicationId,
+    name: r.name,
+    atcCode: r.atcCode,
+    form: r.form,
+    strength: r.strength,
+    currentStock: r.currentStock,
+    lowStockThreshold: r.lowStockThreshold,
+  }));
+
+  // Dedupe (D-135): build a Set of low-stock careUnitMedicationIds.
+  // Filter the LIMIT-6 most-ordered list, then slice to 5.
+  const lowStockIds = new Set(lowStock.map((r) => r.careUnitMedicationId));
+  const mostOrdered: PickerSuggestion[] = mostOrderedRaw
+    .filter((r) => !lowStockIds.has(r.careUnitMedicationId))
+    .slice(0, 5)
+    .map((r) => ({
+      careUnitMedicationId: r.careUnitMedicationId,
+      medicationId: r.medicationId,
+      name: r.name,
+      atcCode: r.atcCode,
+      form: r.form,
+      strength: r.strength,
+      currentStock: Number(r.currentStock),
+      lowStockThreshold: Number(r.lowStockThreshold),
+    }));
+
+  return { mostOrdered, lowStock };
 }
 
 // ---------------------------------------------------------------------------

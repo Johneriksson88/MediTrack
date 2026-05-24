@@ -33,12 +33,16 @@ import { therapeuticClassEnum } from '../constants/therapeuticClass.js';
 
 /**
  * One row in the dashboard low-stock list. Mirrors the relevant subset
- * of medicationListItem; drops fields the banner does not show
- * (atcCode, form, strength, source) and adds `therapeuticClass` for
- * Phase 6 Plan 02's filter integration (currently a free-string nullable
- * placeholder; see TODO below).
+ * of medicationListItem.
  *
- * `therapeuticClass` is included now (Plan 01) so the wire shape is
+ * Phase 8 D-138 — widened with `atcCode` / `form` / `strength` so
+ * `listLowStockForUnit` callers (dashboard banner + order picker suggestions)
+ * consume the same row shape. The banner ignores the new fields; the order
+ * picker renders them in its second-line subtitle. Single source of truth
+ * for the urgency-sorted low-stock query — no duplicate query logic anywhere
+ * in the codebase.
+ *
+ * `therapeuticClass` is included (Plan 01) so the wire shape is
  * stable across the phase — Plan 03's AI suggestion flow will populate
  * the column for selected meds and the dashboard row will surface it
  * without a second contract bump.
@@ -49,6 +53,12 @@ export const lowStockItem = z.object({
   name: z.string(),
   currentStock: z.number().int().nonnegative(),
   lowStockThreshold: z.number().int().positive(),
+  // Phase 8 D-138 — widened so listLowStockForUnit callers (dashboard banner +
+  // order picker suggestions) consume the same row shape. atcCode and form are
+  // NOT NULL in the Medication table (required by NPL); strength is nullable.
+  atcCode: z.string(),
+  form: z.string(),
+  strength: z.string().nullable(),
   // Phase 6 Plan 02 — upgraded from the Plan-01 placeholder
   // (z.string().nullable()) now that constants/therapeuticClass.ts ships
   // the closed enum. Wire shape is unchanged (still `<nullable string>`);

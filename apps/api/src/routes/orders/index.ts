@@ -8,6 +8,7 @@ import { confirmOrderRoute } from './confirm.js';
 import { deliverOrderRoute } from './deliver.js';
 import { deleteOrderRoute } from './delete.js';
 import { pickerOptionsRoute } from './pickerOptions.js';
+import { pickerSuggestionsRoute } from './pickerSuggestions.js';
 
 /**
  * Order routes barrel — registers all Phase 3 order sub-routes.
@@ -28,6 +29,10 @@ import { pickerOptionsRoute } from './pickerOptions.js';
  */
 export async function orderRoutes(app: FastifyInstance) {
   await app.register(pickerOptionsRoute);
+  // D-65: pickerSuggestionsRoute registered AFTER pickerOptionsRoute and BEFORE
+  // getOrderRoute — both picker* routes must precede :id routes to avoid
+  // Fastify parsing 'picker-suggestions' or 'picker-options' as an :id value.
+  await app.register(pickerSuggestionsRoute);
   await app.register(createOrderRoute);
   await app.register(listOrdersRoute);
   await app.register(getOrderRoute);

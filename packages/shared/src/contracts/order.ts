@@ -238,3 +238,22 @@ export const pickerOptionsResponse = z.object({
   results: z.array(pickerOption),
 });
 export type PickerOptionsResponse = z.infer<typeof pickerOptionsResponse>;
+
+/**
+ * Phase 8 D-138 — picker-suggestions row.
+ * Mirrors pickerOption + `medicationId` (the global Medication id, surfaced
+ * for free from the listLowStockForUnit join — keeps the two arrays homogeneous).
+ */
+export const pickerSuggestion = pickerOption.extend({ medicationId: z.string() });
+export type PickerSuggestion = z.infer<typeof pickerSuggestion>;
+
+/**
+ * Phase 8 D-135 + D-138 — GET /api/orders/picker-suggestions response.
+ * Service-layer dedupe guarantees no careUnitMedicationId appears in both
+ * arrays (Lågt lager wins; Mest beställda pulls the 6th-ranked).
+ */
+export const pickerSuggestionsResponse = z.object({
+  mostOrdered: z.array(pickerSuggestion),
+  lowStock: z.array(pickerSuggestion),
+});
+export type PickerSuggestionsResponse = z.infer<typeof pickerSuggestionsResponse>;

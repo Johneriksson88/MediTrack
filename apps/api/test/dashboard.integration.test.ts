@@ -83,6 +83,11 @@ describe('GET /api/dashboard/low-stock', () => {
     expect(sample.currentStock).toBeLessThan(sample.lowStockThreshold);
     // therapeuticClass is currently NULL::text on every row (Plan 02 will populate).
     expect(sample.therapeuticClass).toBeNull();
+    // Phase 8 D-138 — widened row shape (atcCode / form / strength).
+    expect(typeof sample.atcCode).toBe('string');
+    expect(typeof sample.form).toBe('string');
+    // strength is z.string().nullable() — accept either.
+    expect(sample.strength === null || typeof sample.strength === 'string').toBe(true);
 
     // Sort: (currentStock / lowStockThreshold) ASC, then name ASC.
     // Check the first 5 rows (or fewer if total < 5) — comparing every pair
