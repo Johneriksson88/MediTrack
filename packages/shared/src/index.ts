@@ -89,11 +89,16 @@ export {
   type AuditFiltersResponse,
 } from './contracts/audit.js';
 // Dashboard contracts — Phase 6 D-08 / D-120 / NTF-01 (FE↔BE dashboard low-stock API)
+// and Phase 9 D-141 / D-142 (FE↔BE dashboard orders API — role-discriminated)
 export {
   lowStockItem,
   type LowStockItem,
   lowStockListResponse,
   type LowStockListResponse,
+  dashboardOrderRow,
+  type DashboardOrderRow,
+  dashboardOrdersResponse,
+  type DashboardOrdersResponse,
 } from './contracts/dashboard.js';
 // AI categorization contracts — Phase 6 D-08 / D-106 / D-111 (FE↔BE AI suggestion API)
 export {
