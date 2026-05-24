@@ -1,9 +1,10 @@
 # Roadmap: MediTrack
 
 **Created:** 2026-05-19
+**Last updated:** 2026-05-24 — phases 8–11 added (post-Phase-7 scope expansion before final submission)
 **Mode:** Vertical MVP (per-phase) — each phase ships an end-to-end demonstrable slice (DB → API → UI → tests).
-**Total phases:** 7
-**Total v1 requirements:** 38 (all mapped, no orphans)
+**Total phases:** 11 (1–7 complete; 8–11 added 2026-05-24)
+**Total v1 requirements:** 47 (all mapped, no orphans)
 **Target submission:** within 7 days of `2026-05-19` (brief deadline)
 
 ## Sequencing Principles
@@ -25,6 +26,10 @@
 | 5 | Audit Log | 11/11 | Complete   | 2026-05-23 |
 | 6 | AI Categorization & Low-Stock Notifications | 3/3 | Complete   | 2026-05-23 |
 | 7 | Ops & Submission Polish | 10/10 | Complete   | 2026-05-24 |
+| 8 | Compose & Catalog UX | — | Pending | — |
+| 9 | Dashboard Depth + Back-Nav | — | Pending | — |
+| 10 | Order Numbers | — | Pending | — |
+| 11 | Quick Polish | — | Pending | — |
 
 ## Phase Details
 
@@ -155,6 +160,52 @@
 3. `git log --oneline` reads as a coherent narrative — every commit atomic, conventional-commits style, no "wip" or "fix typo".
 4. Final mobile-first verification pass: the four required breakpoints render correctly on every primary screen (login, catalog, order create, order history, audit, dashboard).
 
+### Phase 8: Compose & Catalog UX
+**Goal:** Sharpen the two medication picker surfaces (catalog `MedicationSheet` and compose-order `MedicationPickerSheet`) so users find drugs faster, create new ones without confusion, and never see a confusing "Inget läkemedel matchade" when the real cause is D-45 exclusion.
+**Mode:** mvp
+**UI hint:** yes
+**Requirements:** CAT-08, CAT-09, CAT-10, ORD-08
+**Success Criteria:**
+1. Add-medication picker shows "Skapa nytt läkemedel" as an always-visible primary action above the typeahead — surfaceable without typing.
+2. ATC-code input on the Add-medication form is a combobox preloaded with every unique ATC code from the global NPL catalog; the combobox component is shared with the LakemedelFilter ATC selector (single source of truth — no fork).
+3. Add-medication picker shows distinct empty states: "Alla träffar finns redan i din vårdenhet" when D-45 excludes everything, vs "Inget i NPL matchade `{q}`" when the global catalog has no match for the query.
+4. Compose-order picker surfaces 10 suggestions before any search input — combining most-ordered medications (by order-line count for the user's vårdenhet) and low-stock items (below their threshold), deduplicated.
+5. Suggestions block hides after the user starts typing (≥1 char) and reappears when the query is cleared.
+
+### Phase 9: Dashboard Depth + Back-Nav
+**Goal:** Make `/dashboard` a useful first-screen by adding a role-scoped "Beställningar" card showing orders requiring the user's attention, and fix the routing bug where Tillbaka från orderdetalj drops the previously-active status tab.
+**Mode:** mvp
+**UI hint:** yes
+**Requirements:** ORD-09, ORD-10
+**Success Criteria:**
+1. Dashboard renders a new "Beställningar" card alongside the existing "Läkemedel under tröskel" card; content varies by role:
+   - `sjukskoterska` sees: Egna Utkast count + recent order history
+   - `apotekare` / `admin` sees: Skickad-att-bekräfta count + Bekräftad-att-leverera count
+2. Each card item links to the corresponding `/bestallningar` tab and pre-selects it (no manual tab click required).
+3. When a user reaches `/bestallningar/:id` from a non-default tab (e.g. Bekräftade) and clicks "Tillbaka till beställningar", they return to the same tab — not the default Utkast tab.
+4. The fix works whether the detail view was reached from a tab click, a deep link, or the new dashboard card (Phase 9 #1).
+
+### Phase 10: Order Numbers
+**Goal:** Every order has a generated, human-readable order number persisted in the database and visible everywhere an order is rendered. Replaces today's bare cuid for user-facing reference.
+**Mode:** mvp
+**UI hint:** yes (UI changes are display-only — no new pages)
+**Requirements:** ORD-11
+**Success Criteria:**
+1. Prisma migration adds `orderNumber` to `Order` (NOT NULL after backfill, UNIQUE per vårdenhet). Generation strategy decided in discuss-phase (e.g. `ORD-2026-0001` per-vårdenhet sequence, or year-prefixed monotonic — to be motivated against alternatives).
+2. `POST /api/orders` and downstream status mutations include `orderNumber` in the response payload; existing tests updated.
+3. Existing rows are backfilled by the migration — no rows left with NULL `orderNumber`.
+4. Order number is displayed in every order-rendering surface: BestallningarPage tabs, order detail header, and the Phase 9 dashboard "Beställningar" card.
+5. Order number remains stable across status transitions (the same draft order keeps the same number after submit/confirm/deliver).
+
+### Phase 11: Quick Polish
+**Goal:** Two small UX corrections that didn't fit earlier phases — global access to Logga ut from the top navigation, and clearer guidance copy on Konto for non-admins.
+**Mode:** mvp
+**UI hint:** yes (frontend-only, no backend changes)
+**Requirements:** UX-02, UX-03
+**Success Criteria:**
+1. Top nav exposes a "Logga ut" control visible at every breakpoint — not gated behind the desktop UserPillPopover or a navigation to Konto. Reuses the existing `useLogout` mutation; no new endpoint.
+2. Konto page guidance copy for `sjukskoterska` / `apotekare` reads exactly "Ändringar kan endast göras av administratör." (replaces "Denna åtgärd kräver adminrättigheter.").
+
 ## Coverage Audit
 
 | Phase | REQ Count | REQ-IDs |
@@ -166,16 +217,25 @@
 | 5 | 3 | AUD-01, AUD-02, AUD-03 |
 | 6 | 5 | AI-01, AI-02, AI-03, NTF-01, NTF-02 |
 | 7 | 3 | OPS-01, OPS-02, OPS-04 |
-| **Total** | **38** | All v1 REQ-IDs mapped exactly once ✓ |
+| 8 | 4 | CAT-08, CAT-09, CAT-10, ORD-08 |
+| 9 | 2 | ORD-09, ORD-10 |
+| 10 | 1 | ORD-11 |
+| 11 | 2 | UX-02, UX-03 |
+| **Total** | **47** | All v1 REQ-IDs mapped exactly once ✓ |
 
 ## Cuttability (if time runs short)
 
-If the week tightens unexpectedly, drop in this order:
+If the week tightens unexpectedly, drop in this order. Phases 8–11 are all post-Phase-7 scope expansion and are the **first** to cut — the original v1 spine (1–7) is already submission-ready.
 
-1. **Phase 6** is the cleanest cut — both AI and richer notifications are optional in the brief; demoing without them is still a strong submission.
-2. **Phase 5** can be deferred — audit log is optional in the brief; you'd lose one optional in the README's "with more time" but keep the core loop intact.
-3. **Phase 4 cannot be cut.** Stock + delivery + concurrency is the Core Value; without it the brief's mandatory scope is not met.
-4. **Phase 7 cannot be cut.** Without docker-compose, README, and clean git, the reviewer scoring drops independently of feature completeness.
+1. **Phase 8** is the largest of the added phases and the cleanest cut — picker UX improvements polish an already-working flow.
+2. **Phase 9** can be deferred — dashboard works without the orders card; the back-nav bug (ORD-10) is annoying but not blocking.
+3. **Phase 10** is small but schema-touching; cuttable if migration risk feels too high near the deadline. Cut alongside any Phase 9 dashboard column that references the order number.
+4. **Phase 11** is two trivial frontend changes — ship even if everything else slips.
+5. **Phase 6** is the cleanest cut from the original v1 — both AI and richer notifications are optional in the brief; demoing without them is still a strong submission.
+6. **Phase 5** can be deferred — audit log is optional in the brief; you'd lose one optional in the README's "with more time" but keep the core loop intact.
+7. **Phase 4 cannot be cut.** Stock + delivery + concurrency is the Core Value; without it the brief's mandatory scope is not met.
+8. **Phase 7 cannot be cut.** Without docker-compose, README, and clean git, the reviewer scoring drops independently of feature completeness.
 
 ---
 *Roadmap created: 2026-05-19*
+*Phases 8–11 added: 2026-05-24*

@@ -26,6 +26,9 @@ Requirements for the Medovia interview submission. Each maps to exactly one road
 - [ ] **CAT-05**: User with role `apotekare` or `admin` can add a new medication (name, ATC, form, strength, low-stock threshold)
 - [ ] **CAT-06**: User with role `apotekare` or `admin` can edit an existing medication's fields
 - [ ] **CAT-07**: User with role `apotekare` or `admin` can delete a medication; soft-delete if it has historical order lines or stock movements
+- [ ] **CAT-08**: Add-medication picker exposes "Skapa nytt läkemedel" as an always-visible primary action — reachable without typing in the search input *(Phase 8)*
+- [ ] **CAT-09**: ATC-code input on the Add-medication form is a combobox preloaded with unique ATC codes from the global catalog, reusing the LakemedelFilter ATC selector component *(Phase 8)*
+- [ ] **CAT-10**: Add-medication picker differentiates empty states — "Alla träffar finns redan i din vårdenhet" (D-45 exclusion) vs "Inget i NPL matchade `{q}`" (no global catalog match) *(Phase 8)*
 
 ### Order Flow
 
@@ -36,6 +39,10 @@ Requirements for the Medovia interview submission. Each maps to exactly one road
 - [ ] **ORD-05**: User with role `apotekare` or `admin` can mark a confirmed order as delivered, transitioning `Bekräftad → Levererad`
 - [ ] **ORD-06**: Backend rejects any status transition that does not follow the linear flow (e.g. `Utkast → Bekräftad` is blocked) with HTTP 409 + JSON error
 - [ ] **ORD-07**: User can view the order history for their `vårdenhet`, with status, line items, timestamps, and the user who made each transition
+- [ ] **ORD-08**: Compose-order "Lägg till läkemedel" picker surfaces 10 medication suggestions before any search input — combining most-ordered (by line count for the user's vårdenhet) and low-stock items, deduplicated *(Phase 8)*
+- [ ] **ORD-09**: Dashboard shows a role-scoped "Beställningar" card surfacing orders that need the user's attention — nurses see own Utkast + recent history; apotekare/admin see Skickad-to-confirm + Bekräftad-to-deliver *(Phase 9)*
+- [ ] **ORD-10**: Order detail "Tillbaka till beställningar" returns the user to the previously-active status tab, not the default Utkast tab *(Phase 9)*
+- [ ] **ORD-11**: Every order has a generated, human-readable order number persisted in the database and displayed in every table that lists orders *(Phase 10)*
 
 ### Stock Logic
 
@@ -64,6 +71,8 @@ Requirements for the Medovia interview submission. Each maps to exactly one road
 ### User Experience
 
 - [ ] **UX-01**: Every page renders usably and meets layout expectations across the breakpoint ladder — mobile (360 px), tablet/iPad (768 px), laptop (1024 px), and large desktop (1440 px+). Built mobile-first (base styles target the smallest breakpoint, Tailwind `sm/md/lg/xl` breakpoints layer on enhancements). No horizontal scroll at any breakpoint; primary actions reachable without zoom.
+- [ ] **UX-02**: "Logga ut" is reachable from the global top navigation at every breakpoint — not gated behind the desktop UserPillPopover or a page navigation to Konto *(Phase 11)*
+- [ ] **UX-03**: Konto page guidance for sjukskoterska/apotekare reads "Ändringar kan endast göras av administratör" (replacing "Denna åtgärd kräver adminrättigheter.") *(Phase 11)*
 
 ### Ops / Deliverables
 
@@ -159,12 +168,21 @@ Updated during roadmap creation. Each v1 requirement maps to exactly one phase.
 | OPS-01 | Phase 7 | Pending |
 | OPS-02 | Phase 7 | Pending |
 | OPS-04 | Phase 7 | Pending |
+| CAT-08 | Phase 8 | Pending |
+| CAT-09 | Phase 8 | Pending |
+| CAT-10 | Phase 8 | Pending |
+| ORD-08 | Phase 8 | Pending |
+| ORD-09 | Phase 9 | Pending |
+| ORD-10 | Phase 9 | Pending |
+| ORD-11 | Phase 10 | Pending |
+| UX-02 | Phase 11 | Pending |
+| UX-03 | Phase 11 | Pending |
 
 **Coverage:**
-- v1 requirements: 38 total
-- Mapped to phases: 38
+- v1 requirements: 47 total
+- Mapped to phases: 47
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-05-19*
-*Last updated: 2026-05-19 after initial definition*
+*Last updated: 2026-05-24 — v1 scope expanded with phases 8–11 (compose & catalog UX, dashboard depth, order numbers, polish)*
