@@ -78,7 +78,9 @@ export function BestallningarPage() {
 
   async function handleNyBestallning() {
     const response = await createMutation.mutateAsync();
-    navigate(`/bestallningar/${response.id}`);
+    // Phase 9 D-150 #3 + <discretion> — a new draft always lives in Utkast,
+    // so ?from=utkast is correct regardless of which tab the user is on.
+    navigate(`/bestallningar/${response.id}?from=utkast`);
   }
 
   const isCreating = createMutation.isPending;
@@ -222,12 +224,12 @@ export function BestallningarPage() {
               <>
                 <DraftsTable
                   items={rows}
-                  onRowClick={(row) => navigate(`/bestallningar/${row.id}`)}
+                  onRowClick={(row) => navigate(`/bestallningar/${row.id}?from=utkast`)}
                   className="hidden md:block"
                 />
                 <DraftsCardList
                   items={rows}
-                  onCardClick={(row) => navigate(`/bestallningar/${row.id}`)}
+                  onCardClick={(row) => navigate(`/bestallningar/${row.id}?from=utkast`)}
                   className="block md:hidden"
                 />
               </>

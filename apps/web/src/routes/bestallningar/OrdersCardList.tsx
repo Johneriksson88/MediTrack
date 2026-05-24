@@ -85,7 +85,8 @@ export function OrdersCardList({ rows, tab, className }: OrdersCardListProps) {
             key={row.id}
             type="button"
             aria-label={`Öppna beställning från ${formatRelative(relevantAt)}`}
-            onClick={() => navigate(`/bestallningar/${row.id}`)}
+            // Phase 9 D-150 #2 — the active tab value flows verbatim into ?from=.
+            onClick={() => navigate(`/bestallningar/${row.id}?from=${tab}`)}
             className="w-full text-left bg-card border border-border rounded-lg p-4 shadow-sm
                        cursor-pointer hover:bg-muted/30 focus-visible:outline-none
                        focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"

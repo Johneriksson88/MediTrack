@@ -216,9 +216,10 @@ describe('BestallningarPage', () => {
 
       renderWithProviders(<BestallningarPage />);
 
-      // DraftsCardList renders mobile cards as buttons with aria-label "Öppna beställning från …"
-      // The DraftsTable rows on desktop are clickable TableRows. Click whichever exists.
-      const candidates = screen.getAllByLabelText(/öppna beställning/i);
+      // DraftsTable rows + DraftsCardList cards both carry an aria-label
+      // beginning with 'Öppna utkast' (per DraftsTable.tsx line 67 and
+      // DraftCard.tsx). Either is fine — the navigate target is identical.
+      const candidates = screen.getAllByLabelText(/öppna utkast/i);
       expect(candidates.length).toBeGreaterThan(0);
 
       await user.click(candidates[0]!);
