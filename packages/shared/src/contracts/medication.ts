@@ -129,9 +129,24 @@ export const medicationSearchResult = z.object({
 });
 export type MedicationSearchResult = z.infer<typeof medicationSearchResult>;
 
-/** Response envelope for GET /api/medications/search. */
+/**
+ * Response envelope for GET /api/medications/search.
+ *
+ * D-139 (Phase 8 CAT-10): `globalCatalogMatchCount` is the pre-D-45-exclusion
+ * count of NPL Medication rows matching `q`. It lets the FE distinguish two
+ * empty-state causes:
+ *   - `globalCatalogMatchCount === 0` → NPL truly has no match for the query
+ *     (Variant A: "Inget i NPL matchade »{q}«.")
+ *   - `globalCatalogMatchCount > 0` AND `results.length === 0` → every NPL
+ *     match is already stocked at this vårdenhet and was excluded by D-45
+ *     (Variant B: "Alla träffar finns redan i din vårdenhet.")
+ *
+ * The count query deliberately omits the careUnitMedications exclusion so it
+ * reflects the raw NPL catalog match count before D-45 filtering.
+ */
 export const medicationSearchResponse = z.object({
   results: z.array(medicationSearchResult),
+  globalCatalogMatchCount: z.number().int().nonnegative(),
 });
 export type MedicationSearchResponse = z.infer<typeof medicationSearchResponse>;
 

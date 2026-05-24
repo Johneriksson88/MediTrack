@@ -265,8 +265,19 @@ export async function listMedicationsForUnit(
 
 /**
  * Search global Medication catalog by name or ATC code, excluding drugs
- * already actively stocked at this vårdenhet (D-45). Returns up to `limit`
- * results sorted by name.
+ * already actively stocked at this vårdenhet (D-45).
+ *
+ * D-139 (Phase 8 CAT-10): Returns both:
+ *   - `results`: up to `limit` rows AFTER D-45 exclusion (already-stocked meds
+ *     removed). This is the existing typeahead result set, unchanged.
+ *   - `globalCatalogMatchCount`: the count of NPL Medication rows matching `q`
+ *     BEFORE D-45 exclusion. The count query deliberately omits the
+ *     careUnitMedications filter so it reflects the raw catalog match count.
+ *
+ * Both queries run in parallel via Promise.all (precedent at line 227 in this
+ * file). The asymmetry is intentional: `results` excludes already-stocked meds
+ * (D-45 intent); `globalCatalogMatchCount` counts them (CAT-10 intent — the FE
+ * needs to know "does NPL even have anything?").
  *
  * careUnitId is the FIRST arg even though we read GLOBAL Medication because
  * we must exclude drugs already stocked at this unit (D-16 / D-45).
@@ -274,40 +285,55 @@ export async function listMedicationsForUnit(
 export async function searchGlobalMedications(
   careUnitId: string,
   filters: { q: string; limit: number },
-): Promise<MedicationSearchResult[]> {
+): Promise<{ results: MedicationSearchResult[]; globalCatalogMatchCount: number }> {
   const { q, limit } = filters;
 
-  const results = await prisma.medication.findMany({
-    where: {
-      OR: [
-        { name: { contains: q, mode: 'insensitive' } },
-        { atcCode: { startsWith: q, mode: 'insensitive' } },
-      ],
-      // Exclude medications already actively stocked at this vårdenhet (D-45).
-      careUnitMedications: {
-        none: { careUnitId, deletedAt: null },
-      },
-    },
-    take: limit,
-    orderBy: [{ name: 'asc' }],
-    select: {
-      id: true,
-      name: true,
-      atcCode: true,
-      form: true,
-      strength: true,
-      source: true,
-    },
-  });
+  const nameAtcFilter = {
+    OR: [
+      { name: { contains: q, mode: 'insensitive' as const } },
+      { atcCode: { startsWith: q, mode: 'insensitive' as const } },
+    ],
+  };
 
-  return results.map((r) => ({
-    id: r.id,
-    name: r.name,
-    atcCode: r.atcCode,
-    form: r.form,
-    strength: r.strength,
-    source: r.source as 'npl' | 'user',
-  }));
+  const [rows, globalCatalogMatchCount] = await Promise.all([
+    prisma.medication.findMany({
+      where: {
+        ...nameAtcFilter,
+        // Exclude medications already actively stocked at this vårdenhet (D-45).
+        careUnitMedications: {
+          none: { careUnitId, deletedAt: null },
+        },
+      },
+      take: limit,
+      orderBy: [{ name: 'asc' }],
+      select: {
+        id: true,
+        name: true,
+        atcCode: true,
+        form: true,
+        strength: true,
+        source: true,
+      },
+    }),
+    // D-139: count WITHOUT the D-45 exclusion — pre-filter NPL match count.
+    // This lets the FE distinguish "NPL has no hit" vs "every hit is already
+    // stocked at this vårdenhet" (CAT-10 empty-state differentiation).
+    prisma.medication.count({
+      where: nameAtcFilter,
+    }),
+  ]);
+
+  return {
+    results: rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      atcCode: r.atcCode,
+      form: r.form,
+      strength: r.strength,
+      source: r.source as 'npl' | 'user',
+    })),
+    globalCatalogMatchCount,
+  };
 }
 
 // ---------------------------------------------------------------------------
