@@ -4,7 +4,7 @@ import { screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query';
-import type { AiSuggestionRequest, AiSuggestionResponse, AiStatusResponse } from '@meditrack/shared';
+import type { AiSuggestionRequest, AiSuggestionResponse, AiStatusResponse, AtcCodesResponse } from '@meditrack/shared';
 import type { ApiError } from '@/lib/api';
 import { renderWithProviders } from '../../../../test/helpers/renderWithProviders';
 
@@ -60,6 +60,13 @@ vi.mock('@/features/medications/useMedicationsQuery', () => ({
   })),
 }));
 
+// Phase 8 D-134: user-create ATC field is now a Popover+Command combobox driven
+// by useAtcCodesQuery. Mock the hook so a known code is available to click.
+vi.mock('@/features/medications/useAtcCodesQuery', () => ({
+  useAtcCodesQuery: vi.fn(),
+  ATC_CODES_QUERY_OPTIONS: { queryKey: ['atc-codes'], staleTime: Infinity, refetchOnWindowFocus: false },
+}));
+
 // Mock sonner so Test 7 can assert toast.error was called with the
 // exact Swedish copy.
 vi.mock('sonner', () => ({
@@ -74,6 +81,8 @@ import {
   useDeleteMedication,
 } from '@/features/medications/useMedicationMutations';
 import { useAuth } from '@/auth/useAuth';
+import { useAtcCodesQuery } from '@/features/medications/useAtcCodesQuery';
+import type { UseQueryResult as UseQueryResultType } from '@tanstack/react-query';
 import { MedicationSheet } from '../MedicationSheet';
 
 const mockUseAiAvailability = vi.mocked(useAiAvailability);
@@ -82,6 +91,7 @@ const mockUseCreateMedication = vi.mocked(useCreateMedication);
 const mockUseUpdateMedication = vi.mocked(useUpdateMedication);
 const mockUseDeleteMedication = vi.mocked(useDeleteMedication);
 const mockUseAuth = vi.mocked(useAuth);
+const mockUseAtcCodesQuery = vi.mocked(useAtcCodesQuery);
 const mockToastError = vi.mocked(toast.error);
 
 // ---------------------------------------------------------------------------
@@ -183,7 +193,27 @@ beforeEach(() => {
   mockUseCreateMedication.mockReturnValue(mutStub<ReturnType<typeof useCreateMedication>>());
   mockUseUpdateMedication.mockReturnValue(mutStub<ReturnType<typeof useUpdateMedication>>());
   mockUseDeleteMedication.mockReturnValue(mutStub<ReturnType<typeof useDeleteMedication>>());
+  // Phase 8 D-134: prime the ATC combobox with a known code so selectAtcCode()
+  // can click a real row instead of typing into a free-text input.
+  mockUseAtcCodesQuery.mockReturnValue({
+    data: { codes: ['J01CA04'] },
+    isLoading: false,
+    isError: false,
+  } as UseQueryResultType<AtcCodesResponse, ApiError>);
 });
+
+// Phase 8 D-134: the user-create ATC field is now a Popover+Command combobox,
+// not a free-text input. Open the trigger, then click the row whose visible
+// text equals the code (works for both the served-codes list and the
+// free-text fallback row, since both render the uppercased code as text).
+async function selectAtcCode(
+  user: ReturnType<typeof userEvent.setup>,
+  code: string,
+) {
+  await user.click(screen.getByRole('combobox', { name: 'Välj ATC-kod' }));
+  const row = await screen.findByText(code);
+  await user.click(row);
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -261,9 +291,8 @@ describe('MedicationSheet — AI categorization block', () => {
 
     // Fill name + atcCode (the form watches these to enable the button).
     const nameInput = screen.getByLabelText('Namn');
-    const atcInput = screen.getByLabelText('ATC-kod');
     await user.type(nameInput, 'Amoxicillin');
-    await user.type(atcInput, 'J01CA04');
+    await selectAtcCode(user, 'J01CA04');
 
     // Click "Hämta AI-förslag".
     const button = await screen.findByRole('button', { name: /Hämta AI-förslag/ });
@@ -309,7 +338,7 @@ describe('MedicationSheet — AI categorization block', () => {
     await user.click(await screen.findByRole('button', { name: 'Skapa nytt läkemedel' }));
 
     await user.type(screen.getByLabelText('Namn'), 'Amoxicillin');
-    await user.type(screen.getByLabelText('ATC-kod'), 'J01CA04');
+    await selectAtcCode(user, 'J01CA04');
 
     // Before clicking apply: the Slutgiltig klass combobox trigger shows
     // its placeholder text "Välj terapeutisk klass" (Plan 02 default).
@@ -347,7 +376,7 @@ describe('MedicationSheet — AI categorization block', () => {
     await user.type(typeahead, 'XYZNoMatch');
     await user.click(await screen.findByRole('button', { name: 'Skapa nytt läkemedel' }));
     await user.type(screen.getByLabelText('Namn'), 'Amoxicillin');
-    await user.type(screen.getByLabelText('ATC-kod'), 'J01CA04');
+    await selectAtcCode(user, 'J01CA04');
 
     // Fetch + apply (puts 'J' in Slutgiltig klass).
     await user.click(await screen.findByRole('button', { name: /Hämta AI-förslag/ }));
@@ -439,7 +468,7 @@ describe('MedicationSheet — AI categorization block', () => {
     await user.type(typeahead, 'XYZNoMatch');
     await user.click(await screen.findByRole('button', { name: 'Skapa nytt läkemedel' }));
     await user.type(screen.getByLabelText('Namn'), 'Amoxicillin');
-    await user.type(screen.getByLabelText('ATC-kod'), 'J01CA04');
+    await selectAtcCode(user, 'J01CA04');
 
     await user.click(await screen.findByRole('button', { name: /Hämta AI-förslag/ }));
 
