@@ -38,6 +38,8 @@ import { fetchJson, type ApiError } from '@/lib/api';
  *
  * onSuccess: invalidates ['orders', { status: 'utkast' }] so the drafts
  * list refreshes to show the new empty draft when the user navigates back.
+ * Phase 9 D-148: also invalidates ['dashboard', 'orders'] so the nurse's
+ * Egna utkast section on the dashboard reflects the new draft.
  *
  * onError: toasts 'Kunde inte spara — försök igen.' (D-70 copy).
  *
@@ -54,6 +56,8 @@ export function useCreateDraftOrder() {
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['orders', { status: 'utkast' }] });
+      // Phase 9 D-148: dashboard orders card uses its own dedicated cache key (D-141).
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'orders'] });
     },
     onError: () => {
       toast.error('Kunde inte spara — försök igen.');
@@ -233,6 +237,8 @@ export function useRemoveOrderLine() {
  * D-57: On success, hydrates ['order', orderId] cache with the full updated Order
  * (including status: 'skickad', submittedAt, submittedByUserId) + invalidates
  * ['orders', { status: 'utkast' }] so the draft disappears from the list.
+ * Phase 9 D-148: also invalidates ['dashboard', 'orders'] so the pharmacist's
+ * Skickad-att-bekräfta section gains the newly-submitted order.
  *
  * Toast policy (UI-SPEC §Toast Feedback):
  *   - Success: silent — the OrderStatusPill flip + SubmitConfirmationBanner is the feedback.
@@ -253,6 +259,8 @@ export function useSubmitOrder() {
       queryClient.setQueryData(['order', vars.orderId], response);
       // Invalidate drafts list so the just-submitted order disappears (D-57).
       void queryClient.invalidateQueries({ queryKey: ['orders', { status: 'utkast' }] });
+      // Phase 9 D-148: dashboard orders card uses its own dedicated cache key (D-141).
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'orders'] });
     },
     onError: (err, vars) => {
       // D-55: 409 order_locked carve-out.
@@ -275,6 +283,8 @@ export function useSubmitOrder() {
  * (including status: 'bekraftad', confirmedAt, confirmedBy) + invalidates both
  * ['orders', { status: 'skickad' }] (source tab loses a row) and
  * ['orders', { status: 'bekraftad' }] (destination gains one).
+ * Phase 9 D-148: also invalidates ['dashboard', 'orders'] so the pharmacist's
+ * Väntar-på-bekräftelse count drops and Väntar-på-leverans count climbs.
  *
  * Toast policy (UI-SPEC §Toast Feedback):
  *   - Success: toast.success('Bekräftad') (D-83)
@@ -297,6 +307,8 @@ export function useConfirmOrder() {
       // Invalidate both status lists (source tab loses, destination gains).
       void queryClient.invalidateQueries({ queryKey: ['orders', { status: 'skickad' }] });
       void queryClient.invalidateQueries({ queryKey: ['orders', { status: 'bekraftad' }] });
+      // Phase 9 D-148: dashboard orders card uses its own dedicated cache key (D-141).
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'orders'] });
       toast.success('Bekräftad');
     },
     onError: (err, vars) => {
@@ -337,6 +349,8 @@ export function useConfirmOrder() {
  * Phase 6 NTF-02 (D-119 / D-120): also invalidates ['dashboard', 'low-stock']
  * — the dashboard banner uses its own dedicated cache key per D-120 so it
  * can refresh independently of /lakemedel's filter state.
+ * Phase 9 D-148: also invalidates ['dashboard', 'orders'] so the pharmacist's
+ * Väntar-på-leverans count drops the moment the order leaves Bekräftad.
  *
  * Toast policy (UI-SPEC §Toast Feedback):
  *   - Success: toast.success('Levererad — lagret uppdaterat') (D-83)
@@ -364,6 +378,8 @@ export function useDeliverOrder() {
       void queryClient.invalidateQueries({ queryKey: ['medications'] });
       // Phase 6 D-119 / NTF-02: dashboard banner uses its own dedicated cache key (D-120).
       void queryClient.invalidateQueries({ queryKey: ['dashboard', 'low-stock'] });
+      // Phase 9 D-148: dashboard orders card uses its own dedicated cache key (D-141).
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'orders'] });
       toast.success('Levererad — lagret uppdaterat');
     },
     onError: (err, vars) => {
@@ -405,6 +421,8 @@ export function useDeliverOrder() {
  *
  * PESSIMISTIC (D-52): waits for the 204 response before navigating.
  * On success: invalidates ['orders', { status: 'utkast' }] so the list refreshes.
+ * Phase 9 D-148: also invalidates ['dashboard', 'orders'] so the nurse's
+ * Egna utkast section drops the discarded draft.
  * Navigation to /bestallningar is performed by the caller (ComposeOrderPage) after
  * awaiting mutateAsync — the hook is page-agnostic.
  *
@@ -424,6 +442,8 @@ export function useDiscardOrder() {
     onSuccess: (_data, vars) => {
       // Invalidate drafts list so the discarded draft disappears.
       void queryClient.invalidateQueries({ queryKey: ['orders', { status: 'utkast' }] });
+      // Phase 9 D-148: dashboard orders card uses its own dedicated cache key (D-141).
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'orders'] });
       // Optionally remove the single-order cache entry.
       queryClient.removeQueries({ queryKey: ['order', vars.orderId] });
     },
