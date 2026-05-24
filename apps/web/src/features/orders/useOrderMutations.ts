@@ -93,6 +93,9 @@ export function useAddOrderLine() {
     onSuccess: (response, vars) => {
       // D-57: cache hydration — response is the full updated Order.
       queryClient.setQueryData(['order', vars.orderId], response);
+      // Phase 8 D-138: a freshly-added line can shift the most-ordered ranking;
+      // refetch on next picker open so the suggestions reflect the new line.
+      void queryClient.invalidateQueries({ queryKey: ['order-picker-suggestions', vars.orderId] });
     },
     onError: (err, vars) => {
       // D-55: 409 order_locked — destructive toast + refetch so page enters Mode B.
