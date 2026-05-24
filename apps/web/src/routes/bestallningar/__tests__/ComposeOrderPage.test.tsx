@@ -140,6 +140,16 @@ const MOCK_ORDER_SKICKAD: OrderResponse = {
   status: 'skickad',
 } as unknown as OrderResponse;
 
+/** Phase 9 ORD-10 — non-utkast mock used by back-link fallback tests (D-153). */
+const MOCK_ORDER_BEKRAFTAD: OrderResponse = {
+  ...MOCK_ORDER_UTKAST,
+  status: 'bekraftad',
+  submittedAt: new Date().toISOString(),
+  submittedBy: { id: 'u-nurse', name: 'Sara Sjuksköterska' },
+  confirmedAt: new Date().toISOString(),
+  confirmedBy: { id: 'u-apotekare', name: 'Anna Apotekare' },
+} as unknown as OrderResponse;
+
 function makeIdleMutation() {
   return {
     mutate: vi.fn(),
@@ -206,13 +216,25 @@ function setupOrderQuery(data: OrderResponse | null, error?: Partial<ApiError>) 
   } as unknown as UseQueryResult<OrderResponse, ApiError>);
 }
 
-/** Render ComposeOrderPage inside a router with the :id param set to 'order-1' */
-function renderComposeOrderPage() {
+/** Phase 9 ORD-10 — for back-link tests that exercise the loading state path. */
+function setupOrderQueryLoading() {
+  mockUseOrderQuery.mockReturnValue({
+    data: undefined,
+    isLoading: true,
+    isError: false,
+    error: null,
+  } as unknown as UseQueryResult<OrderResponse, ApiError>);
+}
+
+/** Render ComposeOrderPage inside a router with the :id param set to 'order-1'.
+ *  Phase 9 ORD-10: accepts an explicit initialPath so back-nav tests can mount
+ *  with `?from=<status>` query strings (defaults to '/order-1' for back-compat). */
+function renderComposeOrderPage(initialPath: string = '/order-1') {
   return renderWithProviders(
     <Routes>
       <Route path="/:id" element={<ComposeOrderPage />} />
     </Routes>,
-    { initialPath: '/order-1' },
+    { initialPath },
   );
 }
 
@@ -486,6 +508,97 @@ describe('ComposeOrderPage', () => {
 
       // Discard mutation should NOT have been called
       expect(discardFn).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Phase 9 ORD-10 / D-149..D-156 — back-link sites consume useBestallningarBackLink
+  // ---------------------------------------------------------------------------
+
+  describe('(13) Phase 9 — Loading state honors ?from=', () => {
+    it('back-link in loading state has href ending ?status=skickad when ?from=skickad', () => {
+      setupOrderQueryLoading();
+
+      renderComposeOrderPage('/order-1?from=skickad');
+
+      const backLinks = screen.getAllByRole('link', { name: /tillbaka till beställningar/i });
+      expect(backLinks.length).toBeGreaterThan(0);
+      // D-155 — loading state passes fallbackStatus: undefined; ?from= still honored.
+      expect(backLinks[0]!.getAttribute('href')).toBe('/bestallningar?status=skickad');
+    });
+  });
+
+  describe('(14) Phase 9 — 404 state honors ?from= on BOTH back-links', () => {
+    it('both back-link anchors have href ending ?status=bekraftad when ?from=bekraftad', () => {
+      setupOrderQuery(null, {
+        envelope: { error: { code: 'not_found', message: 'Beställningen hittades inte.' } },
+      } as unknown as Partial<ApiError>);
+
+      renderComposeOrderPage('/order-1?from=bekraftad');
+
+      // 404 state renders the inline back link AND the Button-wrapped Link
+      // (sites 2 and 3 in ComposeOrderPage). Both must honor ?from=.
+      const backLinks = screen.getAllByRole('link', { name: /tillbaka till beställningar/i });
+      expect(backLinks.length).toBeGreaterThanOrEqual(2);
+      for (const link of backLinks) {
+        expect(link.getAttribute('href')).toBe('/bestallningar?status=bekraftad');
+      }
+    });
+  });
+
+  describe('(15) Phase 9 — Header back-link uses order.status fallback when ?from= absent (D-153)', () => {
+    it('href ends with ?status=bekraftad when MOCK_ORDER_BEKRAFTAD and no ?from=', () => {
+      setupOrderQuery(MOCK_ORDER_BEKRAFTAD);
+
+      renderComposeOrderPage('/order-1');
+
+      const backLinks = screen.getAllByRole('link', { name: /tillbaka till beställningar/i });
+      expect(backLinks.length).toBeGreaterThan(0);
+      expect(backLinks[0]!.getAttribute('href')).toBe('/bestallningar?status=bekraftad');
+    });
+  });
+
+  describe('(16) Phase 9 — ?from= wins over order.status (D-153 priority)', () => {
+    it('href ends with ?status=alla when ?from=alla even though order.status is bekraftad', () => {
+      setupOrderQuery(MOCK_ORDER_BEKRAFTAD);
+
+      renderComposeOrderPage('/order-1?from=alla');
+
+      const backLinks = screen.getAllByRole('link', { name: /tillbaka till beställningar/i });
+      expect(backLinks.length).toBeGreaterThan(0);
+      // D-153 resolution priority — valid ?from= wins over the caller's
+      // fallbackStatus, regardless of order.status.
+      expect(backLinks[0]!.getAttribute('href')).toBe('/bestallningar?status=alla');
+    });
+  });
+
+  describe('(17) Phase 9 — Post-discard navigates to backLink.to (preserves ?from=)', () => {
+    it('navigate called with /bestallningar?status=skickad after Kasta → confirm with ?from=skickad', async () => {
+      const navigateFn = vi.fn();
+      mockUseNavigate.mockReturnValue(navigateFn);
+      const discardFn = vi.fn().mockResolvedValue(undefined);
+      setupMutations(vi.fn(), vi.fn(), discardFn);
+      setupOrderQuery(MOCK_ORDER_UTKAST);
+
+      renderComposeOrderPage('/order-1?from=skickad');
+
+      // Open dialog
+      const kastaBtns = screen.getAllByRole('button', { name: /^kasta$/i });
+      await act(async () => {
+        fireEvent.click(kastaBtns[0]!);
+      });
+
+      expect(screen.getByText('Kasta detta utkast?')).toBeInTheDocument();
+
+      // Confirm
+      const dialogActionBtn = screen.getByRole('button', { name: /^kasta$/i });
+      await act(async () => {
+        fireEvent.click(dialogActionBtn);
+      });
+
+      expect(discardFn).toHaveBeenCalledWith({ orderId: 'order-1' });
+      // D-152 — post-discard navigate preserves the original tab via backLink.to.
+      expect(navigateFn).toHaveBeenCalledWith('/bestallningar?status=skickad');
     });
   });
 });
