@@ -37,6 +37,7 @@ import {
 import { NplBadge } from '@/components/NplBadge';
 import { AiSuggestionChip } from '@/components/AiSuggestionChip';
 import { TherapeuticClassCombobox } from '@/components/TherapeuticClassCombobox';
+import { AtcCodeCombobox } from '@/components/AtcCodeCombobox';
 import { Can } from '@/auth/Can';
 import { useAuth } from '@/auth/useAuth';
 import { ApiError } from '@/lib/api';
@@ -1156,12 +1157,29 @@ export function MedicationSheet({
                   )}
                 </div>
                 <div>
+                  {/* Phase 8 D-134: AtcCodeCombobox replaces the free-text Input.
+                      Controller bridges react-hook-form ↔ the controlled combobox.
+                      Label htmlFor dropped (combobox owns trigger button id
+                      internally via Radix — orphan-Label pattern, same as the
+                      TherapeuticClassField at line ~1240; documented in UI-SPEC §6).
+                      AI block at line ~1230 reads atcCode via userForm.watch('atcCode')
+                      — same form state, no change to the AI block's input contract. */}
                   <Label htmlFor="user-atc">ATC-kod</Label>
-                  <Input
-                    id="user-atc"
-                    {...userForm.register('atcCode')}
-                    disabled={isPending}
-                    className="mt-1"
+                  <Controller
+                    control={userForm.control}
+                    name="atcCode"
+                    render={({ field }) => (
+                      <AtcCodeCombobox
+                        value={field.value ?? ''}
+                        onChange={field.onChange}
+                        placeholder="Välj ATC-kod"
+                        searchPlaceholder="Sök ATC-kod…"
+                        ariaLabel="Välj ATC-kod"
+                        triggerClassName="w-full mt-1"
+                        clearable
+                        disabled={isPending}
+                      />
+                    )}
                   />
                   {userForm.formState.errors.atcCode && (
                     <p className="text-xs text-destructive mt-1">

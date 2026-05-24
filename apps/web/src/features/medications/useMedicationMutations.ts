@@ -46,6 +46,8 @@ export function useCreateMedication() {
       void queryClient.invalidateQueries({ queryKey: ['medication-search'] });
       // Phase 6 D-119 / NTF-02: new med may be under threshold from creation.
       void queryClient.invalidateQueries({ queryKey: ['dashboard', 'low-stock'] });
+      // Phase 8 D-133: a freshly user-created med can introduce a brand-new ATC code.
+      void queryClient.invalidateQueries({ queryKey: ['atc-codes'] });
       toast.success('Sparat');
     },
     onError: (err) => {

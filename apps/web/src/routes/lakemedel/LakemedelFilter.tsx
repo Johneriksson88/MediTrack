@@ -25,19 +25,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -45,6 +32,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { TherapeuticClassCombobox } from '@/components/TherapeuticClassCombobox';
+import { AtcCodeCombobox } from '@/components/AtcCodeCombobox';
 
 export interface LakemedelFilterProps {
   /** Current search query (empty string = unset). */
@@ -61,12 +49,6 @@ export interface LakemedelFilterProps {
    * defaults to '' without needing a wrapper conversion).
    */
   therapeuticClass: TherapeuticClass | '';
-  /**
-   * Optional: distinct ATC prefixes (5-char) derived from the current page rows.
-   * Used as suggestion list in the ATC combobox. When omitted, the combobox
-   * accepts free text only.
-   */
-  atcSuggestions?: string[];
   /**
    * Single patch emitter — every control calls this with the minimal changed
    * fields plus `page: 1` to reset pagination on any filter change.
@@ -90,7 +72,6 @@ export function LakemedelFilter({
   form,
   belowThreshold,
   therapeuticClass,
-  atcSuggestions,
   onChange,
 }: LakemedelFilterProps): JSX.Element {
   // --- A. Search input with 200 ms debounce ---
@@ -119,15 +100,6 @@ export function LakemedelFilter({
     return () => clearTimeout(t);
   }, [localQ]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // --- B. ATC combobox state ---
-  const [atcOpen, setAtcOpen] = useState(false);
-  const [localAtc, setLocalAtc] = useState(atc);
-
-  // Sync ATC external changes (e.g., Rensa filter clears URL param).
-  useEffect(() => {
-    setLocalAtc(atc);
-  }, [atc]);
-
   // --- C. Form select value ---
   // shadcn Select forbids value="" — use '__ALL__' sentinel for the "all forms" state.
   const formSelectValue = form === '' ? '__ALL__' : form;
@@ -135,17 +107,6 @@ export function LakemedelFilter({
   function handleFormChange(value: string) {
     onChange({ form: value === '__ALL__' ? '' : value, page: 1 });
   }
-
-  // ATC suggestions filtered by what the user is typing in the combobox.
-  const filteredSuggestions = atcSuggestions
-    ? atcSuggestions
-        .filter((prefix) =>
-          localAtc
-            ? prefix.toUpperCase().startsWith(localAtc.toUpperCase())
-            : true,
-        )
-        .slice(0, 10)
-    : [];
 
   return (
     <div className="flex flex-wrap items-center gap-2 py-3">
@@ -172,76 +133,21 @@ export function LakemedelFilter({
         clearable
       />
 
-      {/* B. ATC-kod combobox — shadcn Popover + Command, UI-SPEC §8b */}
-      <div className="flex items-center gap-1">
-        <Popover open={atcOpen} onOpenChange={setAtcOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              className="w-[140px] justify-between"
-              aria-label="Filtrera på ATC-kod"
-              type="button"
-            >
-              {atc || 'ATC-kod ▾'}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[240px] p-0" align="start">
-            <Command>
-              <CommandInput
-                placeholder="Skriv ATC-prefix…"
-                value={localAtc}
-                onValueChange={(v) => setLocalAtc(v)}
-              />
-              <CommandList>
-                <CommandEmpty>Inget matchade.</CommandEmpty>
-                <CommandGroup>
-                  {filteredSuggestions.map((prefix) => (
-                    <CommandItem
-                      key={prefix}
-                      value={prefix}
-                      onSelect={() => {
-                        onChange({ atc: prefix, page: 1 });
-                        setAtcOpen(false);
-                      }}
-                    >
-                      {prefix}
-                    </CommandItem>
-                  ))}
-                  {/* Allow confirming the free-typed value even if it's not in suggestions */}
-                  {localAtc && !filteredSuggestions.includes(localAtc.toUpperCase()) && (
-                    <CommandItem
-                      key={`__free__${localAtc}`}
-                      value={`__free__${localAtc}`}
-                      onSelect={() => {
-                        onChange({ atc: localAtc.toUpperCase(), page: 1 });
-                        setAtcOpen(false);
-                      }}
-                    >
-                      {localAtc.toUpperCase()} (fri sökning)
-                    </CommandItem>
-                  )}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
-        {/* Clear ATC affordance — only visible when atc is set */}
-        {atc && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setLocalAtc('');
-              onChange({ atc: '', page: 1 });
-            }}
-            aria-label="Rensa ATC-filter"
-            type="button"
-            className="h-8 w-8 p-0"
-          >
-            ×
-          </Button>
-        )}
-      </div>
+      {/* B. ATC-kod combobox — Phase 8 D-134: shared AtcCodeCombobox replaces
+          the hand-rolled Popover+Command block. The global ATC list (all distinct
+          codes from the NPL catalog, ~3,000 entries) is sourced from
+          useAtcCodesQuery() inside the component. The onChange contract is
+          preserved: pick → onChange({ atc: code, page: 1 });
+          clear → onChange({ atc: '', page: 1 }). UI-SPEC §Components §7. */}
+      <AtcCodeCombobox
+        value={atc}
+        onChange={(next) => onChange({ atc: next, page: 1 })}
+        placeholder="ATC-kod ▾"
+        searchPlaceholder="Sök ATC-kod…"
+        ariaLabel="Filtrera på ATC-kod"
+        triggerClassName="min-w-[140px] flex-shrink-0"
+        clearable
+      />
 
       {/* C. Form select — shadcn Select, UI-SPEC §8c */}
       <Select value={formSelectValue} onValueChange={handleFormChange}>

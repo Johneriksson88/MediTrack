@@ -33,10 +33,10 @@ import { fetchJson, type ApiError } from '@/lib/api';
  */
 export const ATC_CODES_QUERY_OPTIONS = {
   queryKey: ['atc-codes'] as const,
-  staleTime: Infinity as const,
+  staleTime: Infinity,
   refetchOnWindowFocus: false as const,
   refetchOnMount: false as const,
-};
+} as const;
 
 export function useAtcCodesQuery() {
   return useQuery<AtcCodesResponse, ApiError>({

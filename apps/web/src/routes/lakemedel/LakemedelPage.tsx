@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Pill } from 'lucide-react';
 import {
@@ -155,17 +155,6 @@ export function LakemedelPage() {
   const belowThresholdTotal = data?.belowThresholdTotal ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / DEFAULT_PAGE_SIZE));
 
-  /**
-   * Derive ATC suggestion list from the current page rows (D-39 / UI-SPEC §8b).
-   * Top distinct 5-char ATC prefixes from visible rows — small, fast, no extra API.
-   * The combobox itself filters this list by what the user types.
-   */
-  const atcSuggestions = useMemo(
-    () =>
-      Array.from(new Set(rows.map((r) => r.atcCode.slice(0, 5)))).sort(),
-    [rows],
-  );
-
   function applyPage(newPage: number) {
     updateFilters({ page: newPage });
   }
@@ -209,13 +198,15 @@ export function LakemedelPage() {
       {/* Filter row — search + Terapeutisk klass (D-116) + ATC + form select +
           threshold chip. Phase 6 inserts the TherapeuticClassCombobox left
           of ATC. */}
+      {/* Phase 8 D-134: atcSuggestions prop removed — LakemedelFilter now
+          uses the shared AtcCodeCombobox which sources its list globally
+          from GET /api/medications/atc-codes via useAtcCodesQuery(). */}
       <LakemedelFilter
         q={q}
         atc={atc}
         form={form}
         belowThreshold={belowThreshold}
         therapeuticClass={therapeuticClass}
-        atcSuggestions={atcSuggestions}
         onChange={updateFilters}
       />
 
