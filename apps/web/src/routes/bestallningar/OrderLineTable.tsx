@@ -22,7 +22,7 @@ import type { OrderLineResponse } from '@meditrack/shared';
 /**
  * Phase 3 D-47 / D-57 / D-60 / UI-SPEC §5 — Order line table (≥md).
  *
- * 6 columns: Namn / ATC-kod / Form / Lager (+ LowStockBadge) / Antal (QuantityStepper) / Åtgärd (trash)
+ * 7 columns: Namn / ATC-kod / Form / Styrka / Lager (+ LowStockBadge) / Antal (QuantityStepper) / Åtgärd (trash)
  *
  * Mirrors MedicationTable.tsx structure (table shell + header + body pattern).
  * Lager cell reuses MedicationTable.tsx:105-121's AlertTriangle + LowStockBadge pattern.
@@ -63,6 +63,9 @@ export function OrderLineTable({ items, orderId, isLocked, className }: OrderLin
                 Form
               </TableHead>
               <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Styrka
+              </TableHead>
+              <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                 Lager
               </TableHead>
               <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -77,7 +80,7 @@ export function OrderLineTable({ items, orderId, isLocked, className }: OrderLin
             {items.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={7}
                   className="text-sm text-muted-foreground text-center py-8"
                 >
                   Lägg till läkemedel för att börja.
@@ -91,6 +94,7 @@ export function OrderLineTable({ items, orderId, isLocked, className }: OrderLin
                     <TableCell className="px-4 py-3 text-sm font-medium">{line.name}</TableCell>
                     <TableCell className="px-4 py-3 text-sm text-muted-foreground">{line.atcCode}</TableCell>
                     <TableCell className="px-4 py-3 text-sm text-muted-foreground">{line.form}</TableCell>
+                    <TableCell className="px-4 py-3 text-sm text-muted-foreground">{line.strength ?? '—'}</TableCell>
                     <TableCell className="px-4 py-3">
                       <div className="flex items-center gap-1">
                         {isLow && (

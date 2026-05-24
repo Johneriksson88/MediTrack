@@ -12,9 +12,10 @@ import type { OrderLineResponse } from '@meditrack/shared';
  * Card layout:
  *   Row 1: {name} (truncated) + [trash button 44×44]
  *   Row 2: ATC: {atcCode} · Form: {form}
- *   Row 3: Lager: {currentStock} + <LowStockBadge> if low
+ *   Row 3: Styrka: {strength}  (omitted when strength is null)
+ *   Row 4: Lager: {currentStock} + <LowStockBadge> if low
  *   <hr />
- *   Row 4: <QuantityStepper>
+ *   Row 5: <QuantityStepper>
  *
  * Card is NOT a clickable element — role="button" / tabIndex / onClick are
  * intentionally absent (UI-SPEC §7 explicitly states "Card is NOT clickable").
@@ -70,7 +71,14 @@ export function OrderLineCard({ line, orderId, isLocked }: OrderLineCardProps) {
         ATC: {line.atcCode} · Form: {line.form}
       </p>
 
-      {/* Row 3: Lager + optional LowStockBadge */}
+      {/* Row 3: Styrka (omitted when null — matches MedicationCard pattern) */}
+      {line.strength && (
+        <p className="text-xs text-muted-foreground mb-0.5">
+          Styrka: {line.strength}
+        </p>
+      )}
+
+      {/* Row 4: Lager + optional LowStockBadge */}
       <div className="flex items-center gap-1.5 text-sm">
         <span className="text-muted-foreground">Lager:</span>
         <span>{line.currentStock}</span>

@@ -22,9 +22,9 @@ import { usePickerSuggestionsQuery } from '@/features/orders/usePickerSuggestion
  */
 
 // ---------------------------------------------------------------------------
-// SuggestionRow — verbatim copy of MedicationPickerSheet's row markup
-// (UI-SPEC §3 SuggestionRow note: "Verbatim copy of MedicationPickerSheet's
-// row markup lines 144-158. Same className, same content, same touch target.")
+// SuggestionRow — mirrors MedicationPickerSheet's row markup (UI-SPEC §3
+// SuggestionRow note). Same className, same content shape, same touch target.
+// Metadata segment shows {atcCode} · {form}[ · {strength}] · Lager: {stock}.
 // ---------------------------------------------------------------------------
 
 function SuggestionRow({
@@ -44,7 +44,9 @@ function SuggestionRow({
       <div className="flex flex-col gap-0.5 min-w-0">
         <span className="text-sm font-semibold truncate">{row.name}</span>
         <span className="text-xs text-muted-foreground">
-          {row.atcCode} · {row.form} · Lager: {row.currentStock}
+          {row.atcCode} · {row.form}
+          {row.strength && ` · ${row.strength}`}
+          {' · '}Lager: {row.currentStock}
         </span>
       </div>
       {isLow && <LowStockBadge />}

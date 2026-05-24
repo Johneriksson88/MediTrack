@@ -24,7 +24,8 @@ import { PickerSuggestionsBlock } from './PickerSuggestionsBlock';
  *
  * Row layout (UI-SPEC §9 + D-61):
  *   Row 1: {name} (text-sm font-semibold)
- *   Row 2: {atcCode} · {form} · Lager: {currentStock} + <LowStockBadge> if low
+ *   Row 2: {atcCode} · {form}[ · {strength}] · Lager: {currentStock} + <LowStockBadge> if low
+ *   (strength segment omitted when null)
  *   min-h-[56px] touch target per UI-SPEC §A11y
  *
  * On row click (WR-02 — pessimistic close):
@@ -156,7 +157,9 @@ export function MedicationPickerSheet({
                 <div className="flex flex-col gap-0.5 min-w-0">
                   <span className="text-sm font-semibold truncate">{row.name}</span>
                   <span className="text-xs text-muted-foreground">
-                    {row.atcCode} · {row.form} · Lager: {row.currentStock}
+                    {row.atcCode} · {row.form}
+                    {row.strength && ` · ${row.strength}`}
+                    {' · '}Lager: {row.currentStock}
                   </span>
                 </div>
                 {isLow && <LowStockBadge />}
