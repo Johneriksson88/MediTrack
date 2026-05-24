@@ -25,6 +25,8 @@ export {
   type MedicationSearchResult,
   medicationSearchResponse,
   type MedicationSearchResponse,
+  atcCodesResponse,
+  type AtcCodesResponse,
   medicationCreateFromNplRequest,
   type MedicationCreateFromNplRequest,
   medicationCreateUserRequest,

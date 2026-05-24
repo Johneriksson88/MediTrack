@@ -311,6 +311,39 @@ export async function searchGlobalMedications(
 }
 
 // ---------------------------------------------------------------------------
+// ATC Codes — global distinct ATC code list (Phase 8 D-132)
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the DISTINCT, sorted list of ATC codes from the global Medication
+ * catalog (Phase 8 D-132).
+ *
+ * D-132: SELECT DISTINCT "atcCode" FROM "Medication" WHERE "atcCode" IS NOT NULL
+ *   ORDER BY "atcCode" ASC. ~3,000 unique 7-char codes for the seeded NPL data.
+ *   Used by GET /api/medications/atc-codes to power the AtcCodeCombobox (D-134).
+ *
+ * D-16 carve-out: No careUnitId argument — the global ATC list is shared across
+ *   all vårdenheter. Same posture as `searchGlobalMedications` which reads the
+ *   global Medication catalog without a careUnit scope.
+ *
+ * T-08-01 disposition: mitigate via requireSession on the route. The codes are
+ *   already implicitly disclosed through the existing /api/medications/search
+ *   typeahead (same posture as the global NPL catalog itself).
+ *
+ * Route: apps/api/src/routes/medications/atcCodes.ts
+ * Consumer: apps/web/src/features/medications/useAtcCodesQuery.ts
+ */
+export async function listGlobalAtcCodes(): Promise<string[]> {
+  const rows = await prisma.$queryRaw<Array<{ atcCode: string }>>`
+    SELECT DISTINCT "atcCode"
+    FROM "Medication"
+    WHERE "atcCode" IS NOT NULL
+    ORDER BY "atcCode" ASC
+  `;
+  return rows.map((r) => r.atcCode);
+}
+
+// ---------------------------------------------------------------------------
 // Create — typeahead pick or "Skapa nytt läkemedel" fallback (D-30, D-31)
 // ---------------------------------------------------------------------------
 

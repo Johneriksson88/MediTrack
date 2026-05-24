@@ -136,6 +136,29 @@ export const medicationSearchResponse = z.object({
 export type MedicationSearchResponse = z.infer<typeof medicationSearchResponse>;
 
 // ---------------------------------------------------------------------------
+// ATC Codes — global distinct list from Medication catalog (Phase 8 D-132)
+// ---------------------------------------------------------------------------
+
+/**
+ * Response envelope for GET /api/medications/atc-codes (Phase 8 D-132).
+ *
+ * D-132: Returns the DISTINCT full ATC code list from the global Medication
+ *   catalog, sorted ascending. ~3,000 unique 7-char codes in the seeded NPL
+ *   data. Used by AtcCodeCombobox (D-134) in both LakemedelFilter and the
+ *   MedicationSheet user-create form.
+ *
+ * D-133: Cache policy — `staleTime: Infinity` with explicit invalidation in
+ *   `useCreateMedication.onSuccess` so a freshly-created user medication's
+ *   new ATC code is immediately available in the combobox.
+ *
+ * Route: apps/api/src/routes/medications/atcCodes.ts
+ * Service: apps/api/src/services/medication.service.ts#listGlobalAtcCodes
+ * Consumer: apps/web/src/features/medications/useAtcCodesQuery.ts
+ */
+export const atcCodesResponse = z.object({ codes: z.array(z.string()) });
+export type AtcCodesResponse = z.infer<typeof atcCodesResponse>;
+
+// ---------------------------------------------------------------------------
 // Create — two named paths + discriminated union (D-30, D-31)
 // ---------------------------------------------------------------------------
 
