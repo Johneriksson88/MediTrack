@@ -13,6 +13,7 @@ import { LowStockBadge } from '@/components/LowStockBadge';
 import { usePickerOptionsQuery } from '@/features/orders/useOrderQueries';
 import { useAddOrderLine } from '@/features/orders/useOrderMutations';
 import { useIsDesktop } from '@/lib/useIsDesktop';
+import { PickerSuggestionsBlock } from './PickerSuggestionsBlock';
 
 /**
  * Phase 3 D-58 / D-59 / D-61 / UI-SPEC §9 — MedicationPickerSheet.
@@ -122,6 +123,11 @@ export function MedicationPickerSheet({
 
         {/* Results list — scrollable inside the Sheet body */}
         <div className="flex-1 overflow-y-auto">
+          {/* Phase 8 D-137 / ORD-08: pre-search suggestions block (hide-on-keystroke gate) */}
+          {debouncedQ === '' && (
+            <PickerSuggestionsBlock orderId={orderId} onRowClick={handleRowClick} />
+          )}
+
           {/* Loading state */}
           {pickerQuery.isLoading && debouncedQ.length > 0 && (
             <div className="p-3 text-sm text-muted-foreground flex items-center gap-2">
