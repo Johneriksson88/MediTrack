@@ -44,7 +44,7 @@ i §6.
 | **Database** — PostgreSQL 16 | MySQL 8, SQLite, MongoDB | Domänen är obestridligt relationell; `SELECT ... FOR UPDATE` ger ett verkligt svar på §6-frågan om två samtidiga beställningar | Phase 4 D-79 CUM-batch lock; Phase 5 named-role split; `pg_trgm` GIN-index för fritextsökning (Phase 2 CR-02) |
 | **ORM** — Prisma 5 | Drizzle, Kysely, TypeORM, raw SQL | Schema-first migrationer; genererade TS-typer; `$extends` typed extensions möjliggjorde Phase 5 audit-middleware utan att röra service-koden | Audit via `$extends` (D-90..D-97); migrationer i Git-historiken berättar datamodellens historia |
 | **Server-state** — TanStack Query 5 | Redux Toolkit, SWR, Zustand, Apollo | Server-state är fundamentalt async; cache-key + invalidations + refetch-on-focus löser låg-lager-banner-uppdatering i Phase 6 utan en client-state-store | D-69 query-key-konventioner; D-119 sibling-invalidations; D-105 `useInfiniteQuery` för audit-paginering |
-| **UI-kit** — shadcn/ui + Tailwind CSS 4 | MUI, Chakra, Mantine, Ant Design | shadcn ger kopierade komponenter i koden (ingen runtime-dep), Tailwind ger mobil-först responsivitet i klassnamn; matchar brief-§3.2 "responsivt UI" utan en custom-CSS-budget | Phase 1 UI-SPEC (slate + new-york), touch-targets ≥44 px; Combobox + Sheet + Dialog + Tabs återanvänds över alla 6 sidor |
+| **UI-kit** — shadcn/ui + Tailwind CSS 3 | MUI, Chakra, Mantine, Ant Design | shadcn ger kopierade komponenter i koden (ingen runtime-dep), Tailwind ger mobil-först responsivitet i klassnamn; matchar brief-§3.2 "responsivt UI" utan en custom-CSS-budget | Phase 1 UI-SPEC (slate + new-york), touch-targets ≥44 px; Combobox + Sheet + Dialog + Tabs återanvänds över alla 6 sidor |
 | **Tester** — Vitest 2 | Jest, Mocha + Chai, Node:test | Vite-native (delar config med apps/web); Fastify `app.inject` mot riktig Postgres ger integrationstest utan att starta en server | Plan 05-03 har 17 audit-integration-tester; Plan 04 har 7 deliver-tester inkl. `pg_locks`-bevis; Plan 06 har 5 AI + 3 dashboard-integration-tester |
 | **Monorepo** — pnpm workspaces 9 | Nx, Turborepo, npm + Lerna, plain folders | Inga extra config-filer; `pnpm -r` räcker för parallella scripts; symlinks för `@meditrack/shared` ger typedelning utan publicering | `apps/api`, `apps/web`, `packages/shared`; root `pnpm verify` kör hela suiten på ett kommando (D-129) |
 | **Container** — Docker Compose v2 | Kubernetes, Podman Compose, Vagrant, devcontainers | Brief §3.3 nämner explicit "ett plus"; ett kommando (`docker compose up --build`) startar postgres + api + web + seed; ingen orkestrerings-overhead för en demo | pgdata-volym; healthcheck-baserad `depends_on`; named role split via env-var-injektion |
@@ -76,7 +76,7 @@ eftermontera autentisering. Audit-loggning lades till i Phase 5 *utan att röra
 en enda service-fil från Phase 2, 3 eller 4* (D-83). Mönstret är Prisma:s
 `$extends({ query: ... })` — en middleware som interceptar anrop på modellnivå
 för de sex granskade modellerna (D-90: `Medication`, `CareUnitMedication`,
-`Order`, `OrderLine`, `Session`, `AuditEvent`). Service-koden är omedveten om
+`Order`, `OrderLine`, `User`, `Session`). Service-koden är omedveten om
 att mellanhanden finns.
 
 Samma mönster bär per-rad-auktorisering: ett `$extends` på `findMany` kan
