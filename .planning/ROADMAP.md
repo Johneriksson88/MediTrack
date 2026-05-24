@@ -4,7 +4,7 @@
 **Last updated:** 2026-05-24 — phases 8–11 added (post-Phase-7 scope expansion before final submission)
 **Mode:** Vertical MVP (per-phase) — each phase ships an end-to-end demonstrable slice (DB → API → UI → tests).
 **Total phases:** 11 (1–7 complete; 8–11 added 2026-05-24)
-**Total v1 requirements:** 47 (all mapped, no orphans)
+**Total v1 requirements:** 46 (all mapped, no orphans)
 **Target submission:** within 7 days of `2026-05-19` (brief deadline)
 
 ## Sequencing Principles
@@ -161,16 +161,17 @@
 4. Final mobile-first verification pass: the four required breakpoints render correctly on every primary screen (login, catalog, order create, order history, audit, dashboard).
 
 ### Phase 8: Compose & Catalog UX
-**Goal:** Sharpen the two medication picker surfaces (catalog `MedicationSheet` and compose-order `MedicationPickerSheet`) so users find drugs faster, create new ones without confusion, and never see a confusing "Inget läkemedel matchade" when the real cause is D-45 exclusion.
+**Goal:** Sharpen the two medication picker surfaces (catalog `MedicationSheet` and compose-order `MedicationPickerSheet`) so users find drugs faster, get a useful first-screen on every compose-order, and never see a confusing "Inget läkemedel matchade" when the real cause is D-45 exclusion.
 **Mode:** mvp
 **UI hint:** yes
-**Requirements:** CAT-08, CAT-09, CAT-10, ORD-08
+**Requirements:** CAT-09, CAT-10, ORD-08
 **Success Criteria:**
-1. Add-medication picker shows "Skapa nytt läkemedel" as an always-visible primary action above the typeahead — surfaceable without typing.
-2. ATC-code input on the Add-medication form is a combobox preloaded with every unique ATC code from the global NPL catalog; the combobox component is shared with the LakemedelFilter ATC selector (single source of truth — no fork).
-3. Add-medication picker shows distinct empty states: "Alla träffar finns redan i din vårdenhet" when D-45 excludes everything, vs "Inget i NPL matchade `{q}`" when the global catalog has no match for the query.
-4. Compose-order picker surfaces 10 suggestions before any search input — combining most-ordered medications (by order-line count for the user's vårdenhet) and low-stock items (below their threshold), deduplicated.
-5. Suggestions block hides after the user starts typing (≥1 char) and reappears when the query is cleared.
+1. ATC-code input on the Add-medication form is a combobox preloaded with every unique full ATC code from the global NPL catalog (~3,000 codes), with typeahead filtering on every keystroke and free-text fallback for codes not yet in the catalog; the combobox component is shared with the LakemedelFilter ATC selector (single source of truth — no fork).
+2. Add-medication picker shows distinct empty states: "Alla träffar finns redan i din vårdenhet." when D-45 excludes everything, vs "Inget i NPL matchade »{q}«." when the global catalog has no match for the query. Distinguishing field on the search response: `globalCatalogMatchCount`.
+3. Compose-order picker surfaces 10 suggestions before any search input — two visually separated sections, "Mest beställda" (top 5 most-ordered, all-time, per vårdenhet) above "Lågt lager" (top 5 below-threshold, urgency-sorted). Same `careUnitMedicationId` never appears in both — Lågt lager wins, Mest beställda pulls the 6th-ranked.
+4. Suggestions block hides on the first keystroke into search and reappears when the input is cleared back to empty.
+
+> **Scope note (2026-05-24 discussion):** The original CAT-08 ("always-visible 'Skapa nytt' CTA") was dropped from this phase. The MedicationPickerSheet stays pick-only per D-58/D-70; the existing in-empty-state "Skapa nytt läkemedel" link on MedicationSheet remains unchanged.
 
 ### Phase 9: Dashboard Depth + Back-Nav
 **Goal:** Make `/dashboard` a useful first-screen by adding a role-scoped "Beställningar" card showing orders requiring the user's attention, and fix the routing bug where Tillbaka från orderdetalj drops the previously-active status tab.
@@ -217,11 +218,11 @@
 | 5 | 3 | AUD-01, AUD-02, AUD-03 |
 | 6 | 5 | AI-01, AI-02, AI-03, NTF-01, NTF-02 |
 | 7 | 3 | OPS-01, OPS-02, OPS-04 |
-| 8 | 4 | CAT-08, CAT-09, CAT-10, ORD-08 |
+| 8 | 3 | CAT-09, CAT-10, ORD-08 |
 | 9 | 2 | ORD-09, ORD-10 |
 | 10 | 1 | ORD-11 |
 | 11 | 2 | UX-02, UX-03 |
-| **Total** | **47** | All v1 REQ-IDs mapped exactly once ✓ |
+| **Total** | **46** | All v1 REQ-IDs mapped exactly once ✓ |
 
 ## Cuttability (if time runs short)
 

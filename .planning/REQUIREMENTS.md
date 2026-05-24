@@ -26,8 +26,7 @@ Requirements for the Medovia interview submission. Each maps to exactly one road
 - [ ] **CAT-05**: User with role `apotekare` or `admin` can add a new medication (name, ATC, form, strength, low-stock threshold)
 - [ ] **CAT-06**: User with role `apotekare` or `admin` can edit an existing medication's fields
 - [ ] **CAT-07**: User with role `apotekare` or `admin` can delete a medication; soft-delete if it has historical order lines or stock movements
-- [ ] **CAT-08**: Add-medication picker exposes "Skapa nytt läkemedel" as an always-visible primary action — reachable without typing in the search input *(Phase 8)*
-- [ ] **CAT-09**: ATC-code input on the Add-medication form is a combobox preloaded with unique ATC codes from the global catalog, reusing the LakemedelFilter ATC selector component *(Phase 8)*
+- [ ] **CAT-09**: ATC-code input on the Add-medication form is a combobox preloaded with unique ATC codes from the global catalog, with typeahead filtering and free-text fallback; shared component reused by the LakemedelFilter ATC selector *(Phase 8)*
 - [ ] **CAT-10**: Add-medication picker differentiates empty states — "Alla träffar finns redan i din vårdenhet" (D-45 exclusion) vs "Inget i NPL matchade `{q}`" (no global catalog match) *(Phase 8)*
 
 ### Order Flow
@@ -168,7 +167,6 @@ Updated during roadmap creation. Each v1 requirement maps to exactly one phase.
 | OPS-01 | Phase 7 | Pending |
 | OPS-02 | Phase 7 | Pending |
 | OPS-04 | Phase 7 | Pending |
-| CAT-08 | Phase 8 | Pending |
 | CAT-09 | Phase 8 | Pending |
 | CAT-10 | Phase 8 | Pending |
 | ORD-08 | Phase 8 | Pending |
@@ -179,10 +177,10 @@ Updated during roadmap creation. Each v1 requirement maps to exactly one phase.
 | UX-03 | Phase 11 | Pending |
 
 **Coverage:**
-- v1 requirements: 47 total
-- Mapped to phases: 47
+- v1 requirements: 46 total
+- Mapped to phases: 46
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-05-19*
-*Last updated: 2026-05-24 — v1 scope expanded with phases 8–11 (compose & catalog UX, dashboard depth, order numbers, polish)*
+*Last updated: 2026-05-24 — v1 scope expanded with phases 8–11; CAT-08 (always-visible "Skapa nytt" CTA) dropped at Phase 8 discussion time after user reverted to D-58 pick-only stance*
