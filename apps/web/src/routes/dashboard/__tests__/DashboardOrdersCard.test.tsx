@@ -1,6 +1,6 @@
 /// <reference types="@testing-library/jest-dom" />
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, within } from '@testing-library/react';
+import { screen, within, cleanup } from '@testing-library/react';
 import type { UseQueryResult } from '@tanstack/react-query';
 import type { DashboardOrdersResponse } from '@meditrack/shared';
 import type { ApiError } from '@/lib/api';
@@ -314,45 +314,44 @@ describe('DashboardOrdersCard', () => {
   });
 
   it('Test 6 (section header links): href matches the role-specific tab map', () => {
-    // Nurse: Egna utkast -> ?status=utkast; Senaste beställningar -> ?status=alla.
+    // Sub-case A — Nurse: Egna utkast -> ?status=utkast;
+    //                     Senaste beställningar -> ?status=alla.
     mockQuery({ data: NURSE_DATA, isLoading: false, isError: false });
-    const { rerender, unmount } = renderWithProviders(<DashboardOrdersCard />);
+    renderWithProviders(<DashboardOrdersCard />);
 
-    {
-      const egnaHeader = screen.getByRole('link', { name: 'Egna utkast' });
-      expect(egnaHeader.getAttribute('href')).toBe(
-        '/bestallningar?status=utkast',
-      );
-      const recentHeader = screen.getByRole('link', {
-        name: 'Senaste beställningar',
-      });
-      expect(recentHeader.getAttribute('href')).toBe(
-        '/bestallningar?status=alla',
-      );
-    }
+    expect(
+      screen
+        .getByRole('link', { name: 'Egna utkast' })
+        .getAttribute('href'),
+    ).toBe('/bestallningar?status=utkast');
+    expect(
+      screen
+        .getByRole('link', { name: 'Senaste beställningar' })
+        .getAttribute('href'),
+    ).toBe('/bestallningar?status=alla');
 
-    // Re-mount with pharmacist data: Väntar på bekräftelse -> ?status=skickad;
-    // Väntar på leverans -> ?status=bekraftad.
-    unmount();
+    // Sub-case B — Pharmacist: tear down the previous DOM, re-mount.
+    // (rerender() requires the same root; switching mocks + re-mounting
+    // through a fresh renderWithProviders avoids the "Cannot update an
+    // unmounted root" error from intermixing unmount + rerender.)
+    cleanup();
     mockQuery({
       data: pharmacistData('apotekare'),
       isLoading: false,
       isError: false,
     });
-    rerender(<DashboardOrdersCard />);
+    renderWithProviders(<DashboardOrdersCard />);
 
-    const skickadHeader = screen.getByRole('link', {
-      name: 'Väntar på bekräftelse',
-    });
-    expect(skickadHeader.getAttribute('href')).toBe(
-      '/bestallningar?status=skickad',
-    );
-    const bekraftadHeader = screen.getByRole('link', {
-      name: 'Väntar på leverans',
-    });
-    expect(bekraftadHeader.getAttribute('href')).toBe(
-      '/bestallningar?status=bekraftad',
-    );
+    expect(
+      screen
+        .getByRole('link', { name: 'Väntar på bekräftelse' })
+        .getAttribute('href'),
+    ).toBe('/bestallningar?status=skickad');
+    expect(
+      screen
+        .getByRole('link', { name: 'Väntar på leverans' })
+        .getAttribute('href'),
+    ).toBe('/bestallningar?status=bekraftad');
   });
 
   it('Test 7 (loading): renders at least 3 Skeleton bars and no section content', () => {
