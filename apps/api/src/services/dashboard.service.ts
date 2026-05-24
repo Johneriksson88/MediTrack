@@ -1,5 +1,11 @@
 import { prisma } from '../db/client.js';
-import type { LowStockListResponse, TherapeuticClass } from '@meditrack/shared';
+import type {
+  LowStockListResponse,
+  TherapeuticClass,
+  DashboardOrdersResponse,
+  DashboardOrderRow,
+  Role,
+} from '@meditrack/shared';
 
 /**
  * Phase 6 D-16 / D-117 / D-120 / NTF-01 — Dashboard low-stock service.
@@ -93,5 +99,179 @@ export async function listLowStockForUnit(
   return {
     rows,
     total: rows.length,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 9 D-16 / D-141 / D-142 / D-143 / D-144 — Dashboard "Beställningar" service
+// ---------------------------------------------------------------------------
+
+/**
+ * Phase 9 D-16 / D-141 / D-142 / D-143 / D-144 — listDashboardOrdersForUser.
+ *
+ * D-16: `careUnitId` is the FIRST argument; `userId` and `role` follow.
+ *   Every `prisma.order.findMany` and `prisma.order.count` in this
+ *   function includes `where: { careUnitId, ... }` so a code change
+ *   cannot accidentally leak across tenants (T-09-04 carry-over of
+ *   T-06-01 / T-02-01). The route hands in `req.user!.careUnitId` from
+ *   the authenticated session.
+ *
+ * D-141: dedicated endpoint with its own cache key `['dashboard', 'orders']`.
+ *   Decouples dashboard refresh from `/bestallningar`'s `['orders', filters]`
+ *   cache. Service returns one of two role-discriminated shapes — no
+ *   pagination, top-5 rows per section, `count` carries the total.
+ *
+ * D-142: role-aware payload. The service branches on `role`; the Fastify
+ *   response schema is `dashboardOrdersResponse` (Zod discriminated union
+ *   on `role`). A service bug returning the wrong shape fails serialization
+ *   at the route layer — the integration test asserts this mechanically.
+ *
+ * D-143: nurse `recentHistory` is vårdenhet-wide (any author) and excludes
+ *   utkast (drafts live in their own egnaUtkast section above).
+ *
+ * D-144: top-5 rows per section, sorted DESC by createdAt; `count` is the
+ *   total matching rows (separate `prisma.order.count` per section).
+ *
+ * Soft-delete: every query filters `deletedAt: null` to match the
+ *   listOrdersForUnit convention (D-62 / D-33) — discarded drafts never
+ *   surface on the dashboard.
+ */
+
+/**
+ * Shared include shape for the dashboard row mapper. The two fields
+ * mirror the OrderListItem subset — `createdBy.{id,name}` for the row
+ * subtitle and `lines.{id,quantity}` for `lineCount` + `totalQuantity`.
+ */
+const dashboardOrderInclude = {
+  createdBy: { select: { id: true, name: true } },
+  lines: { select: { id: true, quantity: true } },
+} as const;
+
+/**
+ * Row cap per section (D-144). Counts may exceed this — the `count`
+ * field on each section carries the total.
+ */
+const DASHBOARD_ROW_LIMIT = 5;
+
+/**
+ * Map a loaded Prisma Order row (with `createdBy` + lean `lines`) to the
+ * shared DashboardOrderRow contract. Mirrors the subset of OrderListItem
+ * the dashboard card renders.
+ */
+function toDashboardOrderRow(order: {
+  id: string;
+  status: DashboardOrderRow['status'];
+  createdAt: Date;
+  createdBy: { id: string; name: string };
+  lines: Array<{ id: string; quantity: number }>;
+}): DashboardOrderRow {
+  return {
+    id: order.id,
+    status: order.status,
+    lineCount: order.lines.length,
+    totalQuantity: order.lines.reduce((s, l) => s + l.quantity, 0),
+    createdBy: { id: order.createdBy.id, name: order.createdBy.name },
+    createdAt: order.createdAt.toISOString(),
+  };
+}
+
+/**
+ * Returns the dashboard "Beställningar" payload for the given user.
+ *
+ * Nurses (`'sjukskoterska'`) get `{egnaUtkast: {count, rows},
+ * recentHistory}` — their own utkast drafts plus the 5 most recent
+ * non-utkast orders for the vårdenhet (D-143).
+ *
+ * Pharmacists / admins (`'apotekare' | 'admin'`) get `{skickad: {count,
+ * rows}, bekraftad: {count, rows}}` — orders waiting to be confirmed and
+ * orders waiting to be delivered, in their care unit.
+ *
+ * All branches are top-5 DESC by createdAt; counts carry the total
+ * matching rows (may exceed 5). Soft-deleted orders are excluded.
+ */
+export async function listDashboardOrdersForUser(
+  careUnitId: string,
+  userId: string,
+  role: Role,
+): Promise<DashboardOrdersResponse> {
+  if (role === 'sjukskoterska') {
+    const [egnaUtkastRows, egnaUtkastCount, recentHistoryRows] =
+      await Promise.all([
+        prisma.order.findMany({
+          where: {
+            careUnitId,
+            status: 'utkast',
+            createdByUserId: userId,
+            deletedAt: null,
+          },
+          orderBy: { createdAt: 'desc' },
+          take: DASHBOARD_ROW_LIMIT,
+          include: dashboardOrderInclude,
+        }),
+        prisma.order.count({
+          where: {
+            careUnitId,
+            status: 'utkast',
+            createdByUserId: userId,
+            deletedAt: null,
+          },
+        }),
+        // D-143 — vårdenhet-wide, excludes utkast, any author.
+        prisma.order.findMany({
+          where: {
+            careUnitId,
+            status: { not: 'utkast' },
+            deletedAt: null,
+          },
+          orderBy: { createdAt: 'desc' },
+          take: DASHBOARD_ROW_LIMIT,
+          include: dashboardOrderInclude,
+        }),
+      ]);
+
+    return {
+      role: 'sjukskoterska',
+      egnaUtkast: {
+        count: egnaUtkastCount,
+        rows: egnaUtkastRows.map(toDashboardOrderRow),
+      },
+      recentHistory: recentHistoryRows.map(toDashboardOrderRow),
+    };
+  }
+
+  // role === 'apotekare' || role === 'admin' — Zod enum on the wire side
+  // permits both literals; the service returns whichever role the caller is.
+  const [skickadRows, skickadCount, bekraftadRows, bekraftadCount] =
+    await Promise.all([
+      prisma.order.findMany({
+        where: { careUnitId, status: 'skickad', deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: DASHBOARD_ROW_LIMIT,
+        include: dashboardOrderInclude,
+      }),
+      prisma.order.count({
+        where: { careUnitId, status: 'skickad', deletedAt: null },
+      }),
+      prisma.order.findMany({
+        where: { careUnitId, status: 'bekraftad', deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: DASHBOARD_ROW_LIMIT,
+        include: dashboardOrderInclude,
+      }),
+      prisma.order.count({
+        where: { careUnitId, status: 'bekraftad', deletedAt: null },
+      }),
+    ]);
+
+  return {
+    role,
+    skickad: {
+      count: skickadCount,
+      rows: skickadRows.map(toDashboardOrderRow),
+    },
+    bekraftad: {
+      count: bekraftadCount,
+      rows: bekraftadRows.map(toDashboardOrderRow),
+    },
   };
 }
