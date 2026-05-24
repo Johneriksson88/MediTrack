@@ -165,6 +165,10 @@
 **Mode:** mvp
 **UI hint:** yes
 **Requirements:** CAT-09, CAT-10, ORD-08
+**Plans:** 3 plans
+  - [ ] 08-01-PLAN.md — Slice 1 (Wave 1): CAT-09 vertical — GET /api/medications/atc-codes + atcCodesResponse contract + shared AtcCodeCombobox + useAtcCodesQuery hook + MedicationSheet user-create wiring + LakemedelFilter rewire (drop atcSuggestions prop) + useCreateMedication onSuccess invalidation + BE integration + FE component tests (CAT-09)
+  - [ ] 08-02-PLAN.md — Slice 2 (Wave 2, depends on 08-01): CAT-10 vertical — medicationSearchResponse extended with globalCatalogMatchCount + searchGlobalMedications second aggregate query + MedicationSheet two-variant empty-state branch with verbatim D-140 copy (lowercase inline link) + 40-char query-truncation guard + BE integration + FE component tests (CAT-10)
+  - [ ] 08-03-PLAN.md — Slice 3 (Wave 2, depends on 08-01, parallel to 08-02): ORD-08 vertical — GET /api/orders/picker-suggestions + pickerSuggestionsResponse contract + listPickerSuggestions service (most-ordered $queryRaw LIMIT 6 + listLowStockForUnit reuse + service-layer dedupe) + usePickerSuggestionsQuery hook + PickerSuggestionsBlock component (two sticky sections, picker-empty surface) + MedicationPickerSheet hide-on-keystroke gate + useAddOrderLine onSuccess invalidation + BE integration (cross-tenant + dedupe) + FE component tests (ORD-08)
 **Success Criteria:**
 1. ATC-code input on the Add-medication form is a combobox preloaded with every unique full ATC code from the global NPL catalog (~3,000 codes), with typeahead filtering on every keystroke and free-text fallback for codes not yet in the catalog; the combobox component is shared with the LakemedelFilter ATC selector (single source of truth — no fork).
 2. Add-medication picker shows distinct empty states: "Alla träffar finns redan i din vårdenhet." when D-45 excludes everything, vs "Inget i NPL matchade »{q}«." when the global catalog has no match for the query. Distinguishing field on the search response: `globalCatalogMatchCount`.
