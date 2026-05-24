@@ -100,6 +100,14 @@ async function main(): Promise<void> {
         await page.goto(BASE_URL + route.path);
         await page.waitForLoadState('networkidle');
 
+        // If we are authenticated and this is the login route, the app redirects to
+        // /dashboard — the overflow check would measure the wrong page. Skip the cell.
+        const currentPath = new URL(page.url()).pathname;
+        if (currentPath !== route.path) {
+          console.log(`  (skipped: redirected from ${route.path} → ${currentPath})`);
+          continue;
+        }
+
         // --- Assertion 1: no horizontal overflow ---
         const overflow = await page.evaluate(
           () => document.documentElement.scrollWidth > window.innerWidth,
@@ -119,15 +127,16 @@ async function main(): Promise<void> {
         // isVisible() — checking only the first match would always fail at <md because
         // the Sidebar is rendered first in the DOM and is display:none on mobile.
         if (!route.anonymous) {
-          const navHandles = await page.$$('[data-test="primary-nav"]');
-          if (navHandles.length === 0) {
+          const navLocator = page.locator('[data-test="primary-nav"]');
+          const navCount = await navLocator.count();
+          if (navCount === 0) {
             failures.push(
               `primary nav (data-test="primary-nav") not found at ${viewport.width}x${viewport.height} on ${route.path}`,
             );
           } else {
             let anyVisible = false;
-            for (const h of navHandles) {
-              if (await h.isVisible()) {
+            for (let i = 0; i < navCount; i++) {
+              if (await navLocator.nth(i).isVisible()) {
                 anyVisible = true;
                 break;
               }
