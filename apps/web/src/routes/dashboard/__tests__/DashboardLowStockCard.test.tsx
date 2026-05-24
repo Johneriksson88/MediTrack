@@ -125,7 +125,7 @@ describe('DashboardLowStockCard', () => {
 
     // Card heading + description
     expect(screen.getByText('Läkemedel under tröskel')).toBeInTheDocument();
-    expect(screen.getByText('3 läkemedel')).toBeInTheDocument();
+    expect(screen.getByText('totalt 3 under tröskel')).toBeInTheDocument();
 
     // Each row's name appears
     expect(screen.getByText('Amoxicillin')).toBeInTheDocument();

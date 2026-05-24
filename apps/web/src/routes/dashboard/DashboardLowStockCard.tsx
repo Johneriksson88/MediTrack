@@ -107,7 +107,7 @@ export function DashboardLowStockCard() {
     <Card className="w-full max-w-2xl">
       <CardHeader>
         <CardTitle>Läkemedel under tröskel</CardTitle>
-        <CardDescription>{total} läkemedel</CardDescription>
+        <CardDescription>totalt {total} under tröskel</CardDescription>
       </CardHeader>
       <CardContent
         className="max-h-80 overflow-y-auto"
