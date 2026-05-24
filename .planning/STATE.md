@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 9
+current_phase: 09
 status: ready_to_plan
-last_updated: "2026-05-24T21:54:05.516Z"
+last_updated: "2026-05-24T21:57:36.506Z"
 last_activity: 2026-05-24
 progress:
   total_phases: 11
@@ -22,7 +22,7 @@ See: [.planning/PROJECT.md](PROJECT.md) (initialized 2026-05-19)
 
 **Core value:** A nurse can place an order for a low-stock medication and, when delivered, the stock balance and audit trail update atomically — reliably, with no manual reconciliation.
 
-**Current focus:** Phase 9 — dashboard depth + back nav
+**Current focus:** Phase 09 — dashboard-depth-back-nav
 
 ## Roadmap Reference
 
@@ -31,7 +31,7 @@ See: [.planning/ROADMAP.md](ROADMAP.md) (created 2026-05-19)
 **Total phases:** 7
 **Phases complete:** 0
 **Phases in progress:** 0
-**Current phase:** 9
+**Current phase:** 09
 
 ## Phase Progress
 
