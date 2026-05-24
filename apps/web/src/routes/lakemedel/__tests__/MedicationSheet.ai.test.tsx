@@ -53,9 +53,13 @@ vi.mock('@/auth/useAuth', () => ({
 }));
 
 // Mock the search query — the create-mode typeahead is not exercised here.
+// Phase 8 D-139: include globalCatalogMatchCount: 0 so the empty-state renders
+// Variant A ("Inget i NPL matchade") whose inline link the AI tests click to
+// navigate to the user-create form. Without this field the else-arm (Variant B)
+// renders, which has the same link but a different heading.
 vi.mock('@/features/medications/useMedicationsQuery', () => ({
   useMedicationSearchQuery: vi.fn(() => ({
-    data: { results: [] },
+    data: { results: [], globalCatalogMatchCount: 0 },
     isLoading: false,
   })),
 }));
@@ -240,16 +244,16 @@ describe('MedicationSheet — AI categorization block', () => {
     mockUseAiAvailability.mockReturnValue(asAvailabilityResult({ available: true }));
     mockUseSuggestTherapeuticClass.mockReturnValue(asSuggestMut({}));
 
-    // Click "Skapa nytt läkemedel" to expose the user-create form (which
+    // Click "skapa ett nytt läkemedel" to expose the user-create form (which
     // has the AI block with name + atcCode from form state).
     const user = userEvent.setup();
     renderWithProviders(
       <MedicationSheet mode="create" open={true} onOpenChange={() => {}} />,
     );
-    // Type something in the typeahead to surface the "Skapa nytt..." button.
+    // Type something in the typeahead to surface the "skapa ett nytt läkemedel" link.
     const typeahead = screen.getByLabelText('Sök läkemedel från NPL');
     await user.type(typeahead, 'XYZNoMatch');
-    const showCreateBtn = await screen.findByRole('button', { name: 'Skapa nytt läkemedel' });
+    const showCreateBtn = await screen.findByRole('button', { name: 'skapa ett nytt läkemedel' });
     await user.click(showCreateBtn);
 
     // The button should now be in the document but disabled (name + atc empty).
@@ -286,7 +290,7 @@ describe('MedicationSheet — AI categorization block', () => {
     // Open the user-create form.
     const typeahead = screen.getByLabelText('Sök läkemedel från NPL');
     await user.type(typeahead, 'XYZNoMatch');
-    const showCreateBtn = await screen.findByRole('button', { name: 'Skapa nytt läkemedel' });
+    const showCreateBtn = await screen.findByRole('button', { name: 'skapa ett nytt läkemedel' });
     await user.click(showCreateBtn);
 
     // Fill name + atcCode (the form watches these to enable the button).
@@ -335,7 +339,7 @@ describe('MedicationSheet — AI categorization block', () => {
 
     const typeahead = screen.getByLabelText('Sök läkemedel från NPL');
     await user.type(typeahead, 'XYZNoMatch');
-    await user.click(await screen.findByRole('button', { name: 'Skapa nytt läkemedel' }));
+    await user.click(await screen.findByRole('button', { name: 'skapa ett nytt läkemedel' }));
 
     await user.type(screen.getByLabelText('Namn'), 'Amoxicillin');
     await selectAtcCode(user, 'J01CA04');
@@ -374,7 +378,7 @@ describe('MedicationSheet — AI categorization block', () => {
 
     const typeahead = screen.getByLabelText('Sök läkemedel från NPL');
     await user.type(typeahead, 'XYZNoMatch');
-    await user.click(await screen.findByRole('button', { name: 'Skapa nytt läkemedel' }));
+    await user.click(await screen.findByRole('button', { name: 'skapa ett nytt läkemedel' }));
     await user.type(screen.getByLabelText('Namn'), 'Amoxicillin');
     await selectAtcCode(user, 'J01CA04');
 
@@ -418,7 +422,7 @@ describe('MedicationSheet — AI categorization block', () => {
 
     const typeahead = screen.getByLabelText('Sök läkemedel från NPL');
     await user.type(typeahead, 'XYZNoMatch');
-    await user.click(await screen.findByRole('button', { name: 'Skapa nytt läkemedel' }));
+    await user.click(await screen.findByRole('button', { name: 'skapa ett nytt läkemedel' }));
 
     // No AI block — even though useAiAvailability says available=true.
     expect(screen.queryByText('Hämta AI-förslag')).not.toBeInTheDocument();
@@ -466,7 +470,7 @@ describe('MedicationSheet — AI categorization block', () => {
 
     const typeahead = screen.getByLabelText('Sök läkemedel från NPL');
     await user.type(typeahead, 'XYZNoMatch');
-    await user.click(await screen.findByRole('button', { name: 'Skapa nytt läkemedel' }));
+    await user.click(await screen.findByRole('button', { name: 'skapa ett nytt läkemedel' }));
     await user.type(screen.getByLabelText('Namn'), 'Amoxicillin');
     await selectAtcCode(user, 'J01CA04');
 

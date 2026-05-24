@@ -1033,19 +1033,50 @@ export function MedicationSheet({
                     </div>
                   )}
                   {!searchQuery.isLoading && results.length === 0 && (
-                    <div className="p-3 text-sm text-muted-foreground flex items-center gap-1 flex-wrap">
-                      Inget läkemedel matchade.
-                      <Button
-                        variant="link"
-                        className="ml-1 p-0 h-auto text-sm"
-                        onClick={() => {
-                          setShowCreateForm(true);
-                          setShowResults(false);
-                        }}
-                        type="button"
-                      >
-                        Skapa nytt läkemedel
-                      </Button>
+                    <div className="p-3 flex flex-col gap-1">
+                      {searchQuery.data?.globalCatalogMatchCount === 0 ? (
+                        <>
+                          <p className="text-sm font-semibold text-foreground">
+                            Inget i NPL matchade »{debouncedQ.length > 40 ? `${debouncedQ.slice(0, 40)}…` : debouncedQ}«.
+                          </p>
+                          <p className="text-xs text-muted-foreground flex items-center gap-1 flex-wrap">
+                            Kontrollera stavning eller
+                            <Button
+                              variant="link"
+                              className="p-0 h-auto text-xs"
+                              onClick={() => {
+                                setShowCreateForm(true);
+                                setShowResults(false);
+                              }}
+                              type="button"
+                            >
+                              skapa ett nytt läkemedel
+                            </Button>
+                            .
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-sm font-semibold text-foreground">
+                            Alla träffar finns redan i din vårdenhet.
+                          </p>
+                          <p className="text-xs text-muted-foreground flex items-center gap-1 flex-wrap">
+                            Justera sökningen eller
+                            <Button
+                              variant="link"
+                              className="p-0 h-auto text-xs"
+                              onClick={() => {
+                                setShowCreateForm(true);
+                                setShowResults(false);
+                              }}
+                              type="button"
+                            >
+                              skapa ett nytt läkemedel
+                            </Button>
+                            .
+                          </p>
+                        </>
+                      )}
                     </div>
                   )}
                   {results.map((r) => (
