@@ -3,7 +3,7 @@ status: complete
 phase: 08-compose-catalog-ux
 source: [08-VERIFICATION.md]
 started: 2026-05-24T20:30:00Z
-updated: 2026-05-24T21:25:00Z
+updated: 2026-05-24T21:50:00Z
 ---
 
 ## Current Test
@@ -46,9 +46,21 @@ blocked: 0
 ## Gaps
 
 - truth: "Picker suggestion rows and beställningar item displays show enough information to identify the right medication variant at a glance"
-  status: failed
+  status: resolved
   reason: "User reported: It works, but it just appeared to me we need to show Styrka of the item in the beställningar UI (all pages that show items) and the \"Lägg till läkemedel\" modal cards, where we show ATC-kod and Form"
   severity: minor
   test: 5
-  artifacts: []
-  missing: []
+  artifacts:
+    - path: "apps/web/src/routes/bestallningar/OrderLineTable.tsx"
+      issue: "ATC-kod + Form columns shown, Styrka column missing"
+    - path: "apps/web/src/routes/bestallningar/OrderLineCard.tsx"
+      issue: "ATC + Form row rendered, no Styrka row"
+    - path: "apps/web/src/routes/bestallningar/MedicationPickerSheet.tsx"
+      issue: "Row metadata showed only atcCode · form · Lager"
+    - path: "apps/web/src/routes/bestallningar/PickerSuggestionsBlock.tsx"
+      issue: "SuggestionRow metadata showed only atcCode · form · Lager"
+  missing:
+    - "Render strength alongside atcCode/form across all four surfaces (omit segment when null)"
+  resolution:
+    commit: "7909cf5"
+    summary: "Added Styrka column to OrderLineTable, conditional Styrka row to OrderLineCard, and extended picker/suggestion row metadata lines to include strength when present. Strength was already on OrderLineResponse + PickerSuggestion — pure rendering change."
