@@ -132,11 +132,12 @@ export function OrdersTable({ rows, tab, className }: OrdersTableProps) {
                 key={row.id}
                 tabIndex={0}
                 aria-label={`Öppna beställning från ${formatRelative(relevantAt)}`}
-                onClick={() => navigate(`/bestallningar/${row.id}`)}
+                onClick={() => navigate(`/bestallningar/${row.id}?from=${tab}`)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
-                    navigate(`/bestallningar/${row.id}`);
+                    // Phase 9 D-150 #2 — the active tab value flows verbatim into ?from=.
+                    navigate(`/bestallningar/${row.id}?from=${tab}`);
                   }
                 }}
                 className="cursor-pointer hover:bg-muted/50 focus-visible:outline-none

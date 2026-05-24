@@ -94,6 +94,24 @@ function mockDraftsQuery(rows: typeof DRAFT_ROW[], loading = false) {
   } as unknown as UseQueryResult<OrderListResponse, ApiError>);
 }
 
+/**
+ * Phase 9 ORD-10 — helper for the non-Utkast tabs (Skickade / Bekräftade /
+ * Levererade / Alla). Mirrors mockDraftsQuery's shape: drafts are emptied
+ * and useOrdersByStatusQuery returns the provided rows so OrdersTable /
+ * OrdersCardList render. The `status` argument is documentation-only; the
+ * caller controls which tab is active via `initialPath` on the wrapper.
+ */
+function mockOrdersByStatusQuery(rows: Array<Record<string, unknown>>) {
+  mockUseDraftsQuery.mockReturnValue({
+    data: { rows: [], total: 0 },
+    isLoading: false,
+  } as unknown as UseQueryResult<OrderListResponse, ApiError>);
+  mockUseOrdersByStatusQuery.mockReturnValue({
+    data: { rows, total: rows.length },
+    isLoading: false,
+  } as unknown as UseQueryResult<OrderListResponse, ApiError>);
+}
+
 /** Helper to mock useCreateDraftOrder with an optional mutateAsync implementation */
 function mockCreateMutation(mutateAsync = vi.fn()) {
   mockUseCreateDraftOrder.mockReturnValue({
@@ -166,7 +184,7 @@ describe('BestallningarPage', () => {
   });
 
   describe('(c) "Ny beställning" click → mutateAsync → navigate', () => {
-    it('calls mutateAsync and navigates to /bestallningar/<id> on success', async () => {
+    it('calls mutateAsync and navigates to /bestallningar/<id>?from=utkast on success', async () => {
       const user = userEvent.setup();
       const newOrder = { id: 'new-order-id-789' } as unknown as OrderResponse;
       const mockMutateAsync = vi.fn().mockResolvedValue(newOrder);
@@ -181,7 +199,84 @@ describe('BestallningarPage', () => {
       await user.click(buttons[0]!);
 
       expect(mockMutateAsync).toHaveBeenCalledTimes(1);
-      expect(mockNavigate).toHaveBeenCalledWith('/bestallningar/new-order-id-789');
+      // Phase 9 D-150 #3 + <discretion> rule — a new draft always lives in Utkast.
+      expect(mockNavigate).toHaveBeenCalledWith('/bestallningar/new-order-id-789?from=utkast');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Phase 9 ORD-10 / D-150 — ?from= propagation on row clicks
+  // ---------------------------------------------------------------------------
+
+  describe('(d) Phase 9 — Utkast tab row click navigates with ?from=utkast', () => {
+    it('appends ?from=utkast when a draft row is clicked', async () => {
+      const user = userEvent.setup();
+      mockDraftsQuery([DRAFT_ROW]);
+      mockCreateMutation();
+
+      renderWithProviders(<BestallningarPage />);
+
+      // DraftsTable rows + DraftsCardList cards both carry an aria-label
+      // beginning with 'Öppna utkast' (per DraftsTable.tsx line 67 and
+      // DraftCard.tsx). Either is fine — the navigate target is identical.
+      const candidates = screen.getAllByLabelText(/öppna utkast/i);
+      expect(candidates.length).toBeGreaterThan(0);
+
+      await user.click(candidates[0]!);
+
+      // Phase 9 D-150 #1 — drafts only render on the Utkast tab.
+      expect(mockNavigate).toHaveBeenCalledWith(`/bestallningar/${DRAFT_ROW.id}?from=utkast`);
+    });
+  });
+
+  describe('(e) Phase 9 — Skickade tab row click navigates with ?from=skickad', () => {
+    it('appends ?from=skickad when an OrdersTable row is clicked on the Skickade tab', async () => {
+      const user = userEvent.setup();
+      const SKICKAD_ROW = {
+        ...DRAFT_ROW,
+        id: 'order-skickad-1',
+        status: 'skickad' as const,
+        submittedAt: new Date().toISOString(),
+        submittedBy: { id: 'u-nurse', name: 'Sara Sjuksköterska' },
+      };
+      mockOrdersByStatusQuery([SKICKAD_ROW]);
+      mockCreateMutation();
+
+      renderWithProviders(<BestallningarPage />, { initialPath: '/?status=skickad' });
+
+      const candidates = screen.getAllByLabelText(/öppna beställning/i);
+      expect(candidates.length).toBeGreaterThan(0);
+
+      await user.click(candidates[0]!);
+
+      // Phase 9 D-150 #2 — tab value flows verbatim into ?from=.
+      expect(mockNavigate).toHaveBeenCalledWith(`/bestallningar/${SKICKAD_ROW.id}?from=skickad`);
+    });
+  });
+
+  describe('(f) Phase 9 — Alla tab row click navigates with ?from=alla (not row.status)', () => {
+    it('uses the active TAB value, not the row status, in ?from=', async () => {
+      const user = userEvent.setup();
+      // Row status is 'levererad' but the tab is 'alla' — ?from= must carry 'alla'.
+      const ALLA_ROW = {
+        ...DRAFT_ROW,
+        id: 'order-alla-1',
+        status: 'levererad' as const,
+        deliveredAt: new Date().toISOString(),
+        deliveredBy: { id: 'u-nurse', name: 'Sara Sjuksköterska' },
+      };
+      mockOrdersByStatusQuery([ALLA_ROW]);
+      mockCreateMutation();
+
+      renderWithProviders(<BestallningarPage />, { initialPath: '/?status=alla' });
+
+      const candidates = screen.getAllByLabelText(/öppna beställning/i);
+      expect(candidates.length).toBeGreaterThan(0);
+
+      await user.click(candidates[0]!);
+
+      // Phase 9 <discretion> "alla" case — the `tab` prop value is what flows into ?from=.
+      expect(mockNavigate).toHaveBeenCalledWith(`/bestallningar/${ALLA_ROW.id}?from=alla`);
     });
   });
 });
