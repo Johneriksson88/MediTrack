@@ -24,7 +24,7 @@
 | 4 | Confirm, Deliver & Stock | 3/3 | Complete   | 2026-05-22 |
 | 5 | Audit Log | 11/11 | Complete   | 2026-05-23 |
 | 6 | AI Categorization & Low-Stock Notifications | 3/3 | Complete   | 2026-05-23 |
-| 7 | Ops & Submission Polish | 6/6 | Complete   | 2026-05-24 |
+| 7 | Ops & Submission Polish | 10/10 | Complete   | 2026-05-24 |
 
 ## Phase Details
 
@@ -138,13 +138,17 @@
 **Mode:** mvp
 **UI hint:** no
 **Requirements:** OPS-01, OPS-02, OPS-04
-**Plans:** 6/6 plans complete
+**Plans:** 10/10 plans complete
   - [x] 07-01-readme-restructure-PLAN.md — Slice 1 (Wave 1): README restructure to brief-aligned canonical layout + Swedish translation of Phase 5+6 deep dives + consolidated Kända luckor + Med mer tid (OPS-02, OPS-04)
   - [x] 07-02-arkitekturval-PLAN.md — Slice 2 (Wave 2, depends on 07-01): Arkitekturval section — 9-row matrix + 3 prose paragraphs (Postgres+FOR UPDATE / Prisma $extends / named meditrack_app role) + Vad vi medvetet avstått från (OPS-02, OPS-04)
   - [x] 07-03-pnpm-verify-PLAN.md — Slice 3 (Wave 2, depends on 07-01): root pnpm verify chain (lint + typecheck + test + build) + apps/api typecheck script + README §Tester update (OPS-04)
   - [x] 07-04-sc04-playwright-PLAN.md — Slice 4 (Wave 2, depends on 07-01): SC#4 Playwright verification harness + 6×360 px PNGs + data-test="primary-nav" on Sidebar+BottomTabBar + README ## Mobil-först verifiering section (OPS-02, OPS-04)
   - [x] 07-05-demo-rundtur-and-sex-svar-PLAN.md — Slice 5 (Wave 3, depends on 07-01+07-04): ## Demo-rundtur (5 minuter) + ## §6-svar 7 elevator pitches + §6 supporting bullets in audit deep dive (OPS-02, OPS-04)
   - [x] 07-06-final-demo-path-gate-PLAN.md — Slice 6 (Wave 4, depends on all): final demo-path human gate on fresh docker compose up + git log narrative review + closing chore commit (OPS-01, OPS-02, OPS-04)
+  - [x] 07-07-readme-factual-fixes-PLAN.md — Slice 7 (Wave 1 gap-closure): close 07-VERIFICATION CR-01 (README Tailwind CSS 4→3) + WR-02 (audited models list Session,AuditEvent→User,Session) (OPS-02, OPS-04)
+  - [x] 07-08-sc04-redirect-guard-PLAN.md — Slice 8 (Wave 1 gap-closure): close WR-01 (sc04 harness redirect-guard for /login→/dashboard at viewports 768/1024/1440) + IN-01 (page.$$ → page.locator API refactor) (OPS-02, OPS-04)
+  - [x] 07-09-drop-redundant-typecheck-PLAN.md — Slice 9 (Wave 1 gap-closure): close WR-03 (remove redundant `tsc --noEmit` from apps/web scripts.build — typecheck already covered by pnpm verify chain) (OPS-02, OPS-04)
+  - [x] 07-10-dashboard-sort-collation-fix-PLAN.md — Slice 10 (Wave 1 follow-on): fix dashboard low-stock ORDER BY collation mismatch — Postgres `m."name" ASC` (C/POSIX) vs JS `localeCompare()` (locale-aware) — use `LOWER(m."name") ASC` (NTF-01)
 **Success Criteria:**
 1. `docker compose up` on a clean clone brings up `postgres`, `api`, `web` with seed data (3 seed users, one `vårdenhet`, ~10 medications, at least one in-flight order) — verified on a fresh machine or VM.
 2. README contains every brief-required section: purpose, stack rationale (TS+React+Fastify+Prisma+Postgres motivated against alternatives), run instructions, known gaps, "with more time" — plus short answers to the §6 interview questions (concurrency, 50-unit scaling, retrofitting auth, what you'd do differently).
