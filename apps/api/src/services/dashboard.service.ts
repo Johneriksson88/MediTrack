@@ -74,7 +74,7 @@ export async function listLowStockForUnit(
       AND cum."deletedAt" IS NULL
       AND cum."currentStock" < cum."lowStockThreshold"
     ORDER BY (cum."currentStock"::float / cum."lowStockThreshold"::float) ASC,
-             m."name" ASC
+             LOWER(m."name") ASC
   `;
 
   return {
