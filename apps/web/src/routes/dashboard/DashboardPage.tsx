@@ -1,17 +1,43 @@
 import { DashboardLowStockCard } from './DashboardLowStockCard';
+import { DashboardOrdersCard } from './DashboardOrdersCard';
 
 /**
- * Phase 6 D-118 / NTF-01 — dashboard route.
+ * Phase 6 D-118 / Phase 9 D-145 / D-146 — dashboard route.
  *
- * Replaces the Phase 1 `<EmptyStateCard heading="Dashboard"/>` stub
- * with `<DashboardLowStockCard />`. Per UI-SPEC §IA Changes there is
- * no separate `<h1>` here — the CardTitle inside DashboardLowStockCard
- * ("Läkemedel under tröskel") serves as the page's primary heading.
+ * Composes the two dashboard cards into a responsive 2-column grid.
  *
- * No layout chrome changes: AppShell, RoleRoute, and the bottom-tab
- * nav are untouched (D-118 — the change is contained to this one
- * route).
+ *   - <md  : single column, stacked. DashboardLowStockCard on top.
+ *   - md+  : two columns side-by-side. DashboardLowStockCard left,
+ *            DashboardOrdersCard right.
+ *
+ * Phase 6 D-118 originally specified the body as a single component
+ * composition with no page-level heading element and no AppShell chrome
+ * change — the CardTitles inside the cards serve as the page's primary
+ * headings. Phase 9 widens this to a sibling grid of two components;
+ * same principle holds (no chrome change beyond the route body, no
+ * page-level heading is added here, AppShell + RoleRoute + bottom-tab
+ * nav untouched).
+ *
+ * Grid container (D-145):
+ *   - grid grid-cols-1 md:grid-cols-2 — single column mobile, two
+ *     columns at md+ (768px) breakpoint.
+ *   - gap-4 — consistent with the rest of the app's card spacing.
+ *   - max-w-5xl mx-auto — caps the outer width on desktop so cards
+ *     stay readable rather than stretching across the full viewport.
+ *   - p-4 md:p-6 lg:p-8 — mobile-first padding pattern used elsewhere
+ *     in the app (BestallningarPage, ComposeOrderPage).
+ *
+ * Card order (D-146): low-stock first (left/top), orders second
+ * (right/bottom). Preserves the established placement so reviewers who
+ * saw earlier Phase 6/7 screenshots aren't disoriented. Low-stock is
+ * the originating Core Value loop trigger (nurse sees low stock →
+ * composes order); Beställningar is the downstream consequence side.
  */
 export function DashboardPage() {
-  return <DashboardLowStockCard />;
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-5xl mx-auto p-4 md:p-6 lg:p-8">
+      <DashboardLowStockCard />
+      <DashboardOrdersCard />
+    </div>
+  );
 }
