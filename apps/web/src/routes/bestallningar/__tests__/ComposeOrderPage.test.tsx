@@ -476,8 +476,10 @@ describe('ComposeOrderPage', () => {
       // discardMutation.mutateAsync should have been called with orderId
       expect(discardFn).toHaveBeenCalledWith({ orderId: 'order-1' });
 
-      // navigate should have been called with '/bestallningar'
-      expect(navigateFn).toHaveBeenCalledWith('/bestallningar');
+      // Phase 9 D-152/D-153 — post-discard navigate goes to backLink.to.
+      // With no ?from= and MOCK_ORDER_UTKAST (status: 'utkast'), the fallback
+      // resolves to '/bestallningar?status=utkast'.
+      expect(navigateFn).toHaveBeenCalledWith('/bestallningar?status=utkast');
     });
   });
 

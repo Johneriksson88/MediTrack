@@ -9,6 +9,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Can } from '@/auth/Can';
 import { useOrderQuery } from '@/features/orders/useOrderQueries';
 import { useSubmitOrder, useDiscardOrder, useConfirmOrder, useDeliverOrder } from '@/features/orders/useOrderMutations';
+import { useBestallningarBackLink } from '@/features/orders/useBestallningarBackLink';
 import { useCan } from '@/auth/useCan';
 import { useDocumentTitle } from '@/lib/useDocumentTitle';
 import { OrderLineTable } from './OrderLineTable';
@@ -42,7 +43,8 @@ import { OrderActorTrail } from './OrderActorTrail';
  *
  * Discard flow (D-67):
  *   Kasta button → setDiscardOpen(true) → DiscardDraftDialog opens.
- *   onConfirm = discardMutation.mutateAsync({ orderId }) then navigate('/bestallningar').
+ *   onConfirm = discardMutation.mutateAsync({ orderId }) then navigate(backLink.to)
+ *   (Phase 9 D-152 — preserves ?from= so the user lands back on their tab).
  *   On 409 order_locked, the hook invalidates ['order', id] → page re-renders Mode B.
  *
  * Mobile padding (D-71):
@@ -72,6 +74,14 @@ export function ComposeOrderPage() {
   const isError = orderQuery.isError;
   const is404 = isError && orderQuery.error?.envelope?.error?.code === 'not_found';
 
+  // Phase 9 ORD-10 / D-151 — single source of truth for the back-link.
+  // Reads ?from=<status> from the URL; falls back to the order's own current
+  // status when ?from= is absent (D-153). Loading + 404 branches pass
+  // fallbackStatus: undefined → hook returns ?from=-if-valid OR bare /bestallningar
+  // (D-155). OrderStatus is a strict subset of StatusTab, so the assignment
+  // type-checks without a cast.
+  const backLink = useBestallningarBackLink({ fallbackStatus: order?.status });
+
   // Document title — WR-05: use save/restore hook so SPA navigation
   // restores the previous route's title instead of hard-coding 'MediTrack'.
   // Default title while loading mirrors the loading-state copy direction;
@@ -93,11 +103,11 @@ export function ComposeOrderPage() {
         {/* Back link (renders immediately) */}
         <div>
           <Link
-            to="/bestallningar"
+            to={backLink.to}
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ChevronLeft className="h-4 w-4" />
-            Tillbaka till beställningar
+            {backLink.label}
           </Link>
         </div>
 
@@ -121,17 +131,17 @@ export function ComposeOrderPage() {
       <div className="flex flex-col gap-4 p-4 md:p-6 lg:p-8">
         <div>
           <Link
-            to="/bestallningar"
+            to={backLink.to}
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ChevronLeft className="h-4 w-4" />
-            Tillbaka till beställningar
+            {backLink.label}
           </Link>
         </div>
         <EmptyStateCard icon={ClipboardList} heading="Beställning hittades inte." />
         <div className="flex justify-center -mt-4">
-          <Link to="/bestallningar">
-            <Button variant="link">Tillbaka till beställningar</Button>
+          <Link to={backLink.to}>
+            <Button variant="link">{backLink.label}</Button>
           </Link>
         </div>
       </div>
@@ -159,11 +169,11 @@ export function ComposeOrderPage() {
     <>
       <div>
         <Link
-          to="/bestallningar"
+          to={backLink.to}
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <ChevronLeft className="h-4 w-4" />
-          Tillbaka till beställningar
+          {backLink.label}
         </Link>
       </div>
       <div className="flex items-center gap-3 flex-wrap">
@@ -410,7 +420,9 @@ export function ComposeOrderPage() {
           // inte" flash before the navigate runs. Navigating first unmounts
           // this page synchronously, so the cache eviction happens after
           // unmount and is never observed in this route's render.
-          navigate('/bestallningar');
+          // Phase 9 D-152 — preserve ?from= through the discard flow so the
+          // user lands back on the tab they came from.
+          navigate(backLink.to);
           try {
             await discardMutation.mutateAsync({ orderId: order.id });
           } catch {
