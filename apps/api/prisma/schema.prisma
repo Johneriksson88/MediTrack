@@ -58,6 +58,8 @@ model CareUnit {
   users               User[]
   careUnitMedications CareUnitMedication[]
   orders              Order[]
+  /// Phase 10 D-160 — inverse relation for per-(careUnit, year) counter rows.
+  orderNumberCounters OrderNumberCounter[]
 }
 
 model User {
@@ -253,11 +255,35 @@ model Order {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// Phase 10 D-160 / D-165 — per-(careUnit, year) monotonic counter.
+  /// Stamped at createDraftOrder time; immutable thereafter (D-162).
+  orderNumberCounter Int
+
+  /// Phase 10 D-161 / D-165 — year segment derived server-side at insert
+  /// from Postgres NOW() (DB clock, not app clock) to defeat clock-skew.
+  orderNumberYear Int
+
   lines OrderLine[]
 
+  @@unique([careUnitId, orderNumberYear, orderNumberCounter])
   @@index([careUnitId, status])
   @@index([careUnitId, createdAt])
   @@index([createdByUserId])
+}
+
+/// Phase 10 D-160 / D-164 — per-(careUnit, year) counter row. Holds the
+/// `nextValue` to be issued; UPDATE-then-INSERT-with-ON-CONFLICT inside the
+/// createDraftOrder $transaction takes a row-level write lock on this row,
+/// serializing concurrent mints for the same (careUnit, year). Same Postgres
+/// primitive as Phase 4 STK-02's FOR UPDATE on Medication — see D-79.
+/// onDelete: Cascade so removing a CareUnit cleans up its counters too.
+model OrderNumberCounter {
+  careUnitId String
+  careUnit   CareUnit @relation(fields: [careUnitId], references: [id], onDelete: Cascade)
+  year       Int
+  nextValue  Int
+
+  @@id([careUnitId, year])
 }
 
 /// Phase 3 D-63 — Per-medication line on an order. onDelete: Cascade so
