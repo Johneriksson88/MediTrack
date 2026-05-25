@@ -99,6 +99,11 @@ export function OrdersTable({ rows, tab, className }: OrdersTableProps) {
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/50 hover:bg-muted/50">
+            {/* Phase 10 D-166 — leftmost Best.nr column promotes orderNumber to
+                identity-level visual prominence; existing columns shift right. */}
+            <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide w-[120px]">
+              Best.nr
+            </TableHead>
             <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               {timeHeader}
             </TableHead>
@@ -131,7 +136,9 @@ export function OrdersTable({ rows, tab, className }: OrdersTableProps) {
               <TableRow
                 key={row.id}
                 tabIndex={0}
-                aria-label={`Öppna beställning från ${formatRelative(relevantAt)}`}
+                // Phase 10 D-166 — aria-label references orderNumber so screen
+                // readers hear the identifier (verbatim against the new column).
+                aria-label={`Öppna beställning ${row.orderNumber}`}
                 onClick={() => navigate(`/bestallningar/${row.id}?from=${tab}`)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -143,6 +150,10 @@ export function OrdersTable({ rows, tab, className }: OrdersTableProps) {
                 className="cursor-pointer hover:bg-muted/50 focus-visible:outline-none
                            focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
               >
+                {/* Phase 10 D-166 — leftmost Best.nr cell, monospaced identifier. */}
+                <TableCell className="px-4 py-3 font-mono text-sm">
+                  {row.orderNumber}
+                </TableCell>
                 <TableCell className="px-4 py-3 text-sm font-normal">
                   {formatRelative(relevantAt)}
                 </TableCell>

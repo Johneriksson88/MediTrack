@@ -51,7 +51,9 @@ import { OrderActorTrail } from './OrderActorTrail';
  *   Mode A: pb-[calc(56px+56px+env(safe-area-inset-bottom))] to clear the sticky footer.
  *   Mode B: no extra padding (footer absent).
  *
- * Document title: 'Nytt utkast — MediTrack' (utkast) | 'Beställning · Skickad — MediTrack' (non-utkast)
+ * Document title: 'Beställning ORD-YYYY-#### — MediTrack' once the order
+ * loads (Phase 10 D-167 — identity-first title); falls back to a generic
+ * 'Beställning — MediTrack' while the order is still loading.
  */
 
 export function ComposeOrderPage() {
@@ -84,16 +86,13 @@ export function ComposeOrderPage() {
 
   // Document title — WR-05: use save/restore hook so SPA navigation
   // restores the previous route's title instead of hard-coding 'MediTrack'.
-  // Default title while loading mirrors the loading-state copy direction;
-  // it switches once the order resolves. The hook itself takes care of
-  // capturing/restoring the *previous* document.title on each transition.
-  const titleForOrder =
-    order?.status === 'utkast'    ? 'Nytt utkast — MediTrack' :
-    order?.status === 'skickad'   ? 'Beställning · Skickad — MediTrack' :
-    order?.status === 'bekraftad' ? 'Beställning · Bekräftad — MediTrack' :
-    order?.status === 'levererad' ? 'Beställning · Levererad — MediTrack' :
-    order                         ? 'Beställning — MediTrack' :
-                                    'Beställning — MediTrack';
+  // Phase 10 D-167 — identity-first title once the order resolves
+  // ('Beställning ORD-YYYY-#### — MediTrack'); generic fallback while
+  // loading. The status pill carries the lifecycle stage; the H1 + title
+  // both carry identity.
+  const titleForOrder = order
+    ? `Beställning ${order.orderNumber} — MediTrack`
+    : 'Beställning — MediTrack';
   useDocumentTitle(titleForOrder);
 
   // ── Loading state ──────────────────────────────────────────────────────────
@@ -111,9 +110,10 @@ export function ComposeOrderPage() {
           </Link>
         </div>
 
-        {/* Heading + status pill skeleton */}
+        {/* Heading + status pill skeleton. Phase 10 D-167 — width bumped
+            from w-48 to w-64 to accommodate `Beställning ORD-YYYY-####`. */}
         <div className="flex items-center gap-3">
-          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-8 w-64" />
           <Skeleton className="h-5 w-16 rounded-full" />
         </div>
 
@@ -158,13 +158,10 @@ export function ComposeOrderPage() {
   const isLocked = !isUtkast;
 
   // ── Shared header ──────────────────────────────────────────────────────────
-  const heading =
-    isUtkast    ? 'Nytt utkast' :
-    isSkickad   ? 'Beställning · Skickad' :
-    isBekraftad ? 'Beställning · Bekräftad' :
-    isLevererad ? 'Beställning · Levererad' :
-                  'Beställning';
-
+  // Phase 10 D-167 — the H1 IS the order's name. The OrderStatusPill carries
+  // status (utkast / skickad / bekraftad / levererad); the H1 carries identity.
+  // The status-derived `heading` const that lived here (Phase 3/4) is removed:
+  // status was duplicated between H1 copy and the pill.
   const header = (
     <>
       <div>
@@ -177,7 +174,9 @@ export function ComposeOrderPage() {
         </Link>
       </div>
       <div className="flex items-center gap-3 flex-wrap">
-        <h1 className="text-2xl font-semibold leading-tight">{heading}</h1>
+        <h1 className="text-2xl font-semibold leading-tight">
+          {`Beställning ${order.orderNumber}`}
+        </h1>
         <OrderStatusPill status={order.status} />
       </div>
     </>
@@ -331,8 +330,11 @@ export function ComposeOrderPage() {
           {/* SubmitConfirmationBanner: role="status" announces on the
               in-session submit transition only (WR-08 — submitMutation.isSuccess
               distinguishes "just submitted" from "loaded a skickad order"). */}
+          {/* Phase 10 D-169 — orderNumber is required so the banner copy
+              reads 'Beställning ORD-YYYY-#### är skickad.' verbatim. */}
           <SubmitConfirmationBanner
             status={order.status}
+            orderNumber={order.orderNumber}
             justSubmitted={submitMutation.isSuccess}
           />
 

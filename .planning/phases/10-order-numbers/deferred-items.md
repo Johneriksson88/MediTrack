@@ -40,3 +40,60 @@ identical-looking but ASCII-only content), apps/api/prisma/seed.ts (first
 attempt lost the seed mint logic — recovered same way), apps/api/src/db/
 auditAllowlist.ts (first attempt lost the orderNumberCounter/Year additions —
 recovered same way).
+
+## D-10-03: DashboardLowStockCard renders all rows unbounded
+
+**Surface:** `apps/web/src/routes/dashboard/DashboardLowStockCard.tsx`
+
+**Symptom:** With seed data growing to 3433 low-stock medications, the
+DashboardPage scrollHeight at 360px viewport is now **158,406 pixels**
+(file size **9.4 MB** when captured fullPage). The card renders every
+row in the response, no pagination, no virtualization, no top-N limit.
+
+**Pre-existing:** Wave 2 of Phase 10 only modified DashboardOrdersCard,
+not DashboardLowStockCard. The earlier committed dashboard.png (Phase 7,
+commit 5834bb7) was 360x800 = 31 KB because the seed had ~handful of
+low-stock medications at that time. The data has grown over Phases 8–9.
+
+**Discovered:** Plan 10-02 checkpoint review (re-running sc04 harness
+produced an unreadable 9.4 MB dashboard.png).
+
+**Why deferred:** the LowStockCard sizing fix (top-N + “Visa fler”, or
+virtualization, or pagination) is its own UI/UX decision and is out of
+Plan 10-02 scope (which is strictly identity-level ORD-#### promotion
+on order-rendering surfaces).
+
+**Workaround applied in Plan 10-02:** the regenerated dashboard.png is
+**not** committed in this plan; the dashboard orderNumber promotion is
+verified via DashboardOrdersCard component tests + an element-scoped
+visual capture (saved to `.planning/phases/10-order-numbers/` as proof
+during the checkpoint, not committed to docs/screenshots).
+
+**Recommended follow-up phase:** dashboard "ovan vikningen" pass — cap
+LowStockCard at top-5 with “Visa fler” affordance, or virtualize the
+list, so the dashboard remains usable + readable at all data volumes.
+
+## D-10-04: docker compose web image is stale-by-design
+
+**Surface:** `docker-compose.yml` `web` service.
+
+**Symptom:** Wave 2 commits live on the worktree branch. The running
+docker `meditrack-web` container was built from main BEFORE Wave 2 was
+merged, so a `sc04` harness pointed at port 5173 captured the OLD UI
+(no ORD-#### column, no Compose H1) — falsely suggesting Wave 2 was
+incomplete.
+
+**Pre-existing:** the `web` service has no source-mount; the Dockerfile
+COPYs source at build time. `docker compose up --build` is required
+after every commit that touches `apps/web/` for the container image to
+match HEAD.
+
+**Workaround in Plan 10-02:** the checkpoint screenshot capture was
+done against a Vite dev server started directly from the worktree
+(`VITE_API_HOST=localhost pnpm --filter @meditrack/web dev`), bypassing
+the docker container. The docker `meditrack-web` was restarted unchanged
+after capture; it remains stale until the next `docker compose up --build`.
+
+**Action:** the README should call out that `docker compose up --build`
+(not just `up`) is required after FE source changes. Out of scope for
+Plan 10-02.

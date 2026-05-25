@@ -57,7 +57,9 @@ export function DraftCard({ item, onCardClick }: DraftCardProps) {
     }
   }
 
-  const ariaLabel = `Öppna utkast skapat ${formatRelative(item.createdAt)}`;
+  // Phase 10 D-166 — aria-label references orderNumber; screen readers
+  // hear the identifier verbatim against the new heading slot.
+  const ariaLabel = `Öppna utkast ${item.orderNumber}`;
 
   return (
     <div
@@ -70,17 +72,19 @@ export function DraftCard({ item, onCardClick }: DraftCardProps) {
                  hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2
                  focus-visible:ring-primary focus-visible:ring-offset-1"
     >
-      {/* Top row: relative time + chevron */}
+      {/* Top row: orderNumber heading + chevron. Phase 10 D-166 — heading slot
+          promotes orderNumber; formatRelative demotes to the secondary line. */}
       <div className="flex items-center justify-between gap-2 mb-1">
-        <span className="text-sm font-semibold text-foreground">
-          {formatRelative(item.createdAt)}
+        <span className="text-sm font-semibold text-foreground font-mono">
+          {item.orderNumber}
         </span>
         <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" aria-hidden="true" />
       </div>
 
-      {/* Middle row: created by */}
+      {/* Middle row: created by + relative time. Phase 10 D-166 — formatRelative
+          demoted from the heading; consolidated alongside the actor. */}
       <p className="text-xs text-muted-foreground mb-1">
-        Skapad av {item.createdBy.name}
+        Skapad av {item.createdBy.name} · {formatRelative(item.createdAt)}
       </p>
 
       {/* Bottom row: line count + total quantity */}

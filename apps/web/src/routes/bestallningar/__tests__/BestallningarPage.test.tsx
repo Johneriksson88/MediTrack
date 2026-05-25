@@ -69,10 +69,14 @@ function setupNurseAuth() {
   });
 }
 
-/** A single draft list item */
+/** A single draft list item.
+ *  Phase 10 D-166 — orderNumber is now required on orderListItem; fixtures
+ *  must supply the formatted identifier (`ORD-YYYY-####`) so the typecheck
+ *  wall accepts the row and DraftCard/OrdersCardList render the heading slot. */
 const DRAFT_ROW = {
   id: 'order-abc123',
   status: 'utkast' as const,
+  orderNumber: 'ORD-2026-0042',
   createdAt: new Date().toISOString(),
   lineCount: 3,
   totalQuantity: 12,
@@ -236,6 +240,9 @@ describe('BestallningarPage', () => {
         ...DRAFT_ROW,
         id: 'order-skickad-1',
         status: 'skickad' as const,
+        // Phase 10 D-166 — unique orderNumber per row so the rendered
+        // identifier is visually distinct from the draft fixture's value.
+        orderNumber: 'ORD-2026-0050',
         submittedAt: new Date().toISOString(),
         submittedBy: { id: 'u-nurse', name: 'Sara Sjuksköterska' },
       };
@@ -254,6 +261,61 @@ describe('BestallningarPage', () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // Phase 10 D-166 — orderNumber rendered in every tab's row site
+  // ---------------------------------------------------------------------------
+
+  describe('(g) Phase 10 D-166 — Utkast tab renders orderNumber in the row heading slot', () => {
+    it('renders DRAFT_ROW.orderNumber as text and as part of the row aria-label', () => {
+      mockDraftsQuery([DRAFT_ROW]);
+      mockCreateMutation();
+
+      renderWithProviders(<BestallningarPage />);
+
+      // The identifier text appears in the DOM at least once (DraftsTable
+      // cell, DraftCard heading, or both — getAllByText handles either).
+      expect(
+        screen.getAllByText(DRAFT_ROW.orderNumber).length,
+      ).toBeGreaterThanOrEqual(1);
+
+      // aria-label is now identifier-anchored: 'Öppna utkast ORD-2026-0042'.
+      const candidates = screen.getAllByLabelText(
+        `Öppna utkast ${DRAFT_ROW.orderNumber}`,
+      );
+      expect(candidates.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  describe('(h) Phase 10 D-166 — Skickade tab renders orderNumber in the row heading slot', () => {
+    it('renders the row orderNumber and aria-label "Öppna beställning ORD-…" on the Skickade tab', () => {
+      const SKICKAD_ROW = {
+        ...DRAFT_ROW,
+        id: 'order-skickad-2',
+        status: 'skickad' as const,
+        orderNumber: 'ORD-2026-0070',
+        submittedAt: new Date().toISOString(),
+        submittedBy: { id: 'u-nurse', name: 'Sara Sjuksköterska' },
+      };
+      mockOrdersByStatusQuery([SKICKAD_ROW]);
+      mockCreateMutation();
+
+      renderWithProviders(<BestallningarPage />, {
+        initialPath: '/?status=skickad',
+      });
+
+      // OrdersTable cell and/or OrdersCardList heading render the
+      // identifier verbatim.
+      expect(screen.getAllByText(/^ORD-2026-/).length).toBeGreaterThanOrEqual(1);
+
+      // aria-label is identifier-anchored on the new row sites.
+      expect(
+        screen.getAllByLabelText(
+          `Öppna beställning ${SKICKAD_ROW.orderNumber}`,
+        ).length,
+      ).toBeGreaterThanOrEqual(1);
+    });
+  });
+
   describe('(f) Phase 9 — Alla tab row click navigates with ?from=alla (not row.status)', () => {
     it('uses the active TAB value, not the row status, in ?from=', async () => {
       const user = userEvent.setup();
@@ -262,6 +324,8 @@ describe('BestallningarPage', () => {
         ...DRAFT_ROW,
         id: 'order-alla-1',
         status: 'levererad' as const,
+        // Phase 10 D-166 — unique orderNumber per row.
+        orderNumber: 'ORD-2026-0060',
         deliveredAt: new Date().toISOString(),
         deliveredBy: { id: 'u-nurse', name: 'Sara Sjuksköterska' },
       };

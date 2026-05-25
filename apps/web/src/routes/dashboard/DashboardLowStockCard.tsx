@@ -136,9 +136,16 @@ export function DashboardLowStockCard() {
     );
   }
 
+  // Phase 10 (post-checkpoint quick fix) — cap the data-branch card at
+  // viewport-minus-chrome (top header + bottom tab + page padding ~ 12rem)
+  // so the rendered list scrolls INSIDE the card instead of stretching the
+  // whole DashboardPage to ~158k px when the seed has thousands of low-stock
+  // rows. The existing `flex-1 overflow-y-auto` on CardContent already
+  // routes overflow to an internal scroll once the Card's height is bounded.
+  // See deferred-items.md D-10-03 for the proper virtualization follow-up.
   return (
     <Card
-      className="w-full max-w-2xl h-full flex flex-col"
+      className="w-full max-w-2xl h-full max-h-[calc(100vh-12rem)] flex flex-col"
       data-testid="dashboard-low-stock-card-data"
     >
       <CardHeader>
