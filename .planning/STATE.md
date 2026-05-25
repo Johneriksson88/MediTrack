@@ -4,7 +4,7 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 10
 status: ready_to_plan
-last_updated: "2026-05-25T10:32:42.676Z"
+last_updated: "2026-05-25T10:53:00.913Z"
 last_activity: 2026-05-25
 progress:
   total_phases: 11
@@ -22,7 +22,7 @@ See: [.planning/PROJECT.md](PROJECT.md) (initialized 2026-05-19)
 
 **Core value:** A nurse can place an order for a low-stock medication and, when delivered, the stock balance and audit trail update atomically — reliably, with no manual reconciliation.
 
-**Current focus:** Phase 10 — order numbers
+**Current focus:** Phase 10 — order-numbers
 
 ## Roadmap Reference
 
