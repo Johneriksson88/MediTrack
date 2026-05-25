@@ -6,6 +6,7 @@ import type {
   DashboardOrderRow,
   Role,
 } from '@meditrack/shared';
+import { formatOrderNumber } from '@meditrack/shared';
 
 /**
  * Phase 6 D-16 / D-117 / D-120 / NTF-01 — Dashboard low-stock service.
@@ -185,10 +186,21 @@ function toDashboardOrderRow(order: {
   createdAt: Date;
   createdBy: { id: string; name: string };
   lines: Array<{ id: string; quantity: number }>;
+  // Phase 10 D-165 — structured columns flow in for free because the
+  // findMany calls below do NOT use `select:` (they pass `include:` only,
+  // which returns all scalar columns). The input shape widening propagates
+  // through to the row builder.
+  orderNumberCounter: number;
+  orderNumberYear: number;
 }): DashboardOrderRow {
   return {
     id: order.id,
     status: order.status,
+    // Phase 10 D-168 — formatted display string for the row heading slot.
+    orderNumber: formatOrderNumber({
+      year: order.orderNumberYear,
+      counter: order.orderNumberCounter,
+    }),
     lineCount: order.lines.length,
     totalQuantity: order.lines.reduce((s, l) => s + l.quantity, 0),
     createdBy: { id: order.createdBy.id, name: order.createdBy.name },
