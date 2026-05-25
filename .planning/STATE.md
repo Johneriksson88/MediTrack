@@ -73,6 +73,7 @@ Phase 6 complete (all 3 plans). 12-step demo-path verified live by user on 2026-
 | 260521-kxa | Fix CR-03: add `.min(1)` to medicationSearchQuery.q so empty searches reject at the API boundary; +5 regression tests | 2026-05-21 | 100aba3 | [260521-kxa-fix-cr-03-enforce-min-length-on-medicati](./quick/260521-kxa-fix-cr-03-enforce-min-length-on-medicati/) |
 | 260521-l5c | Fix CR-04: wrap updateCareUnitMedication's two prisma.update calls in prisma.$transaction so combined-field PATCH bodies update atomically | 2026-05-21 | 663b608 | [260521-l5c-fix-cr-04-wrap-updatecareunitmedication-](./quick/260521-l5c-fix-cr-04-wrap-updatecareunitmedication-/) |
 | 260521-lc5 | Fix CR-02: follow-up migration aligning Medication.name trgm GIN index with Prisma's ILIKE emit; planner now bitmap-scans the index instead of seq-scanning 43k rows | 2026-05-21 | f900b33 | [260521-lc5-fix-cr-02-add-a-follow-up-migration-that](./quick/260521-lc5-fix-cr-02-add-a-follow-up-migration-that/) |
+| 260526-1px | Emit `medication.softDelete` audit action (Swedish label "Borttagen") so the admin audit log distinguishes med soft-deletes from generic updates — mirrors the `order.softDelete` precedent | 2026-05-25 | ffafa51 | [260526-1px-make-medication-soft-delete-write-audit-](./quick/260526-1px-make-medication-soft-delete-write-audit-/) |
 
 ## Phase 03 Progress
 
@@ -152,7 +153,7 @@ Phase 6 complete (all 3 plans). 12-step demo-path verified live by user on 2026-
 - D-116 live (Phase 6 Plan 02): Terapeutisk klass combobox positioned LEFTMOST in LakemedelFilter (search → Terapeutisk klass → ATC → Form → Visa endast under tröskel); URL-as-state via short param name ?class=N (single-letter value matches the Postgres enum verbatim); shared TherapeuticClassCombobox extracted as ONE file for Plan 02 (LakemedelFilter URL-state consumer) + Plan 03 (MedicationSheet react-hook-form consumer) — Warning-7 anti-duplication.
 - Plan 02 — Slice A's dashboard contract upgraded cleanly: `z.string().nullable()` (Plan 01 forward-compatible placeholder) → `therapeuticClassEnum.nullable()` (closed 14-value union). Wire shape unchanged; type narrowed. Plan 01's DashboardLowStockCard.test.tsx (5/5) and dashboard.integration.test.ts Tests 2+3 still pass after the swap — no regression.
 
-Last activity: 2026-05-25
+Last activity: 2026-05-25 - Completed quick task 260526-1px: medication.softDelete audit action
 
 ---
 *Last updated: 2026-05-23 after 06-03 demo-path verified by user — Phase 6 complete*
