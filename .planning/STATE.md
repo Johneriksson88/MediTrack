@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 09
 status: ready_to_plan
-last_updated: "2026-05-24T21:57:36.506Z"
-last_activity: 2026-05-24
+last_updated: "2026-05-25T06:30:31.356Z"
+last_activity: 2026-05-25
 progress:
   total_phases: 11
   completed_phases: 8
-  total_plans: 45
-  completed_plans: 42
+  total_plans: 46
+  completed_plans: 45
   percent: 73
 ---
 
@@ -151,7 +151,7 @@ Phase 6 complete (all 3 plans). 12-step demo-path verified live by user on 2026-
 - D-116 live (Phase 6 Plan 02): Terapeutisk klass combobox positioned LEFTMOST in LakemedelFilter (search → Terapeutisk klass → ATC → Form → Visa endast under tröskel); URL-as-state via short param name ?class=N (single-letter value matches the Postgres enum verbatim); shared TherapeuticClassCombobox extracted as ONE file for Plan 02 (LakemedelFilter URL-state consumer) + Plan 03 (MedicationSheet react-hook-form consumer) — Warning-7 anti-duplication.
 - Plan 02 — Slice A's dashboard contract upgraded cleanly: `z.string().nullable()` (Plan 01 forward-compatible placeholder) → `therapeuticClassEnum.nullable()` (closed 14-value union). Wire shape unchanged; type narrowed. Plan 01's DashboardLowStockCard.test.tsx (5/5) and dashboard.integration.test.ts Tests 2+3 still pass after the swap — no regression.
 
-Last activity: 2026-05-24
+Last activity: 2026-05-25
 
 ---
 *Last updated: 2026-05-23 after 06-03 demo-path verified by user — Phase 6 complete*
