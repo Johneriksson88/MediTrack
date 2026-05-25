@@ -59,6 +59,18 @@ import { formatRelative } from '@/routes/bestallningar/DraftCard';
  *   - sibling invalidation from the 5 order mutations in
  *     useOrderMutations.ts (D-148 — wired alongside the existing
  *     ['dashboard', 'low-stock'] invalidations).
+ *
+ * Phase 9 Plan 04 (gap-closure of `dashboard-wide-screen-whitespace`):
+ * the two data-branch Cards now declare `h-full flex flex-col` and
+ * their CardContents now declare `flex-1` so the orders card stretches
+ * to the same grid-row height as the sibling low-stock card under the
+ * parent's new `items-stretch` rule. Both data branches also expose
+ * `data-testid` hooks (`dashboard-orders-card-data` on the Card and
+ * `dashboard-orders-card-content` on the CardContent — same values
+ * across nurse and pharmacist/admin branches because only one branch
+ * renders per session) so Test 10 can encode the wide-screen sizing
+ * invariant deterministically. Loading, error, and empty branches are
+ * unchanged — they have their own centered visual shape.
  */
 export function DashboardOrdersCard() {
   const { data, isLoading, isError } = useDashboardOrdersQuery();
@@ -116,8 +128,14 @@ export function DashboardOrdersCard() {
       );
     }
     return (
-      <Card className="w-full max-w-2xl">
-        <CardContent className="p-4 space-y-4">
+      <Card
+        className="w-full max-w-2xl h-full flex flex-col"
+        data-testid="dashboard-orders-card-data"
+      >
+        <CardContent
+          className="p-4 space-y-4 flex-1"
+          data-testid="dashboard-orders-card-content"
+        >
           <Section
             title="Egna utkast"
             count={data.egnaUtkast.count}
@@ -144,8 +162,14 @@ export function DashboardOrdersCard() {
     );
   }
   return (
-    <Card className="w-full max-w-2xl">
-      <CardContent className="p-4 space-y-4">
+    <Card
+      className="w-full max-w-2xl h-full flex flex-col"
+      data-testid="dashboard-orders-card-data"
+    >
+      <CardContent
+        className="p-4 space-y-4 flex-1"
+        data-testid="dashboard-orders-card-content"
+      >
         <Section
           title="Väntar på bekräftelse"
           count={data.skickad.count}

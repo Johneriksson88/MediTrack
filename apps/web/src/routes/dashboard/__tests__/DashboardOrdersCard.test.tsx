@@ -9,8 +9,9 @@ import { renderWithProviders } from '../../../../test/helpers/renderWithProvider
 /**
  * Phase 9 Plan 03 Task 2 — DashboardOrdersCard component tests.
  *
- * Nine scenarios covering both role subviews + the four render states
- * + the refresh-policy contract:
+ * Ten scenarios (nine pre-Plan-04 + one Plan-04 gap-closure invariant)
+ * covering both role subviews + the four render states + the
+ * refresh-policy contract + the wide-screen sizing invariant:
  *
  *   Test 1 — Nurse subview rendering: Egna utkast + Senaste beställningar
  *     sections render with the locked Swedish headings, count CardDescription,
@@ -34,6 +35,16 @@ import { renderWithProviders } from '../../../../test/helpers/renderWithProvider
  *   Test 9 — Query config contract (D-148): DASHBOARD_ORDERS_QUERY_OPTIONS
  *     literals are asserted directly so a refactor that drops either flag
  *     also breaks the test.
+ *   Test 10 — Wide-screen sizing invariant (Plan 04 gap-closure): the
+ *     rendered data-branch Card carries `h-full flex flex-col` and the
+ *     CardContent carries `flex-1` so both dashboard cards stretch
+ *     symmetrically to the grid-row height set by the parent
+ *     DashboardPage's `items-stretch`. Queried via deterministic
+ *     `data-testid` hooks (`dashboard-orders-card-data` /
+ *     `dashboard-orders-card-content`) set by the component; encoded as
+ *     className-substring assertions (source-level), not jsdom layout
+ *     assertions, because wide-screen behavior cannot be verified
+ *     deterministically in jsdom.
  *
  * Pattern: mirrors DashboardLowStockCard.test.tsx (vi.mock the feature
  * hook + renderWithProviders) — `actual` preserve keeps the real named
@@ -396,4 +407,27 @@ describe('DashboardOrdersCard', () => {
       'orders',
     ]);
   });
+
+  it.each([
+    ['nurse', () => NURSE_DATA],
+    ['apotekare', () => pharmacistData('apotekare')],
+    ['admin', () => pharmacistData('admin')],
+  ] as const)(
+    'Test 10 (%s): data-branch Card stretches to grid-row height (h-full flex flex-col + CardContent flex-1) — Plan 04 gap-closure',
+    (_label, makeData) => {
+      mockQuery({ data: makeData(), isLoading: false, isError: false });
+      renderWithProviders(<DashboardOrdersCard />);
+
+      const card = screen.getByTestId('dashboard-orders-card-data');
+      const cardClassName = card.getAttribute('class') ?? '';
+      expect(cardClassName).toContain('h-full');
+      expect(cardClassName).toContain('flex');
+      expect(cardClassName).toContain('flex-col');
+      expect(cardClassName).toContain('max-w-2xl');
+
+      const cardContent = screen.getByTestId('dashboard-orders-card-content');
+      const cardContentClassName = cardContent.getAttribute('class') ?? '';
+      expect(cardContentClassName).toContain('flex-1');
+    },
+  );
 });

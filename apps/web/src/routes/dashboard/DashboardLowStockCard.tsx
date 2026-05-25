@@ -18,8 +18,9 @@ import { Skeleton } from '@/components/ui/skeleton';
  * Replaces the Phase 1 `<EmptyStateCard heading="Dashboard"/>` stub at
  * `/dashboard`. Enumerates every CareUnitMedication in the user's
  * vårdenhet whose `currentStock < lowStockThreshold`, sorted server-side
- * by urgency ratio (D-117). When the list exceeds ~5 rows, the inner
- * card body scrolls (`max-h-80 overflow-y-auto`).
+ * by urgency ratio (D-117). When the rendered rows exceed the available
+ * card height, the inner card body scrolls (overflow-y-auto on the
+ * data-branch CardContent).
  *
  * Four render states (UI-SPEC §1):
  *   - isLoading (initial mount): three Skeleton bars inside CardContent.
@@ -46,6 +47,18 @@ import { Skeleton } from '@/components/ui/skeleton';
  *   - window focus (D-119)
  *   - sibling invalidation from useDeliverOrder + useMedicationMutations
  *     (D-119 — wired in the next commit).
+ *
+ * Phase 9 Plan 04 (gap-closure of `dashboard-wide-screen-whitespace`):
+ * the data branch's Card now declares `h-full flex flex-col` and the
+ * CardContent now declares `flex-1 overflow-y-auto` (dropping the
+ * previous fixed-height scroll cap). The Card and CardContent also
+ * expose `data-testid` hooks (`dashboard-low-stock-card-data` and
+ * `dashboard-low-stock-card-content`) so the component test (Test 6)
+ * can encode the wide-screen sizing invariant deterministically. When
+ * the sibling DashboardOrdersCard renders taller content, the grid
+ * row's `items-stretch` (set on the parent in DashboardPage) gives
+ * this Card the matching height — the empty grid-cell space below the
+ * previous fixed-height frame is gone.
  */
 export function DashboardLowStockCard() {
   const { data, isLoading, isError } = useLowStockQuery();
@@ -104,15 +117,19 @@ export function DashboardLowStockCard() {
   }
 
   return (
-    <Card className="w-full max-w-2xl">
+    <Card
+      className="w-full max-w-2xl h-full flex flex-col"
+      data-testid="dashboard-low-stock-card-data"
+    >
       <CardHeader>
         <CardTitle>Läkemedel under tröskel</CardTitle>
         <CardDescription>totalt {total} under tröskel</CardDescription>
       </CardHeader>
       <CardContent
-        className="max-h-80 overflow-y-auto"
+        className="flex-1 overflow-y-auto"
         role="list"
         aria-label="Läkemedel under tröskel"
+        data-testid="dashboard-low-stock-card-content"
       >
         {rows.map((row) => (
           <div
