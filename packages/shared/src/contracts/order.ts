@@ -70,6 +70,13 @@ export const orderResponse = z.object({
   careUnitId: z.string(),
   createdByUserId: z.string(),
   status: orderStatusEnum,
+  // Phase 10 D-165 — formatted display string ('ORD-YYYY-####') is the
+  // single value FE renders; counter + year are the structured columns
+  // (kept on the full response shape for audit / debug / future search).
+  // All three are REQUIRED post-migration — the DB columns are NOT NULL.
+  orderNumber: z.string(),
+  orderNumberCounter: z.number().int().positive(),
+  orderNumberYear: z.number().int().positive(),
   submittedAt: z.string().datetime().nullable(),
   submittedByUserId: z.string().nullable(),
   // Phase 4 D-84 — confirm/deliver actor trios; null until the respective transition.
@@ -100,6 +107,9 @@ export type OrderResponse = z.infer<typeof orderResponse>;
 export const orderListItem = z.object({
   id: z.string(),
   status: orderStatusEnum,
+  // Phase 10 D-165 — formatted display string only; counter + year stay
+  // off the lean list shape (per CONTEXT.md Claude's discretion line 297).
+  orderNumber: z.string(),
   createdAt: z.string().datetime(),
   lineCount: z.number().int().nonnegative(),
   totalQuantity: z.number().int().nonnegative(),
