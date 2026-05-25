@@ -92,6 +92,15 @@ describe('Deliver order — Phase 4 Slice B (8-scenario D-78/D-79/D-81/D-88 suit
     expect(before2).not.toBeNull();
 
     const order = await createEmptyOrder(app, nurseCookie);
+    // Phase 10 ORD-11 / D-162 — capture orderNumber for lifecycle stability assertion.
+    const draftFetch = await app.inject({
+      method: 'GET',
+      url: `/api/orders/${order.id}`,
+      headers: { cookie: nurseCookie },
+    });
+    expect(draftFetch.statusCode).toBe(200);
+    const capturedOrderNumber = (draftFetch.json() as { orderNumber: string }).orderNumber;
+    expect(capturedOrderNumber).toMatch(/^ORD-\d{4}-\d{4,}$/);
 
     // Progress to Bekräftad with: 2 lines on CUM1 (qty 2+3=5) and 1 line on CUM2 (qty 4)
     await progressOrderToBekraftad(app, nurseCookie, apotekareCookie, order.id, [
@@ -118,10 +127,14 @@ describe('Deliver order — Phase 4 Slice B (8-scenario D-78/D-79/D-81/D-88 suit
       confirmedBy: { id: string; name: string } | null;
       submittedBy: { id: string; name: string } | null;
       createdBy: { id: string; name: string };
+      // Phase 10 D-165
+      orderNumber: string;
     }>();
 
     // Status flipped to levererad
     expect(body.status).toBe('levererad');
+    // Phase 10 D-162 / SC#5 — orderNumber unchanged from draft through deliver.
+    expect(body.orderNumber).toBe(capturedOrderNumber);
 
     // deliveredAt is a recent ISO datetime
     expect(body.deliveredAt).not.toBeNull();

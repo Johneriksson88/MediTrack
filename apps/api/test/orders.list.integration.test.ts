@@ -8,6 +8,7 @@ import {
   ensureAllRolesSeeded,
   findTestCareUnitMedication,
   loginAs,
+  mintTestOrderNumber,
   prisma,
   resetSessions,
 } from './helpers/buildTestApp.js';
@@ -80,10 +81,15 @@ async function createOrderInStatus(
   const { submittedByUserId, confirmedByUserId, deliveredByUserId, cumId } = opts;
 
   const now = new Date();
+  // Phase 10 D-160 / D-164 — direct prisma.order.create needs the new
+  // required NOT NULL columns; mint them via the shared test helper.
+  const { orderNumberCounter, orderNumberYear } = await mintTestOrderNumber(careUnitId);
   const data: Parameters<typeof prisma.order.create>[0]['data'] = {
     careUnitId,
     createdByUserId,
     status,
+    orderNumberCounter,
+    orderNumberYear,
     ...(submittedByUserId && { submittedAt: now, submittedByUserId }),
     ...(confirmedByUserId && { confirmedAt: now, confirmedByUserId }),
     ...(deliveredByUserId && { deliveredAt: now, deliveredByUserId }),
@@ -145,6 +151,8 @@ describe('List API widening — Phase 4 Slice C (7-scenario ORD-07 suite)', () =
       expect(ids).not.toContain(skickadOrder.id);
       for (const row of body.rows) {
         expect(row.status).toBe('utkast');
+        // Phase 10 ORD-11 / D-165 — every list row carries orderNumber on the lean shape.
+        expect((row as { orderNumber: string }).orderNumber).toMatch(/^ORD-\d{4}-\d{4,}$/);
       }
     } finally {
       await prisma.orderLine.deleteMany({ where: { orderId: utkastOrder.id } });
@@ -337,11 +345,15 @@ describe('List API widening — Phase 4 Slice C (7-scenario ORD-07 suite)', () =
     });
 
     // Create an order in careUnit B — should NOT appear in careUnit A's alla response.
+    // Phase 10 D-160 / D-164 — mint orderNumber columns inline for B.
+    const mintB = await mintTestOrderNumber(CARE_UNIT_B_ID);
     const orderB = await prisma.order.create({
       data: {
         careUnitId: CARE_UNIT_B_ID,
         createdByUserId: sjukskoterska.id, // same user — only isolation matters
         status: 'utkast',
+        orderNumberCounter: mintB.orderNumberCounter,
+        orderNumberYear: mintB.orderNumberYear,
       },
     });
 

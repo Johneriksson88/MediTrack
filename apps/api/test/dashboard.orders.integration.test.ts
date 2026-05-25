@@ -7,6 +7,7 @@ import {
   buildTestApp,
   ensureAllRolesSeeded,
   loginAs,
+  mintTestOrderNumber,
   prisma,
   resetSessions,
 } from './helpers/buildTestApp.js';
@@ -89,11 +90,15 @@ describe('GET /api/dashboard/orders', () => {
     for (const row of body.egnaUtkast.rows) {
       expect(row.status).toBe('utkast');
       expect(row.createdBy.id).toBe(nurseUser.id);
+      // Phase 10 ORD-11 / D-168 — every dashboard row carries orderNumber.
+      expect(row.orderNumber).toMatch(/^ORD-\d{4}-\d{4,}$/);
     }
 
     expect(body.recentHistory.length).toBeLessThanOrEqual(5);
     for (const row of body.recentHistory) {
       expect(row.status).not.toBe('utkast');
+      // Phase 10 ORD-11 / D-168
+      expect(row.orderNumber).toMatch(/^ORD-\d{4}-\d{4,}$/);
     }
   });
 
@@ -117,6 +122,8 @@ describe('GET /api/dashboard/orders', () => {
     expect(body.skickad.count).toBeGreaterThanOrEqual(body.skickad.rows.length);
     for (const row of body.skickad.rows) {
       expect(row.status).toBe('skickad');
+      // Phase 10 ORD-11 / D-168
+      expect(row.orderNumber).toMatch(/^ORD-\d{4}-\d{4,}$/);
     }
 
     expect(body.bekraftad.rows.length).toBeLessThanOrEqual(5);
@@ -125,6 +132,8 @@ describe('GET /api/dashboard/orders', () => {
     );
     for (const row of body.bekraftad.rows) {
       expect(row.status).toBe('bekraftad');
+      // Phase 10 ORD-11 / D-168
+      expect(row.orderNumber).toMatch(/^ORD-\d{4}-\d{4,}$/);
     }
   });
 
@@ -204,11 +213,15 @@ describe('GET /api/dashboard/orders', () => {
         },
       });
 
+      // Phase 10 D-160 / D-164 — mint orderNumber columns inline.
+      const mintOther = await mintTestOrderNumber(otherCareUnit.id);
       otherOrder = await prisma.order.create({
         data: {
           careUnitId: otherCareUnit.id,
           createdByUserId: otherUser.id,
           status: 'utkast',
+          orderNumberCounter: mintOther.orderNumberCounter,
+          orderNumberYear: mintOther.orderNumberYear,
         },
       });
 
@@ -278,11 +291,17 @@ describe('GET /api/dashboard/orders', () => {
     const createdIds: string[] = [];
     try {
       for (let i = 0; i < 6; i++) {
+        // Phase 10 D-160 / D-164 — mint per-iteration so each fixture order
+        // gets a unique counter (the UPDATE branch advances nextValue by 1
+        // each call; six iterations consume six counters).
+        const mint = await mintTestOrderNumber(careUnitId);
         const o = await prisma.order.create({
           data: {
             careUnitId,
             createdByUserId: nurseUser.id,
             status: 'utkast',
+            orderNumberCounter: mint.orderNumberCounter,
+            orderNumberYear: mint.orderNumberYear,
           },
         });
         createdIds.push(o.id);
@@ -330,6 +349,9 @@ describe('GET /api/dashboard/orders', () => {
     // block always cleans whatever made it in.
     const seededIds: string[] = [];
     try {
+      // Phase 10 D-160 / D-164 — mint per-create so each staged order gets
+      // a unique counter / year pair (mint runs before each create).
+      const mintOldest = await mintTestOrderNumber(careUnitId);
       const oldestId = (
         await prisma.order.create({
           data: {
@@ -337,10 +359,13 @@ describe('GET /api/dashboard/orders', () => {
             createdByUserId: nurseUser.id,
             status: 'utkast',
             createdAt: new Date(baseMs),
+            orderNumberCounter: mintOldest.orderNumberCounter,
+            orderNumberYear: mintOldest.orderNumberYear,
           },
         })
       ).id;
       seededIds.push(oldestId);
+      const mintMiddle = await mintTestOrderNumber(careUnitId);
       const middleId = (
         await prisma.order.create({
           data: {
@@ -348,10 +373,13 @@ describe('GET /api/dashboard/orders', () => {
             createdByUserId: nurseUser.id,
             status: 'utkast',
             createdAt: new Date(baseMs + 60 * 60 * 1000),
+            orderNumberCounter: mintMiddle.orderNumberCounter,
+            orderNumberYear: mintMiddle.orderNumberYear,
           },
         })
       ).id;
       seededIds.push(middleId);
+      const mintNewest = await mintTestOrderNumber(careUnitId);
       const newestId = (
         await prisma.order.create({
           data: {
@@ -359,6 +387,8 @@ describe('GET /api/dashboard/orders', () => {
             createdByUserId: nurseUser.id,
             status: 'utkast',
             createdAt: new Date(baseMs + 2 * 60 * 60 * 1000),
+            orderNumberCounter: mintNewest.orderNumberCounter,
+            orderNumberYear: mintNewest.orderNumberYear,
           },
         })
       ).id;

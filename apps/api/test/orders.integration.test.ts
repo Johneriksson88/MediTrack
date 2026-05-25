@@ -8,6 +8,7 @@ import {
   ensureAllRolesSeeded,
   findTestCareUnitMedication,
   loginAs,
+  mintTestOrderNumber,
   prisma,
   resetSessions,
 } from './helpers/buildTestApp.js';
@@ -82,12 +83,23 @@ describe('Draft orders — Slice 2 API contracts', () => {
       careUnitId: string;
       lines: unknown[];
       createdBy: { name: string };
+      // Phase 10 D-165 — every order response carries the trio.
+      orderNumber: string;
+      orderNumberCounter: number;
+      orderNumberYear: number;
     };
     expect(order.status).toBe('utkast');
     expect(order.careUnitId).toBe(TEST_SJUKSKOTERSKA.careUnitId);
     expect(Array.isArray(order.lines)).toBe(true);
     expect(order.lines).toHaveLength(0);
     expect(order.createdBy.name).toBe(TEST_SJUKSKOTERSKA.name);
+
+    // Phase 10 ORD-11 / D-165 — orderNumber populated on POST response,
+    // counter is a positive integer, year matches the current year.
+    expect(order.orderNumber).toMatch(/^ORD-\d{4}-\d{4,}$/);
+    expect(Number.isInteger(order.orderNumberCounter)).toBe(true);
+    expect(order.orderNumberCounter).toBeGreaterThan(0);
+    expect(order.orderNumberYear).toBe(new Date().getFullYear());
 
     // Cleanup
     await prisma.order.delete({ where: { id: order.id } });
@@ -837,6 +849,8 @@ describe('Draft orders integration', () => {
     if (!userA) throw new Error('User A not found');
 
     // Seed 1 Skickad order for CareUnit A directly via prisma
+    // Phase 10 D-160 / D-164 — mint orderNumber columns inline.
+    const mintA = await mintTestOrderNumber(TEST_SJUKSKOTERSKA.careUnitId);
     const orderASkickad = await prisma.order.create({
       data: {
         careUnitId: TEST_SJUKSKOTERSKA.careUnitId,
@@ -844,15 +858,20 @@ describe('Draft orders integration', () => {
         status: 'skickad',
         submittedAt: new Date(),
         submittedByUserId: userA.id,
+        orderNumberCounter: mintA.orderNumberCounter,
+        orderNumberYear: mintA.orderNumberYear,
       },
     });
 
     // Seed 1 Utkast for CareUnit C via prisma
+    const mintC = await mintTestOrderNumber(CARE_UNIT_C_ID);
     const orderC = await prisma.order.create({
       data: {
         careUnitId: CARE_UNIT_C_ID,
         createdByUserId: userC.id,
         status: 'utkast',
+        orderNumberCounter: mintC.orderNumberCounter,
+        orderNumberYear: mintC.orderNumberYear,
       },
     });
 

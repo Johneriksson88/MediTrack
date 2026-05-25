@@ -128,6 +128,11 @@ describe('orderResponse — Zod schema round-trip', () => {
     careUnitId: 'careunit-01',
     createdByUserId: 'user-01',
     status: 'utkast' as const,
+    // Phase 10 D-165 — every order envelope carries orderNumber + counter + year
+    // post-migration. ORD-2026-0042 is the literal example from ROADMAP SC#1.
+    orderNumber: 'ORD-2026-0042',
+    orderNumberCounter: 42,
+    orderNumberYear: 2026,
     submittedAt: null,
     submittedByUserId: null,
     // Phase 4 D-84 — confirm/deliver trios; null while in utkast/skickad.
@@ -185,5 +190,40 @@ describe('orderResponse — Zod schema round-trip', () => {
     };
     const result = orderResponse.safeParse(withNullStrength);
     expect(result.success).toBe(true);
+  });
+
+  it('Phase 10 D-165 — accepts the canonical ORD-YYYY-#### orderNumber + counter + year trio', () => {
+    const result = orderResponse.safeParse(sampleOrder);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.orderNumber).toBe('ORD-2026-0042');
+      expect(result.data.orderNumberCounter).toBe(42);
+      expect(result.data.orderNumberYear).toBe(2026);
+    }
+  });
+
+  it('Phase 10 D-165 — rejects an order envelope missing orderNumber', () => {
+    const missingOrderNumber = { ...sampleOrder } as Record<string, unknown>;
+    delete missingOrderNumber.orderNumber;
+    const result = orderResponse.safeParse(missingOrderNumber);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((i) => i.path.join('.'));
+      expect(paths).toContain('orderNumber');
+    }
+  });
+
+  it('Phase 10 D-165 — rejects an order envelope missing orderNumberCounter', () => {
+    const missingCounter = { ...sampleOrder } as Record<string, unknown>;
+    delete missingCounter.orderNumberCounter;
+    const result = orderResponse.safeParse(missingCounter);
+    expect(result.success).toBe(false);
+  });
+
+  it('Phase 10 D-165 — rejects an order envelope missing orderNumberYear', () => {
+    const missingYear = { ...sampleOrder } as Record<string, unknown>;
+    delete missingYear.orderNumberYear;
+    const result = orderResponse.safeParse(missingYear);
+    expect(result.success).toBe(false);
   });
 });
