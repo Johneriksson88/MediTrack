@@ -613,7 +613,7 @@ function EditSheet({
             )}
           </form>
 
-          <SheetFooter className="border-t border-border p-4 flex items-center justify-between gap-2 pb-[calc(1rem+56px+env(safe-area-inset-bottom))]">
+          <SheetFooter className="border-t border-border p-4 flex items-center justify-between gap-2 pb-[calc(1rem+56px+env(safe-area-inset-bottom))] md:pb-4">
             {/*
              * Left: Ta bort button — gated by <Can action="medication:delete"> for
              * defense-in-depth (D-17 / T-02-18). The edit Sheet itself only opens
@@ -773,7 +773,7 @@ function ViewSheet({
           </div>
         </fieldset>
 
-        <SheetFooter className="border-t border-border p-4 flex items-center justify-end gap-2 pb-[calc(1rem+56px+env(safe-area-inset-bottom))]">
+        <SheetFooter className="border-t border-border p-4 flex items-center justify-end gap-2 pb-[calc(1rem+56px+env(safe-area-inset-bottom))] md:pb-4">
           <Button
             ref={closeButtonRef}
             variant="secondary"
@@ -1296,7 +1296,7 @@ export function MedicationSheet({
           )}
         </div>
 
-        <SheetFooter className="border-t border-border p-4 flex items-center justify-end gap-2 pb-[calc(1rem+56px+env(safe-area-inset-bottom))]">
+        <SheetFooter className="border-t border-border p-4 flex items-center justify-end gap-2 pb-[calc(1rem+56px+env(safe-area-inset-bottom))] md:pb-4">
           <Button
             variant="ghost"
             onClick={() => onOpenChange(false)}
