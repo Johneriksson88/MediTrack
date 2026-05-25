@@ -141,7 +141,14 @@ export const dashboardOrderRow = z.object({
   lineCount: z.number().int().nonnegative(),
   totalQuantity: z.number().int().nonnegative(),
   createdBy: z.object({ id: z.string(), name: z.string() }),
-  createdAt: z.string(), // ISO-8601
+  // WR-01 (Phase 9 review) — tightened from `z.string()` to
+  // `z.string().datetime()` so the wire shape enforces what the service
+  // already emits (`order.createdAt.toISOString()`). Matches the sibling
+  // `orderListItem.createdAt` (packages/shared/src/contracts/order.ts).
+  // A future BE change that accidentally emits a non-ISO value (e.g.
+  // dropped `Z`, epoch ms) now fails Zod parse on both sides instead of
+  // silently breaking `formatRelative(row.createdAt)` in the FE.
+  createdAt: z.string().datetime(),
 });
 export type DashboardOrderRow = z.infer<typeof dashboardOrderRow>;
 
