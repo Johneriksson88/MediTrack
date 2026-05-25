@@ -21,8 +21,8 @@ import { ApiError, fetchJson } from '@/lib/api';
  *       admin -> `<Can action="admin:ping">` reveals an "Admin ping"
  *                Button that POSTs to /api/admin/ping (Phase 1 success #2);
  *                response shown inline.
- *       non-admin -> muted note "Denna åtgärd kräver adminrättigheter."
- *                    verbatim per UI-SPEC §Copy.
+ *       non-admin -> muted note "Ändringar kan endast göras av administratör."
+ *                    verbatim per ROADMAP §"Phase 11" SC#2 (D-173).
  *
  * The 403 fallback `Alert` is rendered if the admin endpoint ever returns
  * forbidden to a user whose UI thinks they're admin — defense in depth.
@@ -112,7 +112,7 @@ export function KontoPage() {
 
         {user.role !== 'admin' && (
           <p className="text-xs text-[#64748B]">
-            Denna åtgärd kräver adminrättigheter.
+            Ändringar kan endast göras av administratör.
           </p>
         )}
       </div>
