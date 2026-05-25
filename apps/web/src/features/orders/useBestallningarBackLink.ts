@@ -83,6 +83,19 @@ export function useBestallningarBackLink(opts?: { fallbackStatus?: StatusTab }):
   const raw = searchParams.get('from');
   const fromValid: StatusTab | null = raw && isValidStatus(raw) ? raw : null;
   const resolved: StatusTab | null = fromValid ?? opts?.fallbackStatus ?? null;
+  // WR-07 (Phase 9 review) — destination URL preserves ONLY `status=`.
+  // BestallningarPage's tab-change handler (lines 92-96) takes care to
+  // preserve all OTHER URL params via `setSearchParams((prev) => …
+  // next.set('status', value) …)`, so the back-link is asymmetric with
+  // that policy: any deep-link state on /bestallningar (filters, page,
+  // sort) is dropped when the user back-navigates from a detail page.
+  // Today there is no `page=` or filter query string on /bestallningar
+  // so this is theoretical, but Phase 7's planned pagination + any
+  // future tab-scoped filter will tickle it. Preserving arbitrary
+  // params requires the row-click navigation to ALSO stash the full
+  // incoming search string (e.g. `?from=skickad&return=<urlencoded>`),
+  // which is out of scope for Phase 9. Flagging here so the Phase 7+
+  // owner can pick this up without re-deriving the trade-off.
   const to = resolved ? `/bestallningar?status=${resolved}` : '/bestallningar';
   return { to, label: 'Tillbaka till beställningar' };
 }
