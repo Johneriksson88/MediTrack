@@ -28,7 +28,7 @@
 | 7 | Ops & Submission Polish | 10/10 | Complete   | 2026-05-24 |
 | 8 | Compose & Catalog UX | 3/3 | Complete   | 2026-05-24 |
 | 9 | Dashboard Depth + Back-Nav | 4/4 | Complete   | 2026-05-25 |
-| 10 | Order Numbers | 1/2 | In Progress|  |
+| 10 | Order Numbers | 2/2 | Complete   | 2026-05-25 |
 | 11 | Quick Polish | — | Pending | — |
 
 ## Phase Details
@@ -199,9 +199,9 @@
 **Mode:** mvp
 **UI hint:** yes (UI changes are display-only — no new pages)
 **Requirements:** ORD-11
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
   - [x] 10-01-PLAN.md — Slice 1 (Wave 1): BE foundation — schema + migration 0013 (LOCKED 5-step SQL) + [BLOCKING] prisma migrate dev + formatOrderNumber shared utility + mintOrderNumber service helper + createDraftOrder $transaction integration + contract widening (orderResponse/orderListItem/dashboardOrderRow) + AUDIT_ALLOWLIST.Order extension + 5-scenario orders.orderNumber.integration.test.ts (concurrency / year-boundary / cross-vårdenhet / lifecycle stability / backfill) + 6 existing integration tests extended (ORD-11)
-  - [ ] 10-02-PLAN.md — Slice 2 (Wave 2, depends on 10-01): FE rendering surfaces — leftmost Best.nr column on OrdersTable + DraftsTable + Card variants heading swap + Compose H1 Beställning ORD-YYYY-#### + DashboardOrdersCard row promotion + SubmitConfirmationBanner copy + aria-label updates + 4 component test files extended + sc04 mobile screenshot re-capture + final human-verify checkpoint (ORD-11)
+  - [x] 10-02-PLAN.md — Slice 2 (Wave 2, depends on 10-01): FE rendering surfaces — leftmost Best.nr column on OrdersTable + DraftsTable + Card variants heading swap + Compose H1 Beställning ORD-YYYY-#### + DashboardOrdersCard row promotion + SubmitConfirmationBanner copy + aria-label updates + 4 component test files extended + sc04 mobile screenshot re-capture + final human-verify checkpoint (ORD-11)
 **Success Criteria:**
 1. Prisma migration adds `orderNumber` to `Order` (NOT NULL after backfill, UNIQUE per vårdenhet). Generation strategy decided in discuss-phase (e.g. `ORD-2026-0001` per-vårdenhet sequence, or year-prefixed monotonic — to be motivated against alternatives).
 2. `POST /api/orders` and downstream status mutations include `orderNumber` in the response payload; existing tests updated.
