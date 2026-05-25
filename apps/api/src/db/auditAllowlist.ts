@@ -90,6 +90,17 @@ export const AUDIT_ALLOWLIST: Record<AuditedModel, readonly string[]> = {
     'deletedAt',
     'createdAt',
     'updatedAt',
+    // Phase 10 D-165 + D-97 + D-95 — diff-at-read surfaces the per-(careUnit,
+    // year) counter columns on order.create events via the existing
+    // $extends middleware (D-90 / D-93). One-file extension; the first
+    // createDraftOrder call produces an audit row showing
+    // orderNumberCounter: null -> N + orderNumberYear: null -> YYYY
+    // automatically — no new audit action. The derived display string
+    // ORD-YYYY-#### is NOT included because it is computed (D-165 —
+    // formatOrderNumber is the single source of truth); audit consumers
+    // reconstruct it from the two columns if needed.
+    'orderNumberCounter',
+    'orderNumberYear',
   ],
   OrderLine: [
     'id',
