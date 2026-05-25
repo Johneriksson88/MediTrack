@@ -17,12 +17,22 @@ import type { OrderResponse } from '@meditrack/shared';
  * branching on status here (rather than blindly rendering for !utkast)
  * keeps each transition's copy distinct.
  *
- * The literal copy 'Beställningen är skickad till apotekare.' is locked
- * per D-70 Swedish UI vocabulary.
+ * Phase 10 D-169 — copy gained orderNumber. The locked literal is now
+ * 'Beställning {orderNumber} är skickad.' (replaces the Phase 3 D-70
+ * copy 'Beställningen är skickad till apotekare.'). Anchoring the
+ * confirmation to the user-readable identifier closes the loop on the
+ * Phase 10 promise: every order-rendering surface surfaces the number.
  */
 interface SubmitConfirmationBannerProps {
   /** The current order status — banner copy branches on this. */
   status: OrderResponse['status'];
+  /**
+   * Phase 10 D-169 — the formatted order number ('ORD-YYYY-####') used
+   * verbatim in the banner copy. Passed by ComposeOrderPage from the
+   * loaded order's `orderNumber` field (required on the wire post-
+   * Plan-10-01).
+   */
+  orderNumber: string;
   /**
    * Whether the page just observed a successful submit in this session.
    * When false, the banner does NOT render — even if status === 'skickad'.
@@ -36,6 +46,7 @@ interface SubmitConfirmationBannerProps {
 
 export function SubmitConfirmationBanner({
   status,
+  orderNumber,
   justSubmitted,
 }: SubmitConfirmationBannerProps) {
   // WR-08: only render on the in-session submit transition (skickad).
@@ -48,7 +59,7 @@ export function SubmitConfirmationBanner({
       className="mt-4 mx-4 sm:mx-0 rounded-lg border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-primary flex items-center gap-2"
     >
       <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-      Beställningen är skickad till apotekare.
+      {`Beställning ${orderNumber} är skickad.`}
     </div>
   );
 }
