@@ -283,38 +283,50 @@ describe('GET /api/dashboard/orders', () => {
     // existing rows in the test DB. Stagger by 1 hour so the relative
     // order is unambiguous.
     const baseMs = Date.now() + 365 * 24 * 60 * 60 * 1000; // +1 year
-    const oldestId = (
-      await prisma.order.create({
-        data: {
-          careUnitId,
-          createdByUserId: nurseUser.id,
-          status: 'utkast',
-          createdAt: new Date(baseMs),
-        },
-      })
-    ).id;
-    const middleId = (
-      await prisma.order.create({
-        data: {
-          careUnitId,
-          createdByUserId: nurseUser.id,
-          status: 'utkast',
-          createdAt: new Date(baseMs + 60 * 60 * 1000),
-        },
-      })
-    ).id;
-    const newestId = (
-      await prisma.order.create({
-        data: {
-          careUnitId,
-          createdByUserId: nurseUser.id,
-          status: 'utkast',
-          createdAt: new Date(baseMs + 2 * 60 * 60 * 1000),
-        },
-      })
-    ).id;
 
+    // WR-04 (Phase 9 review) — seed creates moved INSIDE the try block so
+    // a partial-failure (e.g. one create succeeds, the second throws on a
+    // DB hiccup) does not leak orphan rows into the test DB. The previous
+    // structure had three sibling prisma.order.create calls OUTSIDE the
+    // try{}, so the finally{ deleteMany } only ran if all three succeeded.
+    // IDs accumulate in `seededIds` as each create returns; the finally
+    // block always cleans whatever made it in.
+    const seededIds: string[] = [];
     try {
+      const oldestId = (
+        await prisma.order.create({
+          data: {
+            careUnitId,
+            createdByUserId: nurseUser.id,
+            status: 'utkast',
+            createdAt: new Date(baseMs),
+          },
+        })
+      ).id;
+      seededIds.push(oldestId);
+      const middleId = (
+        await prisma.order.create({
+          data: {
+            careUnitId,
+            createdByUserId: nurseUser.id,
+            status: 'utkast',
+            createdAt: new Date(baseMs + 60 * 60 * 1000),
+          },
+        })
+      ).id;
+      seededIds.push(middleId);
+      const newestId = (
+        await prisma.order.create({
+          data: {
+            careUnitId,
+            createdByUserId: nurseUser.id,
+            status: 'utkast',
+            createdAt: new Date(baseMs + 2 * 60 * 60 * 1000),
+          },
+        })
+      ).id;
+      seededIds.push(newestId);
+
       const res = await app.inject({
         method: 'GET',
         url: '/api/dashboard/orders',
@@ -340,9 +352,11 @@ describe('GET /api/dashboard/orders', () => {
         top3[1]!.createdAt > top3[2]!.createdAt,
       ).toBe(true);
     } finally {
-      await prisma.order.deleteMany({
-        where: { id: { in: [oldestId, middleId, newestId] } },
-      });
+      if (seededIds.length > 0) {
+        await prisma.order.deleteMany({
+          where: { id: { in: seededIds } },
+        });
+      }
     }
   });
 });
