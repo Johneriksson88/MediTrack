@@ -52,9 +52,9 @@ enum MedicationSource {
 }
 
 model CareUnit {
-  id                  String                @id @default(cuid())
+  id                  String               @id @default(cuid())
   name                String
-  createdAt           DateTime              @default(now())
+  createdAt           DateTime             @default(now())
   users               User[]
   careUnitMedications CareUnitMedication[]
   orders              Order[]
@@ -229,7 +229,7 @@ model Order {
   /// with historical Skickad orders. Named relation required by Prisma to
   /// disambiguate from createdBy (two FKs to User on the same model).
   submittedByUserId String?
-  submittedBy       User?  @relation(name: "OrderSubmittedBy", fields: [submittedByUserId], references: [id], onDelete: Restrict)
+  submittedBy       User?   @relation(name: "OrderSubmittedBy", fields: [submittedByUserId], references: [id], onDelete: Restrict)
 
   /// Phase 4 D-84 — stamped by the confirm transition; null while in utkast/skickad.
   confirmedAt DateTime?
@@ -237,14 +237,14 @@ model Order {
   /// Phase 4 D-84 — FK to the user who confirmed; Restrict preserves history.
   /// Named relation disambiguates from createdBy/submittedBy/deliveredBy.
   confirmedByUserId String?
-  confirmedBy       User?  @relation(name: "OrderConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: Restrict)
+  confirmedBy       User?   @relation(name: "OrderConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: Restrict)
 
   /// Phase 4 D-84 — stamped by the deliver transition; null until levererad.
   deliveredAt DateTime?
 
   /// Phase 4 D-84 — FK to the user who delivered; Restrict preserves history.
   deliveredByUserId String?
-  deliveredBy       User?  @relation(name: "OrderDeliveredBy", fields: [deliveredByUserId], references: [id], onDelete: Restrict)
+  deliveredBy       User?   @relation(name: "OrderDeliveredBy", fields: [deliveredByUserId], references: [id], onDelete: Restrict)
 
   /// D-62 / D-33 — soft-delete flag for the Discard affordance (D-67).
   /// Lists always filter deletedAt: null.
