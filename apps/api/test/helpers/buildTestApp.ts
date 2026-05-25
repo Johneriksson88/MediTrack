@@ -307,4 +307,44 @@ export async function progressOrderToBekraftad(
   expect(confirmRes.statusCode).toBe(200);
 }
 
+/**
+ * Phase 10 D-160 / D-164 — mint a per-(careUnit, current-year) order number
+ * for test fixtures that insert Order rows directly via prisma.order.create.
+ *
+ * Mirrors the runtime mintOrderNumber() in apps/api/src/services/order.service.ts
+ * (the UPDATE-then-INSERT-with-ON-CONFLICT pattern). Returns
+ * { orderNumberCounter, orderNumberYear } ready to spread into a
+ * prisma.order.create({ data }) call.
+ *
+ * Tests that go through the route layer (createEmptyOrder) do NOT need this
+ * helper — createDraftOrder already mints inside its $transaction. Only the
+ * direct-prisma-create fixtures (orders.list, orders.integration's bulk
+ * fixtures, dashboard.orders test cleanups) need to call this.
+ */
+export async function mintTestOrderNumber(
+  careUnitId: string,
+): Promise<{ orderNumberCounter: number; orderNumberYear: number }> {
+  const updated = await prisma.$queryRaw<{ year: number; counter: number }[]>`
+    UPDATE "OrderNumberCounter"
+    SET "nextValue" = "nextValue" + 1
+    WHERE "careUnitId" = ${careUnitId}
+      AND "year" = EXTRACT(YEAR FROM NOW())::int
+    RETURNING "year", "nextValue" - 1 AS "counter"
+  `;
+  if (updated.length === 1) {
+    return { orderNumberCounter: updated[0]!.counter, orderNumberYear: updated[0]!.year };
+  }
+  const inserted = await prisma.$queryRaw<{ year: number; counter: number }[]>`
+    INSERT INTO "OrderNumberCounter" ("careUnitId", "year", "nextValue")
+    VALUES (${careUnitId}, EXTRACT(YEAR FROM NOW())::int, 2)
+    ON CONFLICT ("careUnitId", "year")
+    DO UPDATE SET "nextValue" = "OrderNumberCounter"."nextValue" + 1
+    RETURNING "year",
+              CASE WHEN xmax = 0 THEN 1
+                   ELSE "OrderNumberCounter"."nextValue" - 1
+              END AS "counter"
+  `;
+  return { orderNumberCounter: inserted[0]!.counter, orderNumberYear: inserted[0]!.year };
+}
+
 export { prisma };

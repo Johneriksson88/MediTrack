@@ -17,6 +17,7 @@ import type {
   PickerSuggestion,
   PickerSuggestionsResponse,
 } from '@meditrack/shared';
+import { formatOrderNumber } from '@meditrack/shared';
 import { listLowStockForUnit } from './dashboard.service.js';
 
 /**
@@ -81,6 +82,14 @@ export function toOrderResponse(row: OrderWithRelations): OrderResponse {
     careUnitId: row.careUnitId,
     createdByUserId: row.createdByUserId,
     status: row.status as OrderResponse['status'],
+    // Phase 10 D-165 — structured columns + derived display string.
+    // formatOrderNumber is the single source of truth for ORD-YYYY-####.
+    orderNumberCounter: row.orderNumberCounter,
+    orderNumberYear: row.orderNumberYear,
+    orderNumber: formatOrderNumber({
+      year: row.orderNumberYear,
+      counter: row.orderNumberCounter,
+    }),
     submittedAt: row.submittedAt ? row.submittedAt.toISOString() : null,
     submittedByUserId: row.submittedByUserId,
     // Phase 4 D-84 — confirm/deliver actor trios.
@@ -136,6 +145,12 @@ export function toOrderListItem(row: OrderForList): OrderListItem {
   return {
     id: row.id,
     status: row.status as OrderListItem['status'],
+    // Phase 10 D-165 — lean list shape carries only the formatted display
+    // string; counter + year stay on the full orderResponse envelope.
+    orderNumber: formatOrderNumber({
+      year: row.orderNumberYear,
+      counter: row.orderNumberCounter,
+    }),
     createdAt: row.createdAt.toISOString(),
     lineCount: row.lines.length,
     totalQuantity: row.lines.reduce((s, l) => s + l.quantity, 0),
@@ -175,24 +190,35 @@ export async function createDraftOrder(
   careUnitId: string,
   createdByUserId: string,
 ): Promise<OrderResponse> {
-  const order = await prisma.order.create({
-    data: {
-      careUnitId,
-      createdByUserId,
-      status: 'utkast',
-    },
-    include: {
-      lines: {
-        include: {
-          careUnitMedication: { include: { medication: true } },
-        },
+  // Phase 10 D-160 / D-162 — mint the per-(careUnit, year) order number
+  // INSIDE the same $transaction as the Order insert. The mint takes a
+  // row-level write lock on OrderNumberCounter (same primitive as Phase 4
+  // STK-02 on CareUnitMedication — see D-79) so two concurrent draft-
+  // create calls against the same vårdenhet serialize cleanly: each gets
+  // a distinct sequential counter; neither sees the other's value.
+  const order = await prisma.$transaction(async (tx) => {
+    const { year, counter } = await mintOrderNumber(tx, careUnitId);
+    return tx.order.create({
+      data: {
+        careUnitId,
+        createdByUserId,
+        status: 'utkast',
+        orderNumberCounter: counter,
+        orderNumberYear: year,
       },
-      createdBy: { select: { id: true, name: true } },
-      submittedBy: { select: { id: true, name: true } },
-      // Phase 4 D-84 — actor include widening.
-      confirmedBy: { select: { id: true, name: true } },
-      deliveredBy: { select: { id: true, name: true } },
-    },
+      include: {
+        lines: {
+          include: {
+            careUnitMedication: { include: { medication: true } },
+          },
+        },
+        createdBy: { select: { id: true, name: true } },
+        submittedBy: { select: { id: true, name: true } },
+        // Phase 4 D-84 — actor include widening.
+        confirmedBy: { select: { id: true, name: true } },
+        deliveredBy: { select: { id: true, name: true } },
+      },
+    });
   });
 
   return toOrderResponse(order);
@@ -992,6 +1018,73 @@ export async function listPickerSuggestions(
     }));
 
   return { mostOrdered, lowStock };
+}
+
+// ---------------------------------------------------------------------------
+// Internal helper — mintOrderNumber (Phase 10 D-160 / D-161 / D-164)
+// ---------------------------------------------------------------------------
+
+/**
+ * Mints the next sequential orderNumber for the (careUnitId, current-year)
+ * pair. Returns the structured {year, counter} pair; the formatted display
+ * string is derived in toOrderResponse / toOrderListItem via
+ * formatOrderNumber from @meditrack/shared (D-165).
+ *
+ * The two-statement UPDATE-then-INSERT-with-ON-CONFLICT pattern is the
+ * row-level write-lock primitive Phase 4 STK-02 uses for stock — same
+ * Postgres semantics as the explicit `FOR UPDATE` in submitOrder /
+ * deliverOrder. Two concurrent draft-create calls against the same
+ * (careUnit, year) serialize on the OrderNumberCounter row; each gets
+ * a distinct sequential counter.
+ *
+ * - Common case (counter row pre-seeded by migration 0013 or a prior
+ *   mint this year): the UPDATE matches one row, increments nextValue,
+ *   and returns (year, prev-nextValue) as `counter`.
+ * - Edge case (first order ever of a brand-new (careUnit, year) pair,
+ *   e.g. first order of a new year, or first order at a freshly created
+ *   vårdenhet): the UPDATE matches zero rows; the INSERT...ON CONFLICT
+ *   materializes the row at nextValue=2 (the next mint sees an UPDATE
+ *   path), returning counter=1 if we won the race (xmax=0) or the
+ *   incremented value if a concurrent INSERT raced us to the same key.
+ *
+ * Year is `EXTRACT(YEAR FROM NOW())::int` so the year segment is read
+ * from Postgres's clock — single source of truth, no app-vs-DB skew
+ * across the year boundary (D-161).
+ */
+// The tx type comes from the extended-client $transaction callback
+// (the project's PrismaClient is wrapped in `.$extends(buildAuditExtension())`).
+// Using Prisma.TransactionClient directly fails to match because $extends
+// rewrites the model-method signatures. Inferring from the callback param
+// keeps mintOrderNumber strictly typed against the actual runtime client.
+type ExtendedTx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+async function mintOrderNumber(
+  tx: ExtendedTx,
+  careUnitId: string,
+): Promise<{ year: number; counter: number }> {
+  // 1. Try UPDATE first (common case: counter row already exists).
+  const updated = await tx.$queryRaw<{ year: number; counter: number }[]>`
+    UPDATE "OrderNumberCounter"
+    SET "nextValue" = "nextValue" + 1
+    WHERE "careUnitId" = ${careUnitId}
+      AND "year" = EXTRACT(YEAR FROM NOW())::int
+    RETURNING "year", "nextValue" - 1 AS "counter"
+  `;
+  if (updated.length === 1) return updated[0]!;
+
+  // 2. First order of the (careUnitId, year) pair — UPSERT to materialize
+  //    the row, with ON CONFLICT handling for a racing concurrent insert.
+  const inserted = await tx.$queryRaw<{ year: number; counter: number }[]>`
+    INSERT INTO "OrderNumberCounter" ("careUnitId", "year", "nextValue")
+    VALUES (${careUnitId}, EXTRACT(YEAR FROM NOW())::int, 2)
+    ON CONFLICT ("careUnitId", "year")
+    DO UPDATE SET "nextValue" = "OrderNumberCounter"."nextValue" + 1
+    RETURNING "year",
+              CASE WHEN xmax = 0 THEN 1
+                   ELSE "OrderNumberCounter"."nextValue" - 1
+              END AS "counter"
+  `;
+  return inserted[0]!;
 }
 
 // ---------------------------------------------------------------------------

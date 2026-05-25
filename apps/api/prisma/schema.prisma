@@ -52,12 +52,14 @@ enum MedicationSource {
 }
 
 model CareUnit {
-  id                  String                @id @default(cuid())
+  id                  String               @id @default(cuid())
   name                String
-  createdAt           DateTime              @default(now())
+  createdAt           DateTime             @default(now())
   users               User[]
   careUnitMedications CareUnitMedication[]
   orders              Order[]
+  /// Phase 10 D-160 — inverse relation for per-(careUnit, year) counter rows.
+  orderNumberCounters OrderNumberCounter[]
 }
 
 model User {
@@ -229,7 +231,7 @@ model Order {
   /// with historical Skickad orders. Named relation required by Prisma to
   /// disambiguate from createdBy (two FKs to User on the same model).
   submittedByUserId String?
-  submittedBy       User?  @relation(name: "OrderSubmittedBy", fields: [submittedByUserId], references: [id], onDelete: Restrict)
+  submittedBy       User?   @relation(name: "OrderSubmittedBy", fields: [submittedByUserId], references: [id], onDelete: Restrict)
 
   /// Phase 4 D-84 — stamped by the confirm transition; null while in utkast/skickad.
   confirmedAt DateTime?
@@ -237,14 +239,14 @@ model Order {
   /// Phase 4 D-84 — FK to the user who confirmed; Restrict preserves history.
   /// Named relation disambiguates from createdBy/submittedBy/deliveredBy.
   confirmedByUserId String?
-  confirmedBy       User?  @relation(name: "OrderConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: Restrict)
+  confirmedBy       User?   @relation(name: "OrderConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: Restrict)
 
   /// Phase 4 D-84 — stamped by the deliver transition; null until levererad.
   deliveredAt DateTime?
 
   /// Phase 4 D-84 — FK to the user who delivered; Restrict preserves history.
   deliveredByUserId String?
-  deliveredBy       User?  @relation(name: "OrderDeliveredBy", fields: [deliveredByUserId], references: [id], onDelete: Restrict)
+  deliveredBy       User?   @relation(name: "OrderDeliveredBy", fields: [deliveredByUserId], references: [id], onDelete: Restrict)
 
   /// D-62 / D-33 — soft-delete flag for the Discard affordance (D-67).
   /// Lists always filter deletedAt: null.
@@ -253,11 +255,35 @@ model Order {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// Phase 10 D-160 / D-165 — per-(careUnit, year) monotonic counter.
+  /// Stamped at createDraftOrder time; immutable thereafter (D-162).
+  orderNumberCounter Int
+
+  /// Phase 10 D-161 / D-165 — year segment derived server-side at insert
+  /// from Postgres NOW() (DB clock, not app clock) to defeat clock-skew.
+  orderNumberYear Int
+
   lines OrderLine[]
 
+  @@unique([careUnitId, orderNumberYear, orderNumberCounter])
   @@index([careUnitId, status])
   @@index([careUnitId, createdAt])
   @@index([createdByUserId])
+}
+
+/// Phase 10 D-160 / D-164 — per-(careUnit, year) counter row. Holds the
+/// `nextValue` to be issued; UPDATE-then-INSERT-with-ON-CONFLICT inside the
+/// createDraftOrder $transaction takes a row-level write lock on this row,
+/// serializing concurrent mints for the same (careUnit, year). Same Postgres
+/// primitive as Phase 4 STK-02's FOR UPDATE on Medication — see D-79.
+/// onDelete: Cascade so removing a CareUnit cleans up its counters too.
+model OrderNumberCounter {
+  careUnitId String
+  careUnit   CareUnit @relation(fields: [careUnitId], references: [id], onDelete: Cascade)
+  year       Int
+  nextValue  Int
+
+  @@id([careUnitId, year])
 }
 
 /// Phase 3 D-63 — Per-medication line on an order. onDelete: Cascade so

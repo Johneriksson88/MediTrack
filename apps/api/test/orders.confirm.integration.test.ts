@@ -80,6 +80,17 @@ describe('Confirm order — Phase 4 Slice A (6-scenario D-74 suite)', () => {
     const cum = await findTestCareUnitMedication();
 
     const order = await createEmptyOrder(app, nurseCookie);
+    // Phase 10 ORD-11 / D-162 — capture the orderNumber from the original draft
+    // so we can assert lifecycle stability across submit + confirm.
+    const draftFetch = await app.inject({
+      method: 'GET',
+      url: `/api/orders/${order.id}`,
+      headers: { cookie: nurseCookie },
+    });
+    expect(draftFetch.statusCode).toBe(200);
+    const capturedOrderNumber = (draftFetch.json() as { orderNumber: string }).orderNumber;
+    expect(capturedOrderNumber).toMatch(/^ORD-\d{4}-\d{4,}$/);
+
     await submitOrder(nurseCookie, order.id, cum.id);
 
     const confirmRes = await app.inject({
@@ -98,7 +109,12 @@ describe('Confirm order — Phase 4 Slice A (6-scenario D-74 suite)', () => {
       deliveredAt: string | null;
       deliveredBy: null;
       submittedBy: { id: string; name: string } | null;
+      // Phase 10 D-165
+      orderNumber: string;
     }>();
+
+    // Phase 10 D-162 / SC#5 — orderNumber unchanged across submit + confirm.
+    expect(body.orderNumber).toBe(capturedOrderNumber);
 
     // Status flipped to bekraftad
     expect(body.status).toBe('bekraftad');

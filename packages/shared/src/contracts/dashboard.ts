@@ -138,6 +138,9 @@ export type LowStockListResponse = z.infer<typeof lowStockListResponse>;
 export const dashboardOrderRow = z.object({
   id: z.string(),
   status: orderStatusEnum, // 'utkast' | 'skickad' | 'bekraftad' | 'levererad'
+  // Phase 10 D-168 — formatted display string for the row heading slot
+  // (DashboardOrdersCard row primary text). REQUIRED post-migration.
+  orderNumber: z.string(),
   lineCount: z.number().int().nonnegative(),
   totalQuantity: z.number().int().nonnegative(),
   createdBy: z.object({ id: z.string(), name: z.string() }),

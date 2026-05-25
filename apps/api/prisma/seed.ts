@@ -424,11 +424,43 @@ async function seedOrderInStatus(
 
   const now = new Date();
 
+  // Phase 10 D-160 / D-164 — mint a per-(careUnitId, year) order number for
+  // the seeded order. Mirrors the runtime mintOrderNumber() in
+  // apps/api/src/services/order.service.ts.
+  const updated = await prisma.$queryRaw<{ year: number; counter: number }[]>`
+    UPDATE "OrderNumberCounter"
+    SET "nextValue" = "nextValue" + 1
+    WHERE "careUnitId" = ${sjukskoterska.careUnitId}
+      AND "year" = EXTRACT(YEAR FROM NOW())::int
+    RETURNING "year", "nextValue" - 1 AS "counter"
+  `;
+  let mintYear: number;
+  let mintCounter: number;
+  if (updated.length === 1) {
+    mintYear = updated[0]!.year;
+    mintCounter = updated[0]!.counter;
+  } else {
+    const inserted = await prisma.$queryRaw<{ year: number; counter: number }[]>`
+      INSERT INTO "OrderNumberCounter" ("careUnitId", "year", "nextValue")
+      VALUES (${sjukskoterska.careUnitId}, EXTRACT(YEAR FROM NOW())::int, 2)
+      ON CONFLICT ("careUnitId", "year")
+      DO UPDATE SET "nextValue" = "OrderNumberCounter"."nextValue" + 1
+      RETURNING "year",
+                CASE WHEN xmax = 0 THEN 1
+                     ELSE "OrderNumberCounter"."nextValue" - 1
+                END AS "counter"
+    `;
+    mintYear = inserted[0]!.year;
+    mintCounter = inserted[0]!.counter;
+  }
+
   // Build actor stamps based on how far through the lifecycle this status is.
   const data: Parameters<typeof prisma.order.create>[0]['data'] = {
     careUnitId: sjukskoterska.careUnitId,
     createdByUserId: sjukskoterska.id,
     status,
+    orderNumberCounter: mintCounter,
+    orderNumberYear: mintYear,
     lines: {
       create: ids.map((careUnitMedicationId) => ({
         careUnitMedicationId,
