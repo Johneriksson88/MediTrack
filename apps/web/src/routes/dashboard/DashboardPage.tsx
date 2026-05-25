@@ -32,10 +32,23 @@ import { DashboardOrdersCard } from './DashboardOrdersCard';
  * saw earlier Phase 6/7 screenshots aren't disoriented. Low-stock is
  * the originating Core Value loop trigger (nurse sees low stock →
  * composes order); Beställningar is the downstream consequence side.
+ *
+ * Phase 9 Plan 04 (gap closure of `dashboard-wide-screen-whitespace`):
+ * the grid container gains `items-stretch` so both sibling cards share
+ * the row's resolved height — the shorter card's frame extends to fill
+ * the available grid cell instead of leaving empty space below it. The
+ * paired card-side amendments (`h-full flex flex-col` on each Card +
+ * `flex-1` on each data-branch CardContent) carry the stretch through
+ * to the visible card frame. We did NOT widen the container at a
+ * breakpoint tier above md (no wider-canvas amendment) despite the
+ * wide-canvas symptom because CONTEXT.md `<discretion>` line 141 reads
+ * as a ban on breakpoint-tier amendments above `md` on the grid
+ * container — the card-side stretch is the dominant lever closing the
+ * symptom regardless of container width.
  */
 export function DashboardPage() {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-5xl mx-auto p-4 md:p-6 lg:p-8">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch max-w-5xl mx-auto p-4 md:p-6 lg:p-8">
       <DashboardLowStockCard />
       <DashboardOrdersCard />
     </div>
