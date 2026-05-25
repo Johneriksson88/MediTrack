@@ -50,18 +50,35 @@
 -- Prisma migrate runs each migration.sql as a single transaction; an
 -- explicit BEGIN/COMMIT would double-wrap and break prisma migrate dev.
 
+-- Pre-step: preserve the Phase 2 CR-02 trgm GIN index. `prisma migrate dev`
+-- on this migration's schema delta detects the raw-SQL-created
+-- `Medication_name_trgm_idx` as drift (it lives outside Prisma's schema
+-- model) and proposes a DROP. Mirroring 0007_audit_events, we drop and
+-- recreate the index in the same migration so the contract (CR-02 — name
+-- search uses the trgm GIN index, not seq-scan over ~43k rows) survives.
+DROP INDEX IF EXISTS "Medication_name_trgm_idx";
+
+CREATE INDEX "Medication_name_trgm_idx"
+  ON "Medication" USING gin ("name" gin_trgm_ops);
+
 -- Step 1: add columns nullable so existing rows survive the ALTER.
 ALTER TABLE "Order" ADD COLUMN "orderNumberCounter" INT;
 ALTER TABLE "Order" ADD COLUMN "orderNumberYear" INT;
 
 -- Step 2: create the counter table that owns the monotonic state.
+-- FK matches Prisma's emit convention (named constraint, ON UPDATE CASCADE)
+-- so `prisma migrate dev` does not detect drift and auto-generate a follow-up.
 CREATE TABLE "OrderNumberCounter" (
   "careUnitId" TEXT NOT NULL,
   "year" INT NOT NULL,
   "nextValue" INT NOT NULL,
-  PRIMARY KEY ("careUnitId", "year"),
-  FOREIGN KEY ("careUnitId") REFERENCES "CareUnit" ("id") ON DELETE CASCADE
+  CONSTRAINT "OrderNumberCounter_pkey" PRIMARY KEY ("careUnitId", "year")
 );
+
+ALTER TABLE "OrderNumberCounter"
+  ADD CONSTRAINT "OrderNumberCounter_careUnitId_fkey"
+  FOREIGN KEY ("careUnitId") REFERENCES "CareUnit"("id")
+  ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- Step 3: backfill every existing Order row with a per-(careUnit, year)
 -- ROW_NUMBER, ordered by createdAt ASC with id ASC as deterministic
