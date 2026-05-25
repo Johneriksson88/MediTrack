@@ -84,17 +84,21 @@ export function OrdersCardList({ rows, tab, className }: OrdersCardListProps) {
           <button
             key={row.id}
             type="button"
-            aria-label={`Öppna beställning från ${formatRelative(relevantAt)}`}
+            // Phase 10 D-166 — aria-label references orderNumber; screen
+            // readers hear the identifier verbatim against the new heading.
+            aria-label={`Öppna beställning ${row.orderNumber}`}
             // Phase 9 D-150 #2 — the active tab value flows verbatim into ?from=.
             onClick={() => navigate(`/bestallningar/${row.id}?from=${tab}`)}
             className="w-full text-left bg-card border border-border rounded-lg p-4 shadow-sm
                        cursor-pointer hover:bg-muted/30 focus-visible:outline-none
                        focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
           >
-            {/* Top row: relative time + (alla: StatusPill) + chevron */}
+            {/* Top row: orderNumber heading + (alla: StatusPill) + chevron.
+                Phase 10 D-166 — heading slot promotes orderNumber; the
+                relative timestamp demotes to the secondary actor line below. */}
             <div className="flex items-center justify-between gap-2 mb-1">
-              <span className="text-sm font-semibold text-foreground">
-                {formatRelative(relevantAt)}
+              <span className="text-sm font-semibold text-foreground font-mono">
+                {row.orderNumber}
               </span>
               <div className="flex items-center gap-2 flex-shrink-0">
                 {tab === 'alla' && (
@@ -104,9 +108,11 @@ export function OrdersCardList({ rows, tab, className }: OrdersCardListProps) {
               </div>
             </div>
 
-            {/* Middle row: actor */}
+            {/* Middle row: actor + relative time. Phase 10 D-166 — formatRelative
+                demoted from the heading; consolidated alongside the actor so the
+                temporal cue is not lost. */}
             <p className="text-xs text-muted-foreground mb-1">
-              {actorLabel} {actorName}
+              {actorLabel} {actorName} · {formatRelative(relevantAt)}
             </p>
 
             {/* Bottom row: line count (+ total quantity for non-alla tabs) */}
