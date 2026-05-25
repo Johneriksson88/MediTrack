@@ -245,11 +245,16 @@ function Section({ title, count, statusHref, rows }: SectionProps) {
                            focus-visible:ring-primary focus-visible:ring-offset-1"
               >
                 <div className="flex flex-col gap-0.5 min-w-0">
-                  <span className="text-sm font-semibold text-foreground">
-                    {formatRelative(row.createdAt)}
+                  {/* Phase 10 D-168 — primary line promotes orderNumber to the
+                      row's identity slot; font-mono renders it as a code-style
+                      string. The actor + relative timestamp consolidate into
+                      the second muted line below. */}
+                  <span className="text-sm font-semibold text-foreground font-mono">
+                    {row.orderNumber}
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    Skapad av {row.createdBy.name}
+                    Skapad av {row.createdBy.name} ·{' '}
+                    {formatRelative(row.createdAt)}
                   </span>
                   <span className="text-xs text-muted-foreground">
                     {row.lineCount} {row.lineCount === 1 ? 'rad' : 'rader'} ·
