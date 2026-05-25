@@ -14,7 +14,7 @@ import { KontoPage } from '@/routes/konto/KontoPage';
  * - "Logga ut" button always visible regardless of role.
  *
  * Swedish verbatim strings from UI-SPEC §Copy:
- *   - Gate note: "Denna åtgärd kräver adminrättigheter."
+ *   - Gate note: "Ändringar kan endast göras av administratör."
  *   - Logout: "Logga ut"
  *   - Admin button: "Admin ping"
  */
@@ -79,10 +79,10 @@ describe('KontoPage admin gate', () => {
       expect(screen.getByRole('button', { name: /Admin ping/i })).toBeInTheDocument();
     });
 
-    it('does NOT render the gate note "Denna åtgärd kräver adminrättigheter."', () => {
+    it('does NOT render the gate note "Ändringar kan endast göras av administratör."', () => {
       renderWithProviders(<KontoPage />);
       expect(
-        screen.queryByText('Denna åtgärd kräver adminrättigheter.'),
+        screen.queryByText('Ändringar kan endast göras av administratör.'),
       ).not.toBeInTheDocument();
     });
 
@@ -107,11 +107,11 @@ describe('KontoPage admin gate', () => {
       expect(screen.queryByRole('button', { name: /Admin ping/i })).not.toBeInTheDocument();
     });
 
-    it('renders the verbatim gate note "Denna åtgärd kräver adminrättigheter."', () => {
+    it('renders the verbatim gate note "Ändringar kan endast göras av administratör."', () => {
       renderWithProviders(<KontoPage />);
-      // Verbatim string from UI-SPEC §Copy — must match exactly.
+      // Verbatim string from ROADMAP §"Phase 11" SC#2 — must match exactly.
       expect(
-        screen.getByText('Denna åtgärd kräver adminrättigheter.'),
+        screen.getByText('Ändringar kan endast göras av administratör.'),
       ).toBeInTheDocument();
     });
 
@@ -139,7 +139,7 @@ describe('KontoPage admin gate', () => {
     it('renders the verbatim gate note for apotekare too', () => {
       renderWithProviders(<KontoPage />);
       expect(
-        screen.getByText('Denna åtgärd kräver adminrättigheter.'),
+        screen.getByText('Ändringar kan endast göras av administratör.'),
       ).toBeInTheDocument();
     });
 
