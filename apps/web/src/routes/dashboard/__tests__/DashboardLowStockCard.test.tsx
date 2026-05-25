@@ -9,8 +9,9 @@ import { renderWithProviders } from '../../../../test/helpers/renderWithProvider
 /**
  * Phase 6 Plan 01 Task 2 — DashboardLowStockCard component tests.
  *
- * Five scenarios across the four render states + the refresh-policy
- * contract:
+ * Six scenarios (five pre-Plan-04 + one Plan-04 gap-closure invariant)
+ * across the four render states + the refresh-policy contract + the
+ * wide-screen sizing invariant:
  *
  *   Test 1 (empty state, total === 0): celebratory copy
  *     "Alla läkemedel är över tröskel." + CheckCircle2 in emerald-600.
@@ -25,6 +26,15 @@ import { renderWithProviders } from '../../../../test/helpers/renderWithProvider
  *     This asserts the D-119 three-layer refresh contract without
  *     mounting a QueryClient — a refactor that drops either flag must
  *     also remove the named export, which the test catches.
+ *   Test 6 — Wide-screen sizing invariant (Plan 04 gap-closure): the
+ *     rendered data-branch Card carries `h-full flex flex-col` and the
+ *     CardContent carries `flex-1` and does NOT carry the previous
+ *     fixed-height scroll cap token. Queried via deterministic
+ *     `data-testid` hooks (`dashboard-low-stock-card-data` /
+ *     `dashboard-low-stock-card-content`) set by the component;
+ *     encoded as className-substring assertions (source-level), not
+ *     jsdom layout assertions, because wide-screen behavior cannot be
+ *     verified deterministically in jsdom.
  *
  * Pattern: mirrors `bestallningar/__tests__/BestallningarPage.test.tsx`
  * (vi.mock the feature hook + renderWithProviders).
@@ -196,5 +206,43 @@ describe('DashboardLowStockCard', () => {
     expect(LOW_STOCK_QUERY_OPTIONS.refetchInterval).toBe(30_000);
     // queryKey shape is part of the contract too (D-69).
     expect(LOW_STOCK_QUERY_OPTIONS.queryKey).toEqual(['dashboard', 'low-stock']);
+  });
+
+  it('Test 6 (wide-screen sizing invariant): data-branch Card stretches to grid-row height (h-full flex flex-col + CardContent flex-1, no max-h-80) — Plan 04 gap-closure', () => {
+    mockQuery({
+      data: {
+        rows: [
+          {
+            careUnitMedicationId: 'cum-1',
+            medicationId: 'med-1',
+            name: 'Amoxicillin',
+            atcCode: 'J01CA04',
+            form: 'Kapsel',
+            strength: '500 mg',
+            currentStock: 1,
+            lowStockThreshold: 10,
+            therapeuticClass: null,
+          },
+        ],
+        total: 1,
+      },
+      isLoading: false,
+      isError: false,
+    });
+
+    renderWithProviders(<DashboardLowStockCard />);
+
+    const card = screen.getByTestId('dashboard-low-stock-card-data');
+    const cardClassName = card.getAttribute('class') ?? '';
+    expect(cardClassName).toContain('h-full');
+    expect(cardClassName).toContain('flex');
+    expect(cardClassName).toContain('flex-col');
+    expect(cardClassName).toContain('max-w-2xl');
+
+    const cardContent = screen.getByTestId('dashboard-low-stock-card-content');
+    const cardContentClassName = cardContent.getAttribute('class') ?? '';
+    expect(cardContentClassName).toContain('flex-1');
+    // Explicit guard against regression: the old max-h-80 cap MUST be gone.
+    expect(cardContentClassName).not.toContain('max-h-80');
   });
 });
