@@ -26,6 +26,7 @@ const ACTION_CLASS: Record<AuditAction, string> = {
   'order.confirm': 'bg-amber-100 text-amber-800',
   'order.deliver': 'bg-emerald-100 text-emerald-800',
   'order.softDelete': 'bg-destructive/10 text-destructive',
+  'medication.softDelete': 'bg-destructive/10 text-destructive',
   'stock.increment': 'bg-emerald-100 text-emerald-800',
   'auth.login': 'bg-slate-100 text-slate-700',
   'auth.logout': 'bg-slate-100 text-slate-700',

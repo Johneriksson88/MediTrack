@@ -26,6 +26,11 @@ export const AUDIT_ACTIONS = [
   'order.confirm',
   'order.deliver',
   'order.softDelete',
+  // Mirrors the order.softDelete pattern for the medication CRUD path
+  // (D-94 — withActionOverride wrap in medication.service.ts). Belongs in
+  // the same status-machine-overrides group because it shares the same
+  // withActionOverride mechanism even though the surface area (CRUD) differs.
+  'medication.softDelete',
   // Phase 4 — fired N times during deliver, one per CareUnitMedication
   // (D-79 + D-94 sibling fan-out).
   'stock.increment',
@@ -61,6 +66,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   'order.confirm': 'Bekräftad',
   'order.deliver': 'Levererad',
   'order.softDelete': 'Borttagen (utkast)',
+  'medication.softDelete': 'Borttagen',
   'stock.increment': 'Lager ökat',
   'auth.login': 'Inloggad',
   'auth.logout': 'Utloggad',
