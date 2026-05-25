@@ -9,9 +9,11 @@ import { renderWithProviders } from '../../../../test/helpers/renderWithProvider
 /**
  * Phase 6 Plan 01 Task 2 — DashboardLowStockCard component tests.
  *
- * Six scenarios (five pre-Plan-04 + one Plan-04 gap-closure invariant)
- * across the four render states + the refresh-policy contract + the
- * wide-screen sizing invariant:
+ * Nine scenarios (five pre-Plan-04 + one Plan-04 gap-closure invariant
+ * + three WR-08 follow-up invariants extending the wide-screen stretch
+ * to the loading / error / empty branches) across the four render
+ * states + the refresh-policy contract + the wide-screen sizing
+ * invariants:
  *
  *   Test 1 (empty state, total === 0): celebratory copy
  *     "Alla läkemedel är över tröskel." + CheckCircle2 in emerald-600.
@@ -35,6 +37,20 @@ import { renderWithProviders } from '../../../../test/helpers/renderWithProvider
  *     encoded as className-substring assertions (source-level), not
  *     jsdom layout assertions, because wide-screen behavior cannot be
  *     verified deterministically in jsdom.
+ *   Test 7 — WR-08 loading branch stretch: the loading Card carries
+ *     `h-full flex flex-col` (queried via the
+ *     `dashboard-low-stock-card-loading` data-testid). Plan 04 only
+ *     stretched the data branch; without this, the loading state on
+ *     wide screens still left empty grid-cell space below the card
+ *     while the sibling orders card was already populated.
+ *   Test 8 — WR-08 error branch stretch: same invariant for the
+ *     destructive-Alert branch (queried via
+ *     `dashboard-low-stock-card-error`).
+ *   Test 9 — WR-08 empty (celebratory) branch stretch: the empty
+ *     `<Card role="status">` carries `h-full flex flex-col`
+ *     directly (queried via `dashboard-low-stock-card-empty`). This is
+ *     the most-noticed regression — the steady state for nurses on a
+ *     unit with no under-threshold meds.
  *
  * Pattern: mirrors `bestallningar/__tests__/BestallningarPage.test.tsx`
  * (vi.mock the feature hook + renderWithProviders).
@@ -244,5 +260,58 @@ describe('DashboardLowStockCard', () => {
     expect(cardContentClassName).toContain('flex-1');
     // Explicit guard against regression: the old max-h-80 cap MUST be gone.
     expect(cardContentClassName).not.toContain('max-h-80');
+  });
+
+  it('Test 7 (WR-08 loading stretch): loading Card carries h-full flex flex-col so the grid cell stays filled while waiting on the first fetch', () => {
+    mockQuery({ data: undefined, isLoading: true, isError: false });
+
+    renderWithProviders(<DashboardLowStockCard />);
+
+    const card = screen.getByTestId('dashboard-low-stock-card-loading');
+    const cardClassName = card.getAttribute('class') ?? '';
+    expect(cardClassName).toContain('h-full');
+    expect(cardClassName).toContain('flex');
+    expect(cardClassName).toContain('flex-col');
+    expect(cardClassName).toContain('max-w-2xl');
+  });
+
+  it('Test 8 (WR-08 error stretch): error Card carries h-full flex flex-col so a wide-screen error state does not collapse to a tiny centered alert', () => {
+    mockQuery({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('boom') as unknown as ApiError,
+    });
+
+    renderWithProviders(<DashboardLowStockCard />);
+
+    const card = screen.getByTestId('dashboard-low-stock-card-error');
+    const cardClassName = card.getAttribute('class') ?? '';
+    expect(cardClassName).toContain('h-full');
+    expect(cardClassName).toContain('flex');
+    expect(cardClassName).toContain('flex-col');
+    expect(cardClassName).toContain('max-w-2xl');
+  });
+
+  it('Test 9 (WR-08 empty stretch): celebratory empty Card carries h-full flex flex-col directly (no outer wrapper) so the "all good" steady state fills the grid cell on wide screens', () => {
+    mockQuery({
+      data: { rows: [], total: 0 },
+      isLoading: false,
+      isError: false,
+    });
+
+    renderWithProviders(<DashboardLowStockCard />);
+
+    const card = screen.getByTestId('dashboard-low-stock-card-empty');
+    const cardClassName = card.getAttribute('class') ?? '';
+    expect(cardClassName).toContain('h-full');
+    expect(cardClassName).toContain('flex');
+    expect(cardClassName).toContain('flex-col');
+    // The empty Card now owns the full grid-cell width directly — same
+    // max-w-2xl cap the data branch uses (the previous max-w-md cap
+    // inside an outer wrapper is gone with the wrapper).
+    expect(cardClassName).toContain('max-w-2xl');
+    // role="status" is still required so screen readers announce the state.
+    expect(card.getAttribute('role')).toBe('status');
   });
 });

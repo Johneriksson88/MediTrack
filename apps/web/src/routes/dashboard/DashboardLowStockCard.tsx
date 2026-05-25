@@ -59,14 +59,32 @@ import { Skeleton } from '@/components/ui/skeleton';
  * row's `items-stretch` (set on the parent in DashboardPage) gives
  * this Card the matching height — the empty grid-cell space below the
  * previous fixed-height frame is gone.
+ *
+ * Phase 9 review WR-08 (follow-up to Plan 04): the same `h-full flex
+ * flex-col` stretch is now also applied to the loading, error and
+ * empty (celebratory) branches. Without this, the steady-state for a
+ * nurse on a unit with NO under-threshold meds (orders card has data,
+ * low-stock card is empty) reverted to the pre-fix wide-screen
+ * asymmetry — the empty Card stayed centered at its intrinsic size
+ * and the grid row still had empty space below it. The empty branch
+ * is restructured so the celebratory Card itself fills the grid cell
+ * via `h-full flex flex-col items-center justify-center` (instead of
+ * relying on an outer wrapper with `flex-1`, which was a no-op under
+ * the grid parent). Loading, error, and empty data-testid hooks
+ * (`dashboard-low-stock-card-loading` / `-error` / `-empty`) are
+ * exposed for the corresponding regression tests so this fix cannot
+ * silently regress.
  */
 export function DashboardLowStockCard() {
   const { data, isLoading, isError } = useLowStockQuery();
 
   if (isLoading) {
     return (
-      <Card className="w-full max-w-2xl">
-        <CardContent className="p-4 space-y-2">
+      <Card
+        className="w-full max-w-2xl h-full flex flex-col"
+        data-testid="dashboard-low-stock-card-loading"
+      >
+        <CardContent className="p-4 space-y-2 flex-1">
           <Skeleton className="h-10 w-full" />
           <Skeleton className="h-10 w-full" />
           <Skeleton className="h-10 w-full" />
@@ -77,8 +95,11 @@ export function DashboardLowStockCard() {
 
   if (isError) {
     return (
-      <Card className="w-full max-w-2xl">
-        <CardContent className="p-4">
+      <Card
+        className="w-full max-w-2xl h-full flex flex-col"
+        data-testid="dashboard-low-stock-card-error"
+      >
+        <CardContent className="p-4 flex-1">
           <Alert variant="destructive">
             <AlertDescription>
               Kunde inte hämta lagernivåer — försök igen om en stund.
@@ -96,23 +117,22 @@ export function DashboardLowStockCard() {
 
   if (total === 0) {
     return (
-      <div className="flex items-center justify-center flex-1 p-8">
-        <Card
-          className="max-w-md w-full p-8 text-center shadow-sm"
-          role="status"
-        >
-          <CheckCircle2
-            className="h-12 w-12 text-emerald-600 mx-auto mb-4"
-            aria-hidden="true"
-          />
-          <h2 className="text-xl font-semibold mb-2">
-            Alla läkemedel är över tröskel.
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Alla läkemedel i din vårdenhet är över lagertröskeln.
-          </p>
-        </Card>
-      </div>
+      <Card
+        className="w-full max-w-2xl h-full flex flex-col items-center justify-center text-center p-8 shadow-sm"
+        role="status"
+        data-testid="dashboard-low-stock-card-empty"
+      >
+        <CheckCircle2
+          className="h-12 w-12 text-emerald-600 mb-4"
+          aria-hidden="true"
+        />
+        <h2 className="text-xl font-semibold mb-2">
+          Alla läkemedel är över tröskel.
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Alla läkemedel i din vårdenhet är över lagertröskeln.
+        </p>
+      </Card>
     );
   }
 
