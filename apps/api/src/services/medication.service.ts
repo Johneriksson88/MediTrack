@@ -5,6 +5,7 @@ import {
   NotFoundError,
   ForbiddenScopeError,
 } from '../plugins/errorHandler.js';
+import { withActionOverride } from '../plugins/requestContext.js';
 import type {
   MedicationListResponse,
   MedicationListQuery,
@@ -607,8 +608,14 @@ export async function softDeleteCareUnitMedication(
     throw new NotFoundError('Läkemedlet finns inte i din vårdenhet.');
   }
 
-  await prisma.careUnitMedication.update({
-    where: { id: careUnitMedicationId },
-    data: { deletedAt: new Date() },
-  });
+  // Phase 5 D-94 — wrap so the audit row records action = 'medication.softDelete'
+  // rather than the generic 'update'. Without the wrap this mutation would be
+  // indistinguishable from a name/strength edit in the admin audit log.
+  // Precedent: apps/api/src/services/order.service.ts:847 (order.softDelete).
+  await withActionOverride('medication.softDelete', () =>
+    prisma.careUnitMedication.update({
+      where: { id: careUnitMedicationId },
+      data: { deletedAt: new Date() },
+    }),
+  );
 }
