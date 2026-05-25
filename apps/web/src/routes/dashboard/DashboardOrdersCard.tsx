@@ -226,36 +226,43 @@ function Section({ title, count, statusHref, rows }: SectionProps) {
           Inga rader.
         </p>
       ) : (
-        <div role="list" aria-label={title}>
+        // WR-02 (Phase 9 review) — use a real <ul>/<li> structure so the
+        // <Link> (which renders an <a>) keeps its implicit `link` role for
+        // assistive tech. Previously the <Link> itself carried
+        // role="listitem" which ARIA-overrode the anchor's link role; SR
+        // users heard "list item" without the actionable affordance hint.
+        // Now: <ul role="list"> > <li> > <Link>. Both list and link
+        // semantics survive.
+        <ul role="list" aria-label={title} className="list-none p-0 m-0">
           {rows.map((row) => (
-            <Link
-              key={row.id}
-              to={`/bestallningar/${row.id}?from=${row.status}`}
-              role="listitem"
-              className="flex items-center justify-between py-2 min-h-[44px]
-                         px-2 hover:bg-muted/50 transition-colors rounded-sm
-                         focus-visible:outline-none focus-visible:ring-2
-                         focus-visible:ring-primary focus-visible:ring-offset-1"
-            >
-              <div className="flex flex-col gap-0.5 min-w-0">
-                <span className="text-sm font-semibold text-foreground">
-                  {formatRelative(row.createdAt)}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  Skapad av {row.createdBy.name}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {row.lineCount} {row.lineCount === 1 ? 'rad' : 'rader'} ·
-                  {' '}totalt {row.totalQuantity}
-                </span>
-              </div>
-              <ChevronRight
-                className="h-4 w-4 text-muted-foreground flex-shrink-0"
-                aria-hidden="true"
-              />
-            </Link>
+            <li key={row.id}>
+              <Link
+                to={`/bestallningar/${row.id}?from=${row.status}`}
+                className="flex items-center justify-between py-2 min-h-[44px]
+                           px-2 hover:bg-muted/50 transition-colors rounded-sm
+                           focus-visible:outline-none focus-visible:ring-2
+                           focus-visible:ring-primary focus-visible:ring-offset-1"
+              >
+                <div className="flex flex-col gap-0.5 min-w-0">
+                  <span className="text-sm font-semibold text-foreground">
+                    {formatRelative(row.createdAt)}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Skapad av {row.createdBy.name}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {row.lineCount} {row.lineCount === 1 ? 'rad' : 'rader'} ·
+                    {' '}totalt {row.totalQuantity}
+                  </span>
+                </div>
+                <ChevronRight
+                  className="h-4 w-4 text-muted-foreground flex-shrink-0"
+                  aria-hidden="true"
+                />
+              </Link>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );

@@ -303,23 +303,26 @@ describe('DashboardOrdersCard', () => {
 
     renderWithProviders(<DashboardOrdersCard />);
 
-    // Every row in skickad section links to /bestallningar/<id>?from=skickad.
+    // WR-02 (Phase 9 review) — listitem is now a real <li> wrapping the
+    // <Link>; the link itself is queried via getByRole('link') under
+    // each list item so the implicit anchor role survives.
     const skickadList = screen.getByRole('list', {
       name: 'Väntar på bekräftelse',
     });
     const skickadRows = within(skickadList).getAllByRole('listitem');
     for (const row of skickadRows) {
-      const href = (row as HTMLAnchorElement).getAttribute('href') ?? '';
+      const link = within(row).getByRole('link');
+      const href = link.getAttribute('href') ?? '';
       expect(href).toMatch(/^\/bestallningar\/[^?]+\?from=skickad$/);
     }
 
-    // The bekraftad row links to /bestallningar/<id>?from=bekraftad.
     const bekraftadList = screen.getByRole('list', {
       name: 'Väntar på leverans',
     });
     const bekraftadRows = within(bekraftadList).getAllByRole('listitem');
     for (const row of bekraftadRows) {
-      const href = (row as HTMLAnchorElement).getAttribute('href') ?? '';
+      const link = within(row).getByRole('link');
+      const href = link.getAttribute('href') ?? '';
       expect(href).toMatch(/^\/bestallningar\/[^?]+\?from=bekraftad$/);
     }
   });
