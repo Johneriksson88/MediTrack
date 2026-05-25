@@ -149,7 +149,29 @@ export function AuditFilterBar({
             >
               <span className="truncate max-w-[160px]">{actorLabel}</span>
               {filters.actor ? (
-                <X className="h-3 w-3 ml-2 flex-shrink-0" aria-hidden="true" />
+                <span
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Rensa användarfilter"
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onChange({ actor: '' });
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      onChange({ actor: '' });
+                    }
+                  }}
+                  className="ml-2 flex-shrink-0 inline-flex h-4 w-4 items-center justify-center rounded-sm hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer"
+                >
+                  <X className="h-3 w-3" aria-hidden="true" />
+                </span>
               ) : (
                 <span className="ml-2 flex-shrink-0">▾</span>
               )}
@@ -211,7 +233,29 @@ export function AuditFilterBar({
             >
               <span className="truncate max-w-[160px]">{entityLabel}</span>
               {filters.entity ? (
-                <X className="h-3 w-3 ml-2 flex-shrink-0" aria-hidden="true" />
+                <span
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Rensa entitetstypsfilter"
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onChange({ entity: '' });
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      onChange({ entity: '' });
+                    }
+                  }}
+                  className="ml-2 flex-shrink-0 inline-flex h-4 w-4 items-center justify-center rounded-sm hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer"
+                >
+                  <X className="h-3 w-3" aria-hidden="true" />
+                </span>
               ) : (
                 <span className="ml-2 flex-shrink-0">▾</span>
               )}
@@ -267,7 +311,29 @@ export function AuditFilterBar({
             >
               <span className="truncate max-w-[160px]">{actionLabel}</span>
               {filters.action ? (
-                <X className="h-3 w-3 ml-2 flex-shrink-0" aria-hidden="true" />
+                <span
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Rensa åtgärdsfilter"
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onChange({ action: '' });
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      onChange({ action: '' });
+                    }
+                  }}
+                  className="ml-2 flex-shrink-0 inline-flex h-4 w-4 items-center justify-center rounded-sm hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer"
+                >
+                  <X className="h-3 w-3" aria-hidden="true" />
+                </span>
               ) : (
                 <span className="ml-2 flex-shrink-0">▾</span>
               )}
