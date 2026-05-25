@@ -121,6 +121,11 @@ const MOCK_ORDER_UTKAST: OrderResponse = {
   id: 'order-1',
   status: 'utkast',
   careUnitId: 'cu-1',
+  // Phase 10 D-165 / D-167 — orderNumber + counter + year live on every
+  // order envelope post-Plan-01; the H1 reads 'Beställning ${orderNumber}'.
+  orderNumber: 'ORD-2026-0042',
+  orderNumberCounter: 42,
+  orderNumberYear: 2026,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   deletedAt: null,
@@ -249,7 +254,7 @@ beforeEach(() => {
 
 describe('ComposeOrderPage', () => {
   describe('(1) Mode A renders correctly with lines', () => {
-    it('shows back link, "Nytt utkast", line, "Lägg till läkemedel", footer actions', () => {
+    it('shows back link, identity-first H1, line, "Lägg till läkemedel", footer actions', () => {
       setupOrderQuery(MOCK_ORDER_UTKAST);
 
       renderComposeOrderPage();
@@ -257,8 +262,11 @@ describe('ComposeOrderPage', () => {
       // Back link
       expect(screen.getByText('Tillbaka till beställningar')).toBeInTheDocument();
 
-      // Heading
-      expect(screen.getByRole('heading', { name: /nytt utkast/i })).toBeInTheDocument();
+      // Phase 10 D-167 — H1 is the order's identity: 'Beställning ORD-…'.
+      // The OrderStatusPill carries status (rendered separately); the H1
+      // does NOT include 'Nytt utkast' / 'Beställning · Skickad' anymore.
+      const h1 = screen.getByRole('heading', { level: 1 });
+      expect(h1).toHaveTextContent('Beställning ORD-2026-0042');
 
       // Line name in table (desktop-visible column)
       expect(screen.getAllByText('Paracetamol 500 mg').length).toBeGreaterThan(0);
@@ -354,15 +362,18 @@ describe('ComposeOrderPage', () => {
   });
 
   describe('(7) Mode B placeholder when order.status === "skickad" (post-submit)', () => {
-    it('renders "Beställningen är skickad" banner + hides sticky footer when submit just succeeded', () => {
+    it('renders Phase 10 D-169 banner copy + hides sticky footer when submit just succeeded', () => {
       // WR-08: pass submitIsSuccess=true so SubmitConfirmationBanner renders.
       setupMutations(vi.fn(), vi.fn(), vi.fn(), /* submitIsSuccess */ true);
       setupOrderQuery(MOCK_ORDER_SKICKAD);
 
       renderComposeOrderPage();
 
-      // Mode B banner
-      expect(screen.getByText(/beställningen är skickad till apotekare/i)).toBeInTheDocument();
+      // Phase 10 D-169 — Mode B banner copy: 'Beställning ORD-… är skickad.'
+      // (replaces the Phase 3 'Beställningen är skickad till apotekare.').
+      expect(
+        screen.getByText('Beställning ORD-2026-0042 är skickad.'),
+      ).toBeInTheDocument();
 
       // Sticky footer should NOT render in Mode B (no "Skicka beställning" button)
       expect(screen.queryByRole('button', { name: /skicka beställning/i })).not.toBeInTheDocument();
@@ -383,7 +394,9 @@ describe('ComposeOrderPage', () => {
       // The banner role="status" must NOT be in the DOM — otherwise ATs that
       // skip role=status on initial render would silently drop the announcement.
       expect(screen.queryByRole('status')).not.toBeInTheDocument();
-      expect(screen.queryByText(/beställningen är skickad till apotekare/i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/Beställning ORD-.* är skickad\./),
+      ).not.toBeInTheDocument();
 
       // Status pill should still appear (Mode B layout otherwise unchanged).
       expect(screen.getByText('Skickad')).toBeInTheDocument();
@@ -401,10 +414,10 @@ describe('ComposeOrderPage', () => {
 
       renderComposeOrderPage();
 
-      // SubmitConfirmationBanner (role="status")
+      // SubmitConfirmationBanner (role="status") — Phase 10 D-169 copy.
       const banner = screen.getByRole('status');
       expect(banner).toBeInTheDocument();
-      expect(banner).toHaveTextContent('Beställningen är skickad till apotekare.');
+      expect(banner).toHaveTextContent('Beställning ORD-2026-0042 är skickad.');
 
       // OrderStatusPill with "Skickad" label
       expect(screen.getByText('Skickad')).toBeInTheDocument();
@@ -571,6 +584,36 @@ describe('ComposeOrderPage', () => {
       // D-153 resolution priority — valid ?from= wins over the caller's
       // fallbackStatus, regardless of order.status.
       expect(backLinks[0]!.getAttribute('href')).toBe('/bestallningar?status=alla');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Phase 10 D-167 / D-169 — orderNumber is the identity affordance
+  // ---------------------------------------------------------------------------
+
+  describe('(P10-1) Phase 10 D-167 — H1 reads "Beställning ORD-YYYY-####" regardless of status', () => {
+    it('utkast: H1 is identity-first (NOT status-derived) and OrderStatusPill carries status separately', () => {
+      setupOrderQuery(MOCK_ORDER_UTKAST);
+
+      renderComposeOrderPage();
+
+      const h1 = screen.getByRole('heading', { level: 1 });
+      expect(h1).toHaveTextContent('Beställning ORD-2026-0042');
+      // OrderStatusPill renders the lifecycle stage separately.
+      expect(screen.getByText('Utkast')).toBeInTheDocument();
+    });
+
+    it('bekraftad: H1 still reads the SAME order number — identity is stable across transitions', () => {
+      setupOrderQuery(MOCK_ORDER_BEKRAFTAD);
+
+      renderComposeOrderPage();
+
+      const h1 = screen.getByRole('heading', { level: 1 });
+      // MOCK_ORDER_BEKRAFTAD spreads from MOCK_ORDER_UTKAST so orderNumber
+      // carries over verbatim — confirms D-162 (orderNumber stable across
+      // status transitions) at the FE rendering layer.
+      expect(h1).toHaveTextContent('Beställning ORD-2026-0042');
+      expect(screen.getByText('Bekräftad')).toBeInTheDocument();
     });
   });
 

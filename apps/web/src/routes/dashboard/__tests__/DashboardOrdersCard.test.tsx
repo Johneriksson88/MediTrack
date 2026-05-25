@@ -90,6 +90,11 @@ const NURSE_DATA: DashboardOrdersResponse = {
       {
         id: 'utk-1',
         status: 'utkast',
+        // Phase 10 D-168 — every row now carries the formatted order
+        // identifier; the row's primary text in DashboardOrdersCard is
+        // orderNumber (font-mono), createdBy + relative time consolidate
+        // into the secondary muted line.
+        orderNumber: 'ORD-2026-0010',
         lineCount: 2,
         totalQuantity: 6,
         createdBy: { id: 'u-nurse', name: 'Anna Nurse' },
@@ -98,6 +103,7 @@ const NURSE_DATA: DashboardOrdersResponse = {
       {
         id: 'utk-2',
         status: 'utkast',
+        orderNumber: 'ORD-2026-0011',
         lineCount: 1,
         totalQuantity: 3,
         createdBy: { id: 'u-nurse', name: 'Anna Nurse' },
@@ -109,6 +115,7 @@ const NURSE_DATA: DashboardOrdersResponse = {
     {
       id: 'hist-1',
       status: 'skickad',
+      orderNumber: 'ORD-2026-0012',
       lineCount: 3,
       totalQuantity: 12,
       createdBy: { id: 'u-other', name: 'Bertil Other' },
@@ -117,6 +124,7 @@ const NURSE_DATA: DashboardOrdersResponse = {
     {
       id: 'hist-2',
       status: 'bekraftad',
+      orderNumber: 'ORD-2026-0013',
       lineCount: 1,
       totalQuantity: 4,
       createdBy: { id: 'u-other', name: 'Cecilia Other' },
@@ -125,6 +133,7 @@ const NURSE_DATA: DashboardOrdersResponse = {
     {
       id: 'hist-3',
       status: 'levererad',
+      orderNumber: 'ORD-2026-0014',
       lineCount: 4,
       totalQuantity: 9,
       createdBy: { id: 'u-other', name: 'David Other' },
@@ -144,6 +153,8 @@ function pharmacistData(
         {
           id: 'sk-1',
           status: 'skickad',
+          // Phase 10 D-168 — required orderNumber on every row.
+          orderNumber: 'ORD-2026-0020',
           lineCount: 2,
           totalQuantity: 5,
           createdBy: { id: 'u-nurse', name: 'Anna Nurse' },
@@ -152,6 +163,7 @@ function pharmacistData(
         {
           id: 'sk-2',
           status: 'skickad',
+          orderNumber: 'ORD-2026-0021',
           lineCount: 1,
           totalQuantity: 1,
           createdBy: { id: 'u-nurse', name: 'Anna Nurse' },
@@ -160,6 +172,7 @@ function pharmacistData(
         {
           id: 'sk-3',
           status: 'skickad',
+          orderNumber: 'ORD-2026-0022',
           lineCount: 4,
           totalQuantity: 11,
           createdBy: { id: 'u-other', name: 'Bertil Other' },
@@ -173,6 +186,7 @@ function pharmacistData(
         {
           id: 'bk-1',
           status: 'bekraftad',
+          orderNumber: 'ORD-2026-0030',
           lineCount: 5,
           totalQuantity: 17,
           createdBy: { id: 'u-other', name: 'Cecilia Other' },
@@ -433,4 +447,45 @@ describe('DashboardOrdersCard', () => {
       expect(cardContentClassName).toContain('flex-1');
     },
   );
+
+  it('Test 11 (Phase 10 D-168): row primary text is orderNumber; createdBy.name still surfaces on the secondary line', () => {
+    // Nurse data exercises both Egna utkast (with own orderNumbers) and
+    // recent history (with mixed-status orderNumbers) — proves the
+    // promotion applies to every row site regardless of section/status.
+    mockQuery({ data: NURSE_DATA, isLoading: false, isError: false });
+    renderWithProviders(<DashboardOrdersCard />);
+
+    // Each fixture orderNumber appears in the DOM (primary heading slot).
+    for (const num of [
+      'ORD-2026-0010',
+      'ORD-2026-0011',
+      'ORD-2026-0012',
+      'ORD-2026-0013',
+      'ORD-2026-0014',
+    ]) {
+      expect(screen.getByText(num)).toBeInTheDocument();
+    }
+
+    // createdBy.name is no longer the row heading but is still present on
+    // the secondary muted line — Phase 10 D-168 demotes, it does not
+    // remove. Anna Nurse appears on two own-draft rows, demonstrating
+    // the consolidated 'Skapad av {name} · {relative}' line.
+    expect(
+      screen.getAllByText(/Skapad av Anna Nurse/i).length,
+    ).toBeGreaterThanOrEqual(1);
+  });
+
+  it('Test 12 (Phase 10 D-168): row primary text is font-mono so the identifier reads as a code-style string', () => {
+    mockQuery({
+      data: pharmacistData('apotekare'),
+      isLoading: false,
+      isError: false,
+    });
+    renderWithProviders(<DashboardOrdersCard />);
+
+    // Sample one of the fixture orderNumbers — the rendering <span> must
+    // carry the font-mono class so the identifier reads at code density.
+    const span = screen.getByText('ORD-2026-0020');
+    expect(span.className).toContain('font-mono');
+  });
 });
