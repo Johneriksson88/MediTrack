@@ -75,6 +75,7 @@ Phase 6 complete (all 3 plans). 12-step demo-path verified live by user on 2026-
 | 260521-lc5 | Fix CR-02: follow-up migration aligning Medication.name trgm GIN index with Prisma's ILIKE emit; planner now bitmap-scans the index instead of seq-scanning 43k rows | 2026-05-21 | f900b33 | [260521-lc5-fix-cr-02-add-a-follow-up-migration-that](./quick/260521-lc5-fix-cr-02-add-a-follow-up-migration-that/) |
 | 260526-1px | Emit `medication.softDelete` audit action (Swedish label "Borttagen") so the admin audit log distinguishes med soft-deletes from generic updates — mirrors the `order.softDelete` precedent | 2026-05-25 | ffafa51 | [260526-1px-make-medication-soft-delete-write-audit-](./quick/260526-1px-make-medication-soft-delete-write-audit-/) |
 | 260526-21r | Make X icon in AuditFilterBar comboboxes a clickable per-filter clear control — stops Radix pointerdown-to-open, keyboard-accessible, mirrors existing requestId chip dismiss style | 2026-05-25 | 7c6c2f0 | [260526-21r-make-x-icon-in-auditfilterbar-comboboxes](./quick/260526-21r-make-x-icon-in-auditfilterbar-comboboxes/) |
+| 260526-2fr | Collapse MedicationSheet SheetFooter bottom padding to standard `pb-4` on ≥768px (mobile safe-area calc preserved) so AI block expansion no longer pushes the Slutgiltig klass field below the viewport | 2026-05-25 | 03cc716 | [260526-2fr-reduce-sheetfooter-bottom-padding-on-des](./quick/260526-2fr-reduce-sheetfooter-bottom-padding-on-des/) |
 
 ## Phase 03 Progress
 
@@ -154,7 +155,7 @@ Phase 6 complete (all 3 plans). 12-step demo-path verified live by user on 2026-
 - D-116 live (Phase 6 Plan 02): Terapeutisk klass combobox positioned LEFTMOST in LakemedelFilter (search → Terapeutisk klass → ATC → Form → Visa endast under tröskel); URL-as-state via short param name ?class=N (single-letter value matches the Postgres enum verbatim); shared TherapeuticClassCombobox extracted as ONE file for Plan 02 (LakemedelFilter URL-state consumer) + Plan 03 (MedicationSheet react-hook-form consumer) — Warning-7 anti-duplication.
 - Plan 02 — Slice A's dashboard contract upgraded cleanly: `z.string().nullable()` (Plan 01 forward-compatible placeholder) → `therapeuticClassEnum.nullable()` (closed 14-value union). Wire shape unchanged; type narrowed. Plan 01's DashboardLowStockCard.test.tsx (5/5) and dashboard.integration.test.ts Tests 2+3 still pass after the swap — no regression.
 
-Last activity: 2026-05-25 - Completed quick task 260526-21r: clickable X clear-buttons in AuditFilterBar
+Last activity: 2026-05-25 - Completed quick task 260526-2fr: MedicationSheet desktop footer padding
 
 ---
 *Last updated: 2026-05-23 after 06-03 demo-path verified by user — Phase 6 complete*
