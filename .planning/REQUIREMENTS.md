@@ -41,7 +41,7 @@ Requirements for the Medovia interview submission. Each maps to exactly one road
 - [ ] **ORD-08**: Compose-order "Lägg till läkemedel" picker surfaces 10 medication suggestions before any search input — combining most-ordered (by line count for the user's vårdenhet) and low-stock items, deduplicated *(Phase 8)*
 - [ ] **ORD-09**: Dashboard shows a role-scoped "Beställningar" card surfacing orders that need the user's attention — nurses see own Utkast + recent history; apotekare/admin see Skickad-to-confirm + Bekräftad-to-deliver *(Phase 9)*
 - [ ] **ORD-10**: Order detail "Tillbaka till beställningar" returns the user to the previously-active status tab, not the default Utkast tab *(Phase 9)*
-- [ ] **ORD-11**: Every order has a generated, human-readable order number persisted in the database and displayed in every table that lists orders *(Phase 10)*
+- [x] **ORD-11**: Every order has a generated, human-readable order number persisted in the database and displayed in every table that lists orders *(Phase 10)*
 
 ### Stock Logic
 
@@ -172,7 +172,7 @@ Updated during roadmap creation. Each v1 requirement maps to exactly one phase.
 | ORD-08 | Phase 8 | Pending |
 | ORD-09 | Phase 9 | Pending |
 | ORD-10 | Phase 9 | Pending |
-| ORD-11 | Phase 10 | Pending |
+| ORD-11 | Phase 10 | Complete |
 | UX-02 | Phase 11 | Pending |
 | UX-03 | Phase 11 | Pending |
 

@@ -28,7 +28,7 @@
 | 7 | Ops & Submission Polish | 10/10 | Complete   | 2026-05-24 |
 | 8 | Compose & Catalog UX | 3/3 | Complete   | 2026-05-24 |
 | 9 | Dashboard Depth + Back-Nav | 4/4 | Complete   | 2026-05-25 |
-| 10 | Order Numbers | 2/2 | Complete   | 2026-05-25 |
+| 10 | Order Numbers | 2/2 | Complete    | 2026-05-25 |
 | 11 | Quick Polish | — | Pending | — |
 
 ## Phase Details
