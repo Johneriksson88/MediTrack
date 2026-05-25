@@ -27,7 +27,7 @@
 | 6 | AI Categorization & Low-Stock Notifications | 3/3 | Complete   | 2026-05-23 |
 | 7 | Ops & Submission Polish | 10/10 | Complete   | 2026-05-24 |
 | 8 | Compose & Catalog UX | 3/3 | Complete   | 2026-05-24 |
-| 9 | Dashboard Depth + Back-Nav | 3/3 | Complete   | 2026-05-24 |
+| 9 | Dashboard Depth + Back-Nav | 4/4 | Complete   | 2026-05-25 |
 | 10 | Order Numbers | — | Pending | — |
 | 11 | Quick Polish | — | Pending | — |
 
@@ -182,7 +182,7 @@
 **Mode:** mvp
 **UI hint:** yes
 **Requirements:** ORD-09, ORD-10
-**Plans:** 3/3 plans complete
+**Plans:** 4/4 plans complete
   - [x] 09-01-PLAN.md — Slice A (Wave 1): ORD-10 back-nav fix — useBestallningarBackLink helper hook + ?from=<status> propagation at 4 navigators (BestallningarPage handleNyBestallning + Utkast rowclicks + OrdersTable + OrdersCardList) + 5 ComposeOrderPage back-link sites rewired + hook tests + extended BestallningarPage/ComposeOrderPage tests (ORD-10)
   - [x] 09-02-PLAN.md — Slice B (Wave 1, parallel to 09-01): ORD-09 BE — dashboardOrdersResponse Zod discriminated union + listDashboardOrdersForUser(careUnitId, userId, role) service + GET /api/dashboard/orders endpoint (requireSession only, careUnitId-first per D-16) + 5-scenario integration test (nurse shape / apotekare shape / cross-careUnit isolation / top-5 cap / DESC by createdAt) (ORD-09)
   - [x] 09-03-PLAN.md — Slice C (Wave 2, depends on 09-01 + 09-02): ORD-09 FE — useDashboardOrdersQuery hook with three-layer refresh + DASHBOARD_ORDERS_QUERY_OPTIONS named export + DashboardOrdersCard (role-discriminated, two sections per subview, celebratory empty states, ?from=<row.status> on row links) + DashboardPage 2-column grid (D-145/D-146) + 5 mutation invalidations against ['dashboard', 'orders'] + 9 component tests (ORD-09)
