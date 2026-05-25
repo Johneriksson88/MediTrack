@@ -30,14 +30,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Constants
 // -------------------------------------------------------------------------
 
-const ROUTES = [
+// Mutable so we can substitute `bestallningsskapande` with a real draft id
+// after login (the canonical route is /bestallningar/:id; a bare /bestallningar/ny
+// is parsed as :id="ny" and 404s — Phase 10 #ORD-11 visibility checkpoint).
+const ROUTES: Array<{ slug: string; path: string; anonymous: boolean }> = [
   { slug: 'login',                path: '/login',            anonymous: true  },
   { slug: 'lakemedel',            path: '/lakemedel',        anonymous: false },
   { slug: 'bestallningsskapande', path: '/bestallningar/ny', anonymous: false },
   { slug: 'bestallningshistorik', path: '/bestallningar',    anonymous: false },
   { slug: 'audit',                path: '/admin/audit',      anonymous: false },
   { slug: 'dashboard',            path: '/dashboard',        anonymous: false },
-] as const;
+];
 
 const VIEWPORTS = [
   { width: 360,  height: 800  },
@@ -84,6 +87,7 @@ async function main(): Promise<void> {
     const page = await context.newPage();
 
     let loggedIn = false;
+    let composePathResolved = false;
 
     for (const viewport of VIEWPORTS) {
       for (const route of ROUTES) {
@@ -94,6 +98,30 @@ async function main(): Promise<void> {
         if (!route.anonymous && !loggedIn) {
           await loginAsAdmin(page);
           loggedIn = true;
+        }
+
+        // After login, resolve the Compose route to a real draft order id
+        // (route is /bestallningar/:id — /bestallningar/ny would parse :id="ny"
+        // and render the 404 placeholder, hiding the Phase 10 ORD-#### H1).
+        if (loggedIn && !composePathResolved) {
+          const draftId = await page.evaluate(async () => {
+            const r = await fetch('/api/orders?status=utkast', {
+              credentials: 'include',
+              headers: { Accept: 'application/json' },
+            });
+            if (!r.ok) return null;
+            const body = (await r.json()) as { rows?: Array<{ id: string }> };
+            return body.rows?.[0]?.id ?? null;
+          });
+          if (draftId) {
+            const composeIdx = ROUTES.findIndex((x) => x.slug === 'bestallningsskapande');
+            if (composeIdx >= 0) {
+              ROUTES[composeIdx] = { ...ROUTES[composeIdx], path: `/bestallningar/${draftId}` };
+            }
+          } else {
+            console.log('  (no draft order found via /api/orders?status=utkast — Compose screenshot will use fallback path)');
+          }
+          composePathResolved = true;
         }
 
         // Navigate to the route
