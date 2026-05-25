@@ -218,11 +218,12 @@ function Section({ title, count, statusHref, rows }: SectionProps) {
         )}
       </CardHeader>
       {rows.length === 0 ? (
-        <p
-          className="text-xs text-muted-foreground px-2 py-2"
-          role="list"
-          aria-label={title}
-        >
+        // WR-03 (Phase 9 review) — a <p> cannot legally carry role="list":
+        // phrasing content cannot host listitem children, and a list with
+        // zero listitems plus a free-floating text node is invalid per
+        // ARIA 1.2. Drop the bogus role entirely; the empty-state copy is
+        // just a paragraph.
+        <p className="text-xs text-muted-foreground px-2 py-2">
           Inga rader.
         </p>
       ) : (
