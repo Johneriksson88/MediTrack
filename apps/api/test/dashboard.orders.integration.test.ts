@@ -151,6 +151,11 @@ describe('GET /api/dashboard/orders', () => {
     const { hashPassword } = await import('../src/auth/password.js');
 
     // Idempotent cleanup of any leftover from a prior interrupted run.
+    // WR-05 (Phase 9 review) — also delete CareUnitMedication rows for the
+    // stale care unit defensively: a future Phase 8/10 feature may seed
+    // them, and careUnit.delete() would throw on the FK constraint if any
+    // exist. Today there are none for this care-unit name; the deleteMany
+    // is a no-op but keeps the cleanup correct under future seed paths.
     const stale = await prisma.user.findUnique({
       where: { email: 'other-nurse-dashboard-orders@test.example' },
     });
@@ -166,32 +171,47 @@ describe('GET /api/dashboard/orders', () => {
     });
     if (staleCu) {
       await prisma.order.deleteMany({ where: { careUnitId: staleCu.id } });
+      await prisma.careUnitMedication.deleteMany({
+        where: { careUnitId: staleCu.id },
+      });
       await prisma.careUnit.delete({ where: { id: staleCu.id } });
     }
 
-    const otherCareUnit = await prisma.careUnit.create({
-      data: { name: 'Other CareUnit Dashboard Orders Test' },
-    });
-    const hash = await hashPassword('demo1234');
-    const otherUser = await prisma.user.create({
-      data: {
-        email: 'other-nurse-dashboard-orders@test.example',
-        name: 'Other Nurse Dashboard Orders',
-        role: 'sjukskoterska',
-        careUnitId: otherCareUnit.id,
-        passwordHash: hash,
-      },
-    });
-
-    const otherOrder = await prisma.order.create({
-      data: {
-        careUnitId: otherCareUnit.id,
-        createdByUserId: otherUser.id,
-        status: 'utkast',
-      },
-    });
-
+    // WR-05 (Phase 9 review) — seed creates (otherCareUnit, otherUser,
+    // otherOrder) moved INSIDE the try{} block so a partial failure does
+    // not leak fixtures. Previously these three creates lived OUTSIDE the
+    // try{}; if prisma.user.create succeeded but prisma.order.create threw,
+    // the otherUser + otherCareUnit rows survived because finally{} only
+    // runs after try{} is entered. Now: each create accumulates its row
+    // into the per-resource holder; the finally{} block cleans whatever
+    // exists (null-guarded). The matching `careUnitMedication.deleteMany`
+    // is added on the finally side too for the same defensive reason.
+    let otherCareUnit: { id: string } | null = null;
+    let otherUser: { id: string; email: string } | null = null;
+    let otherOrder: { id: string } | null = null;
     try {
+      otherCareUnit = await prisma.careUnit.create({
+        data: { name: 'Other CareUnit Dashboard Orders Test' },
+      });
+      const hash = await hashPassword('demo1234');
+      otherUser = await prisma.user.create({
+        data: {
+          email: 'other-nurse-dashboard-orders@test.example',
+          name: 'Other Nurse Dashboard Orders',
+          role: 'sjukskoterska',
+          careUnitId: otherCareUnit.id,
+          passwordHash: hash,
+        },
+      });
+
+      otherOrder = await prisma.order.create({
+        data: {
+          careUnitId: otherCareUnit.id,
+          createdByUserId: otherUser.id,
+          status: 'utkast',
+        },
+      });
+
       const otherCookie = await loginAs(app, {
         email: otherUser.email,
         password: 'demo1234',
@@ -222,12 +242,29 @@ describe('GET /api/dashboard/orders', () => {
         expect(otherIds.has(id)).toBe(false);
       }
     } finally {
-      await prisma.session.deleteMany({ where: { userId: otherUser.id } });
-      await prisma.order.deleteMany({
-        where: { careUnitId: otherCareUnit.id },
-      });
-      await prisma.user.delete({ where: { id: otherUser.id } });
-      await prisma.careUnit.delete({ where: { id: otherCareUnit.id } });
+      if (otherUser) {
+        await prisma.session.deleteMany({ where: { userId: otherUser.id } });
+      }
+      if (otherCareUnit) {
+        await prisma.order.deleteMany({
+          where: { careUnitId: otherCareUnit.id },
+        });
+        // WR-05 — same defensive CareUnitMedication cleanup on the
+        // post-test side. No-op today; future-proof against Phase 8/10
+        // seed paths that might add per-care-unit medications.
+        await prisma.careUnitMedication.deleteMany({
+          where: { careUnitId: otherCareUnit.id },
+        });
+      }
+      if (otherUser) {
+        await prisma.user.delete({ where: { id: otherUser.id } });
+      }
+      if (otherCareUnit) {
+        await prisma.careUnit.delete({ where: { id: otherCareUnit.id } });
+      }
+      // otherOrder is referenced by the assertions above but cleaned up
+      // by the careUnit-scoped deleteMany — no explicit delete needed.
+      void otherOrder;
     }
   });
 
