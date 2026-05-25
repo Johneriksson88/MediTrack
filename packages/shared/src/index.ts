@@ -44,6 +44,11 @@ export {
   therapeuticClassEnum,
   type TherapeuticClass,
 } from './constants/therapeuticClass.js';
+// Phase 10 D-157 / D-165 — formatted order number (ORD-YYYY-####).
+// Single source of truth for the rendered display shape; consumed by BE
+// serialization (toOrderResponse / toOrderListItem / toDashboardOrderRow)
+// and FE display surfaces (OrdersTable, ComposeOrderPage H1, ...).
+export { formatOrderNumber } from './utils/orderNumber.js';
 // Order contracts — Zod schemas + inferred TS types for the FE↔BE order contract (D-08, Phase 3)
 export {
   orderLineResponse,

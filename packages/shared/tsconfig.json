@@ -17,5 +17,9 @@
     "declaration": true,
     "declarationMap": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Phase 10 — vitest test files live alongside source under src/utils/__tests__
+  // but vitest is NOT a build dependency of @meditrack/shared (run via the
+  // workspace-installed binary). Excluding them keeps `tsc -p .` clean.
+  "exclude": ["src/**/__tests__/**", "src/**/*.test.ts", "dist"]
 }
