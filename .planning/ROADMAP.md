@@ -29,7 +29,7 @@
 | 8 | Compose & Catalog UX | 3/3 | Complete   | 2026-05-24 |
 | 9 | Dashboard Depth + Back-Nav | 4/4 | Complete   | 2026-05-25 |
 | 10 | Order Numbers | 2/2 | Complete    | 2026-05-25 |
-| 11 | Quick Polish | 2/2 | 0/1 plans complete | — |
+| 11 | Quick Polish | 1/1 | Complete   | 2026-05-25 |
 
 ## Phase Details
 
@@ -214,8 +214,8 @@
 **Mode:** mvp
 **UI hint:** yes (frontend-only, no backend changes)
 **Requirements:** UX-02, UX-03
-**Plans:** 1 plan
-  - [ ] 11-01-PLAN.md — Slice 1 (Wave 1): TopBar logout split into per-breakpoint variants (mobile icon-only + desktop icon+label) + UserPillPopover → static UserPill rename (D-171/D-175) + Konto gate-note copy swap (D-173) + new TopBar.test.tsx + KontoPage.test.tsx assertion updates + sc04 mobile screenshot re-capture (UX-02, UX-03)
+**Plans:** 1/1 plans complete
+  - [x] 11-01-PLAN.md — Slice 1 (Wave 1): TopBar logout split into per-breakpoint variants (mobile icon-only + desktop icon+label) + UserPillPopover → static UserPill rename (D-171/D-175) + Konto gate-note copy swap (D-173) + new TopBar.test.tsx + KontoPage.test.tsx assertion updates + sc04 mobile screenshot re-capture (UX-02, UX-03)
 **Success Criteria:**
 1. Top nav exposes a "Logga ut" control visible at every breakpoint — not gated behind the desktop UserPillPopover or a navigation to Konto. Reuses the existing `useLogout` mutation; no new endpoint.
 2. Konto page guidance copy for `sjukskoterska` / `apotekare` reads exactly "Ändringar kan endast göras av administratör." (replaces "Denna åtgärd kräver adminrättigheter.").
