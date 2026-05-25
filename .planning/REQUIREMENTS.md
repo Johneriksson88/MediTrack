@@ -70,8 +70,8 @@ Requirements for the Medovia interview submission. Each maps to exactly one road
 ### User Experience
 
 - [ ] **UX-01**: Every page renders usably and meets layout expectations across the breakpoint ladder — mobile (360 px), tablet/iPad (768 px), laptop (1024 px), and large desktop (1440 px+). Built mobile-first (base styles target the smallest breakpoint, Tailwind `sm/md/lg/xl` breakpoints layer on enhancements). No horizontal scroll at any breakpoint; primary actions reachable without zoom.
-- [ ] **UX-02**: "Logga ut" is reachable from the global top navigation at every breakpoint — not gated behind the desktop UserPillPopover or a page navigation to Konto *(Phase 11)*
-- [ ] **UX-03**: Konto page guidance for sjukskoterska/apotekare reads "Ändringar kan endast göras av administratör" (replacing "Denna åtgärd kräver adminrättigheter.") *(Phase 11)*
+- [x] **UX-02**: "Logga ut" is reachable from the global top navigation at every breakpoint — not gated behind the desktop UserPillPopover or a page navigation to Konto *(Phase 11)*
+- [x] **UX-03**: Konto page guidance for sjukskoterska/apotekare reads "Ändringar kan endast göras av administratör" (replacing "Denna åtgärd kräver adminrättigheter.") *(Phase 11)*
 
 ### Ops / Deliverables
 
@@ -173,8 +173,8 @@ Updated during roadmap creation. Each v1 requirement maps to exactly one phase.
 | ORD-09 | Phase 9 | Pending |
 | ORD-10 | Phase 9 | Pending |
 | ORD-11 | Phase 10 | Complete |
-| UX-02 | Phase 11 | Pending |
-| UX-03 | Phase 11 | Pending |
+| UX-02 | Phase 11 | Complete |
+| UX-03 | Phase 11 | Complete |
 
 **Coverage:**
 - v1 requirements: 46 total
