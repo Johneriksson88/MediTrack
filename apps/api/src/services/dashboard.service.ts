@@ -135,6 +135,27 @@ export async function listLowStockForUnit(
  * Soft-delete: every query filters `deletedAt: null` to match the
  *   listOrdersForUnit convention (D-62 / D-33) — discarded drafts never
  *   surface on the dashboard.
+ *
+ * Phase 9 review WR-06 — count/rows race window: each section issues
+ *   `findMany` + `count` as sibling queries under `Promise.all`. These
+ *   two queries run in separate connections, so a write that lands
+ *   between them (e.g. another tab submits an order) can produce a
+ *   payload where `egnaUtkast.count === N` but
+ *   `egnaUtkast.rows.length === N - 1` (or vice versa). The UI's
+ *   `totalt N` label then drifts off-by-one from the rows the user
+ *   sees underneath. This is a transient cosmetic inconsistency, not a
+ *   data-integrity bug — the D-148 30 s refetch interval + window-focus
+ *   refetch heal it on the next tick. The two-nurses-ordering-
+ *   simultaneously concurrency answer for §6 of the brief is the same:
+ *   dashboard counts are eventually-consistent decorative; the
+ *   authoritative state is the per-order row in /bestallningar/:id.
+ *   Wrapping each (findMany, count) pair in
+ *   `prisma.$transaction([...], { isolationLevel: 'RepeatableRead' })`
+ *   would close the window at the cost of extra connection-pool
+ *   pressure and one transaction per dashboard load; for a one-week
+ *   interview submission the cosmetic-only impact does not justify
+ *   that — but the trade-off is documented here so a future hardening
+ *   pass has a clear hook.
  */
 
 /**
