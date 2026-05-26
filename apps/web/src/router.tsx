@@ -10,6 +10,7 @@ import { KontoPage } from '@/routes/konto/KontoPage';
 import { LakemedelPage } from '@/routes/lakemedel/LakemedelPage';
 import { LoginPage } from '@/routes/login/LoginPage';
 import { AppShell } from '@/routes/shell/AppShell';
+import { SortimentPage } from '@/routes/sortiment/SortimentPage';
 
 /**
  * D-12 / D-13 / Pattern K — full Phase 1 route map.
@@ -44,6 +45,14 @@ export const router = createBrowserRouter([
       { path: '/bestallningar', element: <BestallningarPage /> },
       { path: '/bestallningar/:id', element: <ComposeOrderPage /> },
       { path: '/konto', element: <KontoPage /> },
+      {
+        // Sortiment is open to apotekare + admin (catalog management is a
+        // pharmacist responsibility; sjuksköterska is read-only on the
+        // Läkemedel page and has no business here). BE enforces the same
+        // role set via medication:bulk_manage on every mutating route.
+        element: <RoleRoute roles={['apotekare', 'admin']} />,
+        children: [{ path: '/sortiment', element: <SortimentPage /> }],
+      },
       {
         element: <RoleRoute roles={['admin']} />,
         children: [{ path: '/admin/audit', element: <AuditPage /> }],

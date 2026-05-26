@@ -5,12 +5,12 @@ import { renderWithProviders } from './helpers/renderWithProviders';
 import { BottomTabBar } from '@/routes/shell/BottomTabBar';
 
 /**
- * AUTH-06 — BottomTabBar admin filter (apps/web/src/routes/shell/BottomTabBar.tsx)
+ * AUTH-06 — BottomTabBar role-based nav filter (apps/web/src/routes/shell/BottomTabBar.tsx)
  *
- * Behavioral requirements (UI-SPEC §Nav, §Bottom Tab Bar):
- * - Admin user: 5 NavLinks rendered, including one with label "Admin".
- * - Non-admin user: 4 NavLinks rendered, none with label "Admin".
+ * NAV array (6 items): Dashboard, Läkemedel, Beställningar, Sortiment, Konto, Admin.
+ * Sortiment is gated to ['apotekare', 'admin']; Admin is gated to ['admin'].
  *
+ * Expected counts: admin 6, apotekare 5, sjukskoterska 4, loading 4.
  * Same filter logic as Sidebar — both consume visibleNav(role) from nav.ts.
  */
 
@@ -48,19 +48,20 @@ describe('BottomTabBar admin nav filter', () => {
       });
     });
 
-    it('renders 5 nav links (all items including Admin)', () => {
+    it('renders 6 nav links (all items including Sortiment + Admin)', () => {
       renderWithProviders(<BottomTabBar />);
       const navLinks = screen.getAllByRole('link');
-      expect(navLinks).toHaveLength(5);
+      expect(navLinks).toHaveLength(6);
     });
 
-    it('includes the "Admin" tab', () => {
+    it('includes both "Sortiment" and "Admin" tabs', () => {
       renderWithProviders(<BottomTabBar />);
+      expect(screen.getByRole('link', { name: 'Sortiment' })).toBeInTheDocument();
       expect(screen.getByRole('link', { name: 'Admin' })).toBeInTheDocument();
     });
   });
 
-  describe('when user is sjukskoterska (non-admin)', () => {
+  describe('when user is sjukskoterska (no gated items)', () => {
     beforeEach(() => {
       mockUseAuth.mockReturnValue({
         user: makeUser('sjukskoterska'),
@@ -69,18 +70,19 @@ describe('BottomTabBar admin nav filter', () => {
       });
     });
 
-    it('renders 4 nav links (Admin filtered out)', () => {
+    it('renders 4 nav links (Sortiment + Admin filtered out)', () => {
       renderWithProviders(<BottomTabBar />);
       const navLinks = screen.getAllByRole('link');
       expect(navLinks).toHaveLength(4);
     });
 
-    it('does NOT include the "Admin" tab', () => {
+    it('does NOT include "Sortiment" or "Admin"', () => {
       renderWithProviders(<BottomTabBar />);
+      expect(screen.queryByRole('link', { name: 'Sortiment' })).not.toBeInTheDocument();
       expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument();
     });
 
-    it('shows all four non-admin tabs with correct Swedish labels', () => {
+    it('shows all four open tabs with correct Swedish labels', () => {
       renderWithProviders(<BottomTabBar />);
       expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
       expect(screen.getByRole('link', { name: 'Läkemedel' })).toBeInTheDocument();
@@ -89,7 +91,7 @@ describe('BottomTabBar admin nav filter', () => {
     });
   });
 
-  describe('when user is apotekare (non-admin)', () => {
+  describe('when user is apotekare (Sortiment only)', () => {
     beforeEach(() => {
       mockUseAuth.mockReturnValue({
         user: makeUser('apotekare'),
@@ -98,14 +100,15 @@ describe('BottomTabBar admin nav filter', () => {
       });
     });
 
-    it('renders 4 nav links — Admin filtered out for apotekare', () => {
+    it('renders 5 nav links — sees Sortiment, not Admin', () => {
       renderWithProviders(<BottomTabBar />);
       const navLinks = screen.getAllByRole('link');
-      expect(navLinks).toHaveLength(4);
+      expect(navLinks).toHaveLength(5);
     });
 
-    it('does NOT include "Admin" tab for apotekare', () => {
+    it('includes "Sortiment" but NOT "Admin"', () => {
       renderWithProviders(<BottomTabBar />);
+      expect(screen.getByRole('link', { name: 'Sortiment' })).toBeInTheDocument();
       expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument();
     });
   });
@@ -119,7 +122,7 @@ describe('BottomTabBar admin nav filter', () => {
       });
     });
 
-    it('renders 4 nav links when user.role is undefined (adminOnly filtered)', () => {
+    it('renders 4 nav links when user.role is undefined (gated items filtered)', () => {
       renderWithProviders(<BottomTabBar />);
       const navLinks = screen.getAllByRole('link');
       expect(navLinks).toHaveLength(4);

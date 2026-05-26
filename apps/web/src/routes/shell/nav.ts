@@ -1,48 +1,50 @@
 import {
   ClipboardList,
   LayoutDashboard,
+  Library,
   Pill,
   ShieldCheck,
   User,
   type LucideIcon,
 } from 'lucide-react';
+import type { Role } from '@meditrack/shared';
 
 /**
  * UI-SPEC §Information Architecture & Navigation — single source of truth
- * for Phase 1 nav destinations.
+ * for nav destinations.
  *
  * Both `<Sidebar/>` (md+) and `<BottomTabBar/>` (<md) consume this array,
- * so adding a new top-level route is a single-file change. The five
- * Phase 1 entries are listed in display order; the admin entry is gated
- * by `adminOnly: true` and is filtered out for non-admin roles at render
- * time.
- *
- * Phase 2+ will extend this array as more top-level routes land
- * (e.g. medication detail, audit list). The `adminOnly` flag pattern
- * generalizes to other role-based gates if/when finer-grained nav
- * gating is needed; alternatively swap to a `Can`-based filter once the
- * `<Can action="…">` permission model has a more relevant action key.
+ * so adding a new top-level route is a single-file change. Entries with a
+ * `roles` list are filtered out for users whose role is not in the list;
+ * entries without one are visible to every authenticated role.
  */
 export interface NavItem {
   to: string;
   label: string;
   icon: LucideIcon;
-  adminOnly: boolean;
+  /**
+   * Roles allowed to see this nav entry. `undefined` means visible to all
+   * authenticated roles (the historical default — items without a role list
+   * are open). Mirrors the BE role gate so the sidebar and the route-level
+   * `RoleRoute` never disagree.
+   */
+  roles?: readonly Role[];
 }
 
 export const NAV: NavItem[] = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, adminOnly: false },
-  { to: '/lakemedel', label: 'Läkemedel', icon: Pill, adminOnly: false },
-  { to: '/bestallningar', label: 'Beställningar', icon: ClipboardList, adminOnly: false },
-  { to: '/konto', label: 'Konto', icon: User, adminOnly: false },
-  { to: '/admin/audit', label: 'Admin', icon: ShieldCheck, adminOnly: true },
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/lakemedel', label: 'Läkemedel', icon: Pill },
+  { to: '/bestallningar', label: 'Beställningar', icon: ClipboardList },
+  { to: '/sortiment', label: 'Sortiment', icon: Library, roles: ['apotekare', 'admin'] },
+  { to: '/konto', label: 'Konto', icon: User },
+  { to: '/admin/audit', label: 'Admin', icon: ShieldCheck, roles: ['admin'] },
 ];
 
 /**
  * Returns the NAV items visible to a user of the given role.
- * Admin-only items are filtered out unless `role === 'admin'`.
+ * Items with no `roles` list are open to every authenticated role.
  * Accepts `null` to handle the loading state (no items visible yet).
  */
 export function visibleNav(role: string | null | undefined): NavItem[] {
-  return NAV.filter((item) => !item.adminOnly || role === 'admin');
+  return NAV.filter((item) => !item.roles || (role !== null && role !== undefined && item.roles.includes(role as Role)));
 }
