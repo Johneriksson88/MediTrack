@@ -25,7 +25,7 @@ export function BottomTabBar() {
     <nav
       aria-label="Primary"
       data-test="primary-nav"
-      className="md:hidden fixed bottom-0 inset-x-0 h-14 bg-[#F1F5F9] border-t border-[#E2E8F0] flex pb-[env(safe-area-inset-bottom)]"
+      className="md:hidden fixed bottom-0 inset-x-0 z-50 h-14 bg-[#F1F5F9] border-t border-[#E2E8F0] flex pb-[env(safe-area-inset-bottom)]"
     >
       {items.map((item) => (
         <NavLink
