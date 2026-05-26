@@ -7,9 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 No source code yet — Phase 1 has not started. Planning is complete: `.planning/` contains PROJECT.md, REQUIREMENTS.md (38 v1 REQ-IDs), ROADMAP.md (7 phases), STATE.md, and config.json. Other artifacts:
 
 - `local/intervju-testcase-1-1-.pdf` — the assignment brief (Swedish). Local only; do not commit binaries from here.
-- `.claude/` — GSD tooling: agents, commands, hooks, settings. See `.claude/settings.json` for active hooks.
+- `.claude/` — agents, commands, hooks, settings. See `.claude/settings.json` for active hooks.
 
-When source code lands, update the Status section and the GSD-managed Stack / Conventions / Architecture sections (below) with actual build/lint/test commands and real architecture. Do not invent them in the meantime.
+When source code lands, update the Status section and the Stack / Conventions / Architecture sections (below) with actual build/lint/test commands and real architecture. Do not invent them in the meantime.
 
 ## Project context (from the brief)
 
@@ -31,17 +31,6 @@ Optional (any subset, justify in README): AI feature (auto-categorization / pred
 - **Evaluation weights** (from brief §5): code quality & architecture ★★★★★, API design & data modeling ★★★★, system design & scalability ★★★★, UI/UX ★★★, README & communication ★★★. Reviewers explicitly value a well-justified half-finished solution over an uncommented complete one — don't ship features at the cost of readability or commit clarity.
 - **Required deliverable in README.md:** purpose, architecture choices, how to run, known gaps, and "what I'd do with more time." Treat this as part of the work, not an afterthought.
 - **Interview questions to design for** (brief §6): concurrent updates from two nurses ordering simultaneously, scaling from 1 to 50 vårdenheter, how auth would be retrofitted. Leave hooks in the data model and architecture that make good answers possible.
-
-## GSD tooling
-
-This repo is set up with the GSD (Get Shit Done) workflow. Hooks in `.claude/settings.json` run on SessionStart, PreToolUse (Write/Edit/Bash), and PostToolUse (Read/Write/Edit/Bash/Agent/Task):
-
-- `gsd-check-update.js`, `gsd-session-state.sh` — session bootstrap.
-- `gsd-prompt-guard.js`, `gsd-read-guard.js`, `gsd-workflow-guard.js` — gate Write/Edit operations.
-- `gsd-validate-commit.sh` — gates `git commit` Bash calls.
-- `gsd-context-monitor.js`, `gsd-phase-boundary.sh`, `gsd-read-injection-scanner.js` — observability.
-
-GSD slash-commands live under `.claude/commands/gsd/` and the supporting agents under `.claude/agents/`. The intended workflow is `/gsd:new-project` → `/gsd:plan-phase` → `/gsd:execute-phase` per phase, with planning artifacts written to `.planning/` (not yet created). If the user runs GSD commands, defer to them rather than ad-hoc planning.
 
 ## Directory conventions
 
@@ -96,22 +85,3 @@ Architecture not yet mapped. Follow existing patterns found in the codebase.
 No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, `.github/skills/`, or `.codex/skills/` with a `SKILL.md` index file.
 <!-- GSD:skills-end -->
 
-<!-- GSD:workflow-start source:GSD defaults -->
-## GSD Workflow Enforcement
-
-Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
-
-Use these entry points:
-- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
-- `/gsd-debug` for investigation and bug fixing
-- `/gsd-execute-phase` for planned phase work
-
-Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
-<!-- GSD:workflow-end -->
-
-<!-- GSD:profile-start -->
-## Developer Profile
-
-> Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
-> This section is managed by `generate-claude-profile` -- do not edit manually.
-<!-- GSD:profile-end -->
