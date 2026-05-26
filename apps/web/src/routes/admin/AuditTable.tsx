@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { SortableTableHead } from '@/components/ui/sortable-table-head';
 import {
   Tooltip,
   TooltipContent,
@@ -21,6 +22,7 @@ import { AuditDiffPanel } from './AuditDiffPanel';
 import { formatRelative } from '../bestallningar/DraftCard';
 import { diffSummary } from './auditDiffSummary';
 import { cn } from '@/lib/utils';
+import { useTableSort, type SortableValue } from '@/lib/useTableSort';
 
 /**
  * Phase 5 UI-SPEC §3 / D-102 / D-104 — Desktop audit table (≥md).
@@ -45,12 +47,32 @@ export interface AuditTableProps {
   className?: string;
 }
 
+type SortKey = 'createdAt' | 'actor' | 'entityType' | 'action';
+
+function auditAccessor(event: AuditEventResponse, key: SortKey): SortableValue {
+  switch (key) {
+    case 'createdAt':
+      return event.createdAt;
+    case 'actor':
+      return event.actor?.name ?? null;
+    case 'entityType':
+      return event.entityType;
+    case 'action':
+      return event.action;
+  }
+}
+
 export function AuditTable({
   events,
   expandedIds,
   onToggleExpand,
   className,
 }: AuditTableProps) {
+  // Default to Tid desc — matches the BE's reverse-chronological order so the
+  // initial render shape is unchanged. Toggling Tid first cycles to asc.
+  const sort = useTableSort<SortKey>({ key: 'createdAt', dir: 'desc' });
+  const sortedEvents = sort.applyTo(events, auditAccessor);
+
   // Pre-compute requestId → sibling count for the loaded events.
   // O(N) scan per page-set; acceptable for v1's page-size 50 (D-104).
   const siblingCounts = new Map<string, number>();
@@ -65,18 +87,34 @@ export function AuditTable({
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50 hover:bg-muted/50">
-              <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide w-[160px]">
+              <SortableTableHead
+                ariaSort={sort.ariaSort('createdAt')}
+                onClick={() => sort.toggle('createdAt')}
+                className="w-[160px]"
+              >
                 Tid
-              </TableHead>
-              <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide min-w-[200px]">
+              </SortableTableHead>
+              <SortableTableHead
+                ariaSort={sort.ariaSort('actor')}
+                onClick={() => sort.toggle('actor')}
+                className="min-w-[200px]"
+              >
                 Användare
-              </TableHead>
-              <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide w-[200px]">
+              </SortableTableHead>
+              <SortableTableHead
+                ariaSort={sort.ariaSort('entityType')}
+                onClick={() => sort.toggle('entityType')}
+                className="w-[200px]"
+              >
                 Entitet
-              </TableHead>
-              <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide w-[180px]">
+              </SortableTableHead>
+              <SortableTableHead
+                ariaSort={sort.ariaSort('action')}
+                onClick={() => sort.toggle('action')}
+                className="w-[180px]"
+              >
                 Åtgärd
-              </TableHead>
+              </SortableTableHead>
               <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide min-w-[280px]">
                 Diff
               </TableHead>
@@ -86,7 +124,7 @@ export function AuditTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {events.map((event) => {
+            {sortedEvents.map((event) => {
               const isExpanded = expandedIds.has(event.id);
               const diffPanelId = `audit-diff-${event.id}`;
               const siblingCount = event.requestId

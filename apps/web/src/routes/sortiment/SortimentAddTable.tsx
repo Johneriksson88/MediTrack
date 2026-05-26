@@ -7,7 +7,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { SortableTableHead } from '@/components/ui/sortable-table-head';
 import { SortimentRowCheckbox } from './SortimentRowCheckbox';
+import { useTableSort } from '@/lib/useTableSort';
 
 interface SortimentAddTableProps {
   items: BulkAddCandidate[];
@@ -28,6 +30,8 @@ interface SortimentAddTableProps {
  * the admin sets a single threshold default and (per design decision) can
  * override per row before commit.
  */
+type SortKey = 'name' | 'atcCode' | 'form' | 'strength';
+
 export function SortimentAddTable({
   items,
   selectedIds,
@@ -37,6 +41,9 @@ export function SortimentAddTable({
   someSelected,
   className,
 }: SortimentAddTableProps) {
+  const sort = useTableSort<SortKey>({ key: 'name', dir: 'asc' });
+  const sortedItems = sort.applyTo(items, (row, key) => row[key]);
+
   return (
     <div className={`overflow-x-auto ${className ?? ''}`}>
       <Table>
@@ -59,22 +66,38 @@ export function SortimentAddTable({
                 />
               </label>
             </TableHead>
-            <TableHead className="min-w-[200px] text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <SortableTableHead
+              ariaSort={sort.ariaSort('name')}
+              onClick={() => sort.toggle('name')}
+              className="min-w-[200px]"
+            >
               Namn
-            </TableHead>
-            <TableHead className="w-[120px] text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            </SortableTableHead>
+            <SortableTableHead
+              ariaSort={sort.ariaSort('atcCode')}
+              onClick={() => sort.toggle('atcCode')}
+              className="w-[120px]"
+            >
               ATC-kod
-            </TableHead>
-            <TableHead className="w-[140px] text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            </SortableTableHead>
+            <SortableTableHead
+              ariaSort={sort.ariaSort('form')}
+              onClick={() => sort.toggle('form')}
+              className="w-[140px]"
+            >
               Form
-            </TableHead>
-            <TableHead className="w-[100px] text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            </SortableTableHead>
+            <SortableTableHead
+              ariaSort={sort.ariaSort('strength')}
+              onClick={() => sort.toggle('strength')}
+              className="w-[100px]"
+            >
               Styrka
-            </TableHead>
+            </SortableTableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {items.map((item) => {
+          {sortedItems.map((item) => {
             const checked = selectedIds.has(item.medicationId);
             return (
               <TableRow

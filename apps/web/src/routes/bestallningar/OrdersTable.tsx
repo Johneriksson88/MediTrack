@@ -9,8 +9,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { SortableTableHead } from '@/components/ui/sortable-table-head';
 import { OrderStatusPill } from '@/components/OrderStatusPill';
 import { formatRelative } from './DraftCard';
+import { useTableSort, type SortableValue } from '@/lib/useTableSort';
 
 /**
  * Phase 4 ORD-07 — Desktop orders table (≥md) for non-Utkast status tabs.
@@ -89,10 +91,33 @@ function getActorHeader(tab: NonUtkastTab): string {
   }
 }
 
+type SortKey = 'orderNumber' | 'time' | 'status' | 'lineCount' | 'totalQuantity' | 'actor';
+
 export function OrdersTable({ rows, tab, className }: OrdersTableProps) {
   const navigate = useNavigate();
   const timeHeader = getTimeHeader(tab);
   const actorHeader = getActorHeader(tab);
+
+  // Default sort = the tab-relevant timestamp, descending (newest first) —
+  // mirrors the API's reverse-chronological order. See file-level comment
+  // on the BE-driven default order.
+  const sort = useTableSort<SortKey>({ key: 'time', dir: 'desc' });
+  const sortedRows = sort.applyTo(rows, (row, key): SortableValue => {
+    switch (key) {
+      case 'orderNumber':
+        return row.orderNumber;
+      case 'time':
+        return getRelevantAt(row, tab);
+      case 'status':
+        return row.status;
+      case 'lineCount':
+        return row.lineCount;
+      case 'totalQuantity':
+        return row.totalQuantity;
+      case 'actor':
+        return getActorName(row, tab);
+    }
+  });
 
   return (
     <div className={`overflow-x-auto ${className ?? ''}`}>
@@ -101,35 +126,56 @@ export function OrdersTable({ rows, tab, className }: OrdersTableProps) {
           <TableRow className="bg-muted/50 hover:bg-muted/50">
             {/* Phase 10 D-166 — leftmost Best.nr column promotes orderNumber to
                 identity-level visual prominence; existing columns shift right. */}
-            <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide w-[120px]">
+            <SortableTableHead
+              ariaSort={sort.ariaSort('orderNumber')}
+              onClick={() => sort.toggle('orderNumber')}
+              className="w-[120px]"
+            >
               Best.nr
-            </TableHead>
-            <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            </SortableTableHead>
+            <SortableTableHead
+              ariaSort={sort.ariaSort('time')}
+              onClick={() => sort.toggle('time')}
+            >
               {timeHeader}
-            </TableHead>
+            </SortableTableHead>
             {tab === 'alla' && (
-              <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              <SortableTableHead
+                ariaSort={sort.ariaSort('status')}
+                onClick={() => sort.toggle('status')}
+              >
                 Status
-              </TableHead>
+              </SortableTableHead>
             )}
-            <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide w-[80px]">
+            <SortableTableHead
+              ariaSort={sort.ariaSort('lineCount')}
+              onClick={() => sort.toggle('lineCount')}
+              className="w-[80px]"
+            >
               Rader
-            </TableHead>
+            </SortableTableHead>
             {tab !== 'alla' && (
-              <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide w-[80px]">
+              <SortableTableHead
+                ariaSort={sort.ariaSort('totalQuantity')}
+                onClick={() => sort.toggle('totalQuantity')}
+                className="w-[80px]"
+              >
                 Total
-              </TableHead>
+              </SortableTableHead>
             )}
-            <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            <SortableTableHead
+              ariaSort={sort.ariaSort('actor')}
+              onClick={() => sort.toggle('actor')}
+            >
               {actorHeader}
-            </TableHead>
+            </SortableTableHead>
             <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide w-[48px]">
               Öppna
             </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((row) => {
+          {sortedRows.map((row) => {
             const relevantAt = getRelevantAt(row, tab);
             const actorName = getActorName(row, tab);
             return (

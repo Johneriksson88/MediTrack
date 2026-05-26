@@ -7,6 +7,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { SortableTableHead } from '@/components/ui/sortable-table-head';
 import {
   Tooltip,
   TooltipContent,
@@ -18,6 +19,7 @@ import { QuantityStepper } from '@/components/QuantityStepper';
 import { Can } from '@/auth/Can';
 import { useRemoveOrderLine } from '@/features/orders/useOrderMutations';
 import type { OrderLineResponse } from '@meditrack/shared';
+import { useTableSort } from '@/lib/useTableSort';
 
 /**
  * Phase 3 D-47 / D-57 / D-60 / UI-SPEC §5 — Order line table (≥md).
@@ -41,8 +43,12 @@ interface OrderLineTableProps {
   className?: string;
 }
 
+type SortKey = 'name' | 'atcCode' | 'form' | 'strength' | 'currentStock' | 'quantity';
+
 export function OrderLineTable({ items, orderId, isLocked, className }: OrderLineTableProps) {
   const removeLineMutation = useRemoveOrderLine();
+  const sort = useTableSort<SortKey>();
+  const sortedItems = sort.applyTo(items, (row, key) => row[key]);
 
   // WR-06: TooltipProvider is hoisted to ComposeOrderPage (the route wrapper)
   // so this component and ComposeStickyFooter share a single provider instead
@@ -53,31 +59,50 @@ export function OrderLineTable({ items, orderId, isLocked, className }: OrderLin
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50 hover:bg-muted/50">
-              <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide min-w-[160px]">
+              <SortableTableHead
+                ariaSort={sort.ariaSort('name')}
+                onClick={() => sort.toggle('name')}
+                className="min-w-[160px]"
+              >
                 Namn
-              </TableHead>
-              <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              </SortableTableHead>
+              <SortableTableHead
+                ariaSort={sort.ariaSort('atcCode')}
+                onClick={() => sort.toggle('atcCode')}
+              >
                 ATC-kod
-              </TableHead>
-              <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              </SortableTableHead>
+              <SortableTableHead
+                ariaSort={sort.ariaSort('form')}
+                onClick={() => sort.toggle('form')}
+              >
                 Form
-              </TableHead>
-              <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              </SortableTableHead>
+              <SortableTableHead
+                ariaSort={sort.ariaSort('strength')}
+                onClick={() => sort.toggle('strength')}
+              >
                 Styrka
-              </TableHead>
-              <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              </SortableTableHead>
+              <SortableTableHead
+                ariaSort={sort.ariaSort('currentStock')}
+                onClick={() => sort.toggle('currentStock')}
+              >
                 Lager
-              </TableHead>
-              <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              </SortableTableHead>
+              <SortableTableHead
+                ariaSort={sort.ariaSort('quantity')}
+                onClick={() => sort.toggle('quantity')}
+              >
                 Antal
-              </TableHead>
+              </SortableTableHead>
               <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide w-12">
                 Åtgärd
               </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {items.length === 0 ? (
+            {sortedItems.length === 0 ? (
               <TableRow>
                 <TableCell
                   colSpan={7}
@@ -87,7 +112,7 @@ export function OrderLineTable({ items, orderId, isLocked, className }: OrderLin
                 </TableCell>
               </TableRow>
             ) : (
-              items.map((line) => {
+              sortedItems.map((line) => {
                 const isLow = line.currentStock < line.lowStockThreshold;
                 return (
                   <TableRow key={line.id} className="hover:bg-muted/30">

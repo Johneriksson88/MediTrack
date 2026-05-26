@@ -7,8 +7,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { SortableTableHead } from '@/components/ui/sortable-table-head';
 import { LowStockBadge } from '@/components/LowStockBadge';
 import { SortimentRowCheckbox } from './SortimentRowCheckbox';
+import { useTableSort } from '@/lib/useTableSort';
 
 /**
  * Sortiment "I sortimentet" tab — read-only listing of active
@@ -34,6 +36,8 @@ interface SortimentCurrentTableProps {
   className?: string;
 }
 
+type SortKey = 'name' | 'atcCode' | 'form' | 'strength' | 'currentStock' | 'lowStockThreshold';
+
 export function SortimentCurrentTable({
   items,
   selectedIds,
@@ -43,6 +47,9 @@ export function SortimentCurrentTable({
   someSelected,
   className,
 }: SortimentCurrentTableProps) {
+  const sort = useTableSort<SortKey>({ key: 'name', dir: 'asc' });
+  const sortedItems = sort.applyTo(items, (row, key) => row[key]);
+
   return (
     <div className={`overflow-x-auto ${className ?? ''}`}>
       <Table>
@@ -65,28 +72,52 @@ export function SortimentCurrentTable({
                 />
               </label>
             </TableHead>
-            <TableHead className="min-w-[200px] text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <SortableTableHead
+              ariaSort={sort.ariaSort('name')}
+              onClick={() => sort.toggle('name')}
+              className="min-w-[200px]"
+            >
               Namn
-            </TableHead>
-            <TableHead className="w-[120px] text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            </SortableTableHead>
+            <SortableTableHead
+              ariaSort={sort.ariaSort('atcCode')}
+              onClick={() => sort.toggle('atcCode')}
+              className="w-[120px]"
+            >
               ATC-kod
-            </TableHead>
-            <TableHead className="w-[140px] text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            </SortableTableHead>
+            <SortableTableHead
+              ariaSort={sort.ariaSort('form')}
+              onClick={() => sort.toggle('form')}
+              className="w-[140px]"
+            >
               Form
-            </TableHead>
-            <TableHead className="w-[100px] text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            </SortableTableHead>
+            <SortableTableHead
+              ariaSort={sort.ariaSort('strength')}
+              onClick={() => sort.toggle('strength')}
+              className="w-[100px]"
+            >
               Styrka
-            </TableHead>
-            <TableHead className="w-[120px] text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            </SortableTableHead>
+            <SortableTableHead
+              ariaSort={sort.ariaSort('currentStock')}
+              onClick={() => sort.toggle('currentStock')}
+              className="w-[120px]"
+            >
               Lager
-            </TableHead>
-            <TableHead className="w-[100px] text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            </SortableTableHead>
+            <SortableTableHead
+              ariaSort={sort.ariaSort('lowStockThreshold')}
+              onClick={() => sort.toggle('lowStockThreshold')}
+              className="w-[100px]"
+            >
               Tröskel
-            </TableHead>
+            </SortableTableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {items.map((item) => {
+          {sortedItems.map((item) => {
             const isLow = item.currentStock < item.lowStockThreshold;
             const checked = selectedIds.has(item.careUnitMedicationId);
             return (

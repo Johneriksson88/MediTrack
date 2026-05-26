@@ -8,7 +8,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { SortableTableHead } from '@/components/ui/sortable-table-head';
 import { formatRelative } from './DraftCard';
+import { useTableSort, type SortableValue } from '@/lib/useTableSort';
 
 /**
  * Phase 3 UI-SPEC §2 — Desktop drafts table (≥md).
@@ -36,7 +38,25 @@ interface DraftsTableProps {
   className?: string;
 }
 
+type SortKey = 'orderNumber' | 'createdAt' | 'lineCount' | 'totalQuantity' | 'createdBy';
+
 export function DraftsTable({ items, onRowClick, className }: DraftsTableProps) {
+  const sort = useTableSort<SortKey>({ key: 'createdAt', dir: 'desc' });
+  const sortedItems = sort.applyTo(items, (row, key): SortableValue => {
+    switch (key) {
+      case 'orderNumber':
+        return row.orderNumber;
+      case 'createdAt':
+        return row.createdAt;
+      case 'lineCount':
+        return row.lineCount;
+      case 'totalQuantity':
+        return row.totalQuantity;
+      case 'createdBy':
+        return row.createdBy.name;
+    }
+  });
+
   return (
     <div className={`overflow-x-auto ${className ?? ''}`}>
       <Table>
@@ -44,28 +64,46 @@ export function DraftsTable({ items, onRowClick, className }: DraftsTableProps) 
           <TableRow className="bg-muted/50 hover:bg-muted/50">
             {/* Phase 10 D-166 — leftmost Best.nr column promotes orderNumber to
                 identity-level visual prominence; existing columns shift right. */}
-            <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide w-[120px]">
+            <SortableTableHead
+              ariaSort={sort.ariaSort('orderNumber')}
+              onClick={() => sort.toggle('orderNumber')}
+              className="w-[120px]"
+            >
               Best.nr
-            </TableHead>
-            <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            </SortableTableHead>
+            <SortableTableHead
+              ariaSort={sort.ariaSort('createdAt')}
+              onClick={() => sort.toggle('createdAt')}
+            >
               Skapad
-            </TableHead>
-            <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide w-[80px]">
+            </SortableTableHead>
+            <SortableTableHead
+              ariaSort={sort.ariaSort('lineCount')}
+              onClick={() => sort.toggle('lineCount')}
+              className="w-[80px]"
+            >
               Rader
-            </TableHead>
-            <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide w-[80px]">
+            </SortableTableHead>
+            <SortableTableHead
+              ariaSort={sort.ariaSort('totalQuantity')}
+              onClick={() => sort.toggle('totalQuantity')}
+              className="w-[80px]"
+            >
               Total
-            </TableHead>
-            <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            </SortableTableHead>
+            <SortableTableHead
+              ariaSort={sort.ariaSort('createdBy')}
+              onClick={() => sort.toggle('createdBy')}
+            >
               Skapad av
-            </TableHead>
+            </SortableTableHead>
             <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wide w-[48px]">
               Öppna
             </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {items.map((item) => (
+          {sortedItems.map((item) => (
             <TableRow
               key={item.id}
               tabIndex={0}
