@@ -1,25 +1,40 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import {
+  THERAPEUTIC_CLASSES,
+  type BulkAddCandidate,
+  type TherapeuticClass,
+} from '@meditrack/shared';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 import { useMedicationsQuery } from '@/features/medications/useMedicationsQuery';
+import { useBulkAddCandidatesQuery } from '@/features/medications/useSortimentMutations';
 import { SortimentCurrentTable } from './SortimentCurrentTable';
+import { SortimentAddFilter } from './SortimentAddFilter';
+import { SortimentAddTable } from './SortimentAddTable';
 import { SortimentActionBar } from './SortimentActionBar';
+import { SortimentBulkAddDialog } from './SortimentBulkAddDialog';
 import { PaginationFooter } from '@/routes/lakemedel/PaginationFooter';
 
 /**
  * Sortiment — admin + apotekare bulk catalog management.
  *
  * Two tabs:
- *   - "I sortimentet" — current CareUnitMedication rows (selectable for
- *     bulk-remove). Reuses useMedicationsQuery so the row shape and the
- *     pagination/filter wiring match Läkemedel.
- *   - "Lägg till"     — global Medication rows NOT in the unit's sortiment.
- *     Filled in by a follow-up commit; this commit ships the shell only.
+ *   - "I sortimentet" — active CareUnitMedication rows; selectable for
+ *     bulk-remove (confirm dialog wired in a follow-up commit).
+ *   - "Lägg till"     — global Medication rows NOT in this unit's sortiment,
+ *     same filter set as Läkemedel (q/atc/form/therapeuticClass), selectable
+ *     for bulk-add. Confirm dialog lets the admin set a single threshold
+ *     default and override per row before commit.
  *
- * URL contract: `?tab=current|add` (default `current`); `?page` is reused
- * from the Läkemedel page (DEFAULT_PAGE_SIZE = 25). Selection is local
- * component state — not URL-deep-linked (selections are transient).
+ * URL contract:
+ *   ?tab=current|add (default current)
+ *   ?page (per-tab, reset on tab switch)
+ *   ?q, ?atc, ?form, ?class (only consumed by the "Lägg till" tab)
+ *
+ * Selection state is local — selections do NOT survive a page-size or tab
+ * switch (transient by design).
  */
 
 const DEFAULT_PAGE_SIZE = 25;
@@ -31,6 +46,17 @@ export function SortimentPage() {
   const tab: Tab = searchParams.get('tab') === 'add' ? 'add' : 'current';
   const page = Number(searchParams.get('page') ?? '1');
 
+  // Filter state — only consumed in the "Lägg till" tab but URL-driven so
+  // navigation + browser-back works the same as Läkemedel.
+  const q = searchParams.get('q') ?? '';
+  const atc = searchParams.get('atc') ?? '';
+  const form = searchParams.get('form') ?? '';
+  const classParam = searchParams.get('class') ?? '';
+  const therapeuticClass: TherapeuticClass | '' =
+    (THERAPEUTIC_CLASSES as readonly string[]).includes(classParam)
+      ? (classParam as TherapeuticClass)
+      : '';
+
   useEffect(() => {
     document.title = 'Sortiment — MediTrack';
     return () => {
@@ -38,25 +64,91 @@ export function SortimentPage() {
     };
   }, []);
 
-  const { data, isLoading } = useMedicationsQuery({
+  // Selection state — separate sets per tab (different id namespaces:
+  // careUnitMedicationId for current, medicationId for add).
+  const [currentSelected, setCurrentSelected] = useState<Set<string>>(new Set());
+  const [addSelected, setAddSelected] = useState<Set<string>>(new Set());
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+
+  // ─── "I sortimentet" data ───
+  const currentQuery = useMedicationsQuery(
+    { page, pageSize: DEFAULT_PAGE_SIZE },
+    // useMedicationsQuery doesn't accept enabled; we always fetch — switching
+    // tabs is cheap (response is small + cached by TanStack).
+  );
+  const currentRows = useMemo(() => currentQuery.data?.rows ?? [], [currentQuery.data]);
+  const currentTotal = currentQuery.data?.total ?? 0;
+  const currentTotalPages = Math.max(1, Math.ceil(currentTotal / DEFAULT_PAGE_SIZE));
+
+  // ─── "Lägg till" data ───
+  const addFilters = {
+    q: q || undefined,
+    atc: atc || undefined,
+    form: form || undefined,
+    therapeuticClass: (therapeuticClass || undefined) as TherapeuticClass | undefined,
     page,
     pageSize: DEFAULT_PAGE_SIZE,
-  });
-  const rows = useMemo(() => data?.rows ?? [], [data]);
-  const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / DEFAULT_PAGE_SIZE));
+  };
+  const addQuery = useBulkAddCandidatesQuery(addFilters, tab === 'add');
+  const addRows = useMemo(() => addQuery.data?.rows ?? [], [addQuery.data]);
+  const addTotal = addQuery.data?.total ?? 0;
+  const addTotalPages = Math.max(1, Math.ceil(addTotal / DEFAULT_PAGE_SIZE));
 
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  /**
+   * Mutate the URL search params. Per-tab page is preserved across non-page
+   * patches; switching tabs resets both `page` and the current selection.
+   */
+  function updateFilters(patch: {
+    q?: string;
+    atc?: string;
+    form?: string;
+    therapeuticClass?: TherapeuticClass | undefined;
+    page?: number;
+  }) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (patch.q !== undefined) {
+        if (patch.q) next.set('q', patch.q);
+        else next.delete('q');
+      }
+      if (patch.atc !== undefined) {
+        if (patch.atc) next.set('atc', patch.atc);
+        else next.delete('atc');
+      }
+      if (patch.form !== undefined) {
+        if (patch.form) next.set('form', patch.form);
+        else next.delete('form');
+      }
+      if ('therapeuticClass' in patch) {
+        if (patch.therapeuticClass) next.set('class', patch.therapeuticClass);
+        else next.delete('class');
+      }
+      if (patch.page !== undefined) {
+        if (patch.page > 1) next.set('page', String(patch.page));
+        else next.delete('page');
+      }
+      return next;
+    });
+  }
 
-  function setTab(next: Tab) {
+  function setTab(nextTab: Tab) {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
-      if (next === 'current') params.delete('tab');
-      else params.set('tab', next);
+      if (nextTab === 'current') {
+        params.delete('tab');
+        // Filters are "Lägg till"-only — drop them when leaving that tab.
+        params.delete('q');
+        params.delete('atc');
+        params.delete('form');
+        params.delete('class');
+      } else {
+        params.set('tab', nextTab);
+      }
       params.delete('page');
       return params;
     });
-    setSelected(new Set());
+    setCurrentSelected(new Set());
+    setAddSelected(new Set());
   }
 
   function setPage(next: number) {
@@ -66,11 +158,12 @@ export function SortimentPage() {
       else params.set('page', String(next));
       return params;
     });
-    setSelected(new Set());
+    // Don't clear selection on page change — admins may want to flip pages
+    // while building up a bulk operation across rows from different pages.
   }
 
-  function toggleRow(id: string) {
-    setSelected((prev) => {
+  function toggleCurrent(id: string) {
+    setCurrentSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -78,23 +171,66 @@ export function SortimentPage() {
     });
   }
 
-  function toggleAllOnPage() {
-    const allOnPage = rows.length > 0 && rows.every((r) => selected.has(r.careUnitMedicationId));
-    setSelected((prev) => {
+  function toggleAdd(id: string) {
+    setAddSelected((prev) => {
       const next = new Set(prev);
-      if (allOnPage) {
-        for (const r of rows) next.delete(r.careUnitMedicationId);
-      } else {
-        for (const r of rows) next.add(r.careUnitMedicationId);
-      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
 
-  const allSelectedOnPage =
-    rows.length > 0 && rows.every((r) => selected.has(r.careUnitMedicationId));
-  const someSelectedOnPage =
-    !allSelectedOnPage && rows.some((r) => selected.has(r.careUnitMedicationId));
+  function toggleAllCurrentOnPage() {
+    const allOnPage =
+      currentRows.length > 0 &&
+      currentRows.every((r) => currentSelected.has(r.careUnitMedicationId));
+    setCurrentSelected((prev) => {
+      const next = new Set(prev);
+      if (allOnPage) for (const r of currentRows) next.delete(r.careUnitMedicationId);
+      else for (const r of currentRows) next.add(r.careUnitMedicationId);
+      return next;
+    });
+  }
+
+  function toggleAllAddOnPage() {
+    const allOnPage =
+      addRows.length > 0 && addRows.every((r) => addSelected.has(r.medicationId));
+    setAddSelected((prev) => {
+      const next = new Set(prev);
+      if (allOnPage) for (const r of addRows) next.delete(r.medicationId);
+      else for (const r of addRows) next.add(r.medicationId);
+      return next;
+    });
+  }
+
+  const currentAllSelectedOnPage =
+    currentRows.length > 0 &&
+    currentRows.every((r) => currentSelected.has(r.careUnitMedicationId));
+  const currentSomeSelectedOnPage =
+    !currentAllSelectedOnPage &&
+    currentRows.some((r) => currentSelected.has(r.careUnitMedicationId));
+
+  const addAllSelectedOnPage =
+    addRows.length > 0 && addRows.every((r) => addSelected.has(r.medicationId));
+  const addSomeSelectedOnPage =
+    !addAllSelectedOnPage && addRows.some((r) => addSelected.has(r.medicationId));
+
+  /**
+   * Selected candidates for the bulk-add dialog. We pull from the current
+   * page rows; across-page selections that aren't on the current page would
+   * disappear from the dialog list — acceptable v1, the action bar count
+   * still reflects the full selection size.
+   *
+   * For across-page selections to render fully, we'd need to either fetch
+   * each selected medicationId by id or keep a richer client cache. Out of
+   * scope for v1.
+   */
+  const selectedCandidates: BulkAddCandidate[] = useMemo(
+    () => addRows.filter((r) => addSelected.has(r.medicationId)),
+    [addRows, addSelected],
+  );
+
+  const hasAddFiltersActive = !!q || !!atc || !!form || !!therapeuticClass;
 
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6 lg:p-8">
@@ -112,7 +248,7 @@ export function SortimentPage() {
         </TabsList>
 
         <TabsContent value="current" className="flex flex-col gap-4">
-          {isLoading && (
+          {currentQuery.isLoading && (
             <div className="flex flex-col gap-2">
               {Array.from({ length: 8 }).map((_, i) => (
                 <Skeleton key={i} className="h-10 w-full rounded" />
@@ -120,51 +256,124 @@ export function SortimentPage() {
             </div>
           )}
 
-          {!isLoading && rows.length === 0 && (
+          {!currentQuery.isLoading && currentRows.length === 0 && (
             <p className="py-8 text-center text-sm text-muted-foreground">
               Sortimentet är tomt. Växla till “Lägg till” för att lägga till läkemedel.
             </p>
           )}
 
-          {!isLoading && rows.length > 0 && (
+          {!currentQuery.isLoading && currentRows.length > 0 && (
             <>
               <SortimentCurrentTable
-                items={rows}
-                selectedIds={selected}
-                onToggle={toggleRow}
-                onToggleAll={toggleAllOnPage}
-                allSelected={allSelectedOnPage}
-                someSelected={someSelectedOnPage}
+                items={currentRows}
+                selectedIds={currentSelected}
+                onToggle={toggleCurrent}
+                onToggleAll={toggleAllCurrentOnPage}
+                allSelected={currentAllSelectedOnPage}
+                someSelected={currentSomeSelectedOnPage}
               />
               <PaginationFooter
                 page={page}
-                totalPages={totalPages}
+                totalPages={currentTotalPages}
                 onPageChange={setPage}
               />
             </>
           )}
         </TabsContent>
 
-        <TabsContent value="add">
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            Sök i NPL-registret och välj vilka läkemedel som ska läggas till.
-            <br />
-            (Implementeras i nästa commit.)
-          </p>
+        <TabsContent value="add" className="flex flex-col gap-4">
+          <SortimentAddFilter
+            q={q}
+            atc={atc}
+            form={form}
+            therapeuticClass={therapeuticClass}
+            onChange={updateFilters}
+          />
+
+          {addQuery.isLoading && (
+            <div className="flex flex-col gap-2">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full rounded" />
+              ))}
+            </div>
+          )}
+
+          {!addQuery.isLoading && addRows.length === 0 && (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              {hasAddFiltersActive
+                ? 'Inga läkemedel matchade filtren.'
+                : 'Alla läkemedel i NPL-registret är redan med i sortimentet.'}{' '}
+              {hasAddFiltersActive && (
+                <Button
+                  variant="link"
+                  className="h-auto p-0"
+                  type="button"
+                  onClick={() => {
+                    updateFilters({
+                      q: '',
+                      atc: '',
+                      form: '',
+                      therapeuticClass: undefined,
+                      page: 1,
+                    });
+                  }}
+                >
+                  Rensa filter
+                </Button>
+              )}
+            </p>
+          )}
+
+          {!addQuery.isLoading && addRows.length > 0 && (
+            <>
+              <p className="text-xs text-muted-foreground">
+                {addTotal} matchande läkemedel utanför sortimentet.
+              </p>
+              <SortimentAddTable
+                items={addRows}
+                selectedIds={addSelected}
+                onToggle={toggleAdd}
+                onToggleAll={toggleAllAddOnPage}
+                allSelected={addAllSelectedOnPage}
+                someSelected={addSomeSelectedOnPage}
+              />
+              <PaginationFooter
+                page={page}
+                totalPages={addTotalPages}
+                onPageChange={setPage}
+              />
+            </>
+          )}
         </TabsContent>
       </Tabs>
 
       {tab === 'current' && (
         <SortimentActionBar
-          selectedCount={selected.size}
+          selectedCount={currentSelected.size}
           primaryLabel="Ta bort markerade"
           primaryVariant="destructive"
           onPrimary={() => {
             // Wired in commit 4 — bulk-remove confirm dialog.
           }}
-          onClear={() => setSelected(new Set())}
+          onClear={() => setCurrentSelected(new Set())}
         />
       )}
+      {tab === 'add' && (
+        <SortimentActionBar
+          selectedCount={addSelected.size}
+          primaryLabel={`Lägg till ${addSelected.size} i sortimentet`}
+          onPrimary={() => setAddDialogOpen(true)}
+          onClear={() => setAddSelected(new Set())}
+          primaryDisabled={selectedCandidates.length === 0}
+        />
+      )}
+
+      <SortimentBulkAddDialog
+        open={addDialogOpen}
+        onOpenChange={setAddDialogOpen}
+        candidates={selectedCandidates}
+        onSuccess={() => setAddSelected(new Set())}
+      />
     </div>
   );
 }
