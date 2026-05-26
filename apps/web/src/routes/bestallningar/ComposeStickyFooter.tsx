@@ -52,7 +52,7 @@ export function ComposeStickyFooter({
     <Button
       variant="default"
       disabled={isSubmitDisabled}
-      className="flex-1 md:flex-none min-w-[160px]"
+      className="w-full md:w-auto md:min-w-[160px]"
       onClick={onSubmitClick}
       // TODO Slice 4: wire useSubmitOrder
     >
@@ -80,7 +80,7 @@ export function ComposeStickyFooter({
         {/* Summary line */}
         <p className="text-sm text-muted-foreground mb-2">{summaryText}</p>
 
-        {/* Button row */}
+        {/* Secondary actions row */}
         <div className="flex items-center gap-2">
           <Can action="order:delete">
             <Button
@@ -97,19 +97,21 @@ export function ComposeStickyFooter({
               Lägg till läkemedel
             </Button>
           </Can>
+        </div>
 
+        {/* Primary action — full-width on its own row so the label
+            never truncates on narrow viewports. */}
+        <div className="mt-2">
           <Can action="order:submit">
             {isSubmitDisabled && !isSubmitting ? (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="flex-1">
-                    {submitButton}
-                  </span>
+                  <span className="block w-full">{submitButton}</span>
                 </TooltipTrigger>
                 <TooltipContent>Lägg till minst en rad för att skicka.</TooltipContent>
               </Tooltip>
             ) : (
-              <span className="flex-1">{submitButton}</span>
+              submitButton
             )}
           </Can>
         </div>

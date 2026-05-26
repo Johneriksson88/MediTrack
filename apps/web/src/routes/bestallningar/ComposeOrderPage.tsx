@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, ClipboardList, Clock, CheckCircle2, Loader2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -94,6 +94,21 @@ export function ComposeOrderPage() {
     ? `Beställning ${order.orderNumber} — MediTrack`
     : 'Beställning — MediTrack';
   useDocumentTitle(titleForOrder);
+
+  // Scroll to top whenever the order transitions between statuses
+  // (utkast → skickad → bekraftad → levererad). After a successful
+  // submit/confirm/deliver the action buttons + status banner move to
+  // the top of the page; without this the user is still scrolled to the
+  // bottom (where the footer button used to be) on long line lists.
+  const prevStatusRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const status = order?.status;
+    if (!status) return;
+    if (prevStatusRef.current && prevStatusRef.current !== status) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    prevStatusRef.current = status;
+  }, [order?.status]);
 
   // ── Loading state ──────────────────────────────────────────────────────────
   if (isLoading) {
@@ -422,7 +437,7 @@ export function ComposeOrderPage() {
     <TooltipProvider>
       <div
         className="flex flex-col gap-4 p-4 md:p-6 lg:p-8
-                   pb-[calc(56px+56px+env(safe-area-inset-bottom))] md:pb-8"
+                   pb-[calc(56px+108px+env(safe-area-inset-bottom))] md:pb-8"
       >
         {header}
 
