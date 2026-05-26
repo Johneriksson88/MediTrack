@@ -172,8 +172,8 @@ describe('DashboardLowStockCard', () => {
     expect(screen.getByText('3 / 12')).toBeInTheDocument();
     expect(screen.getByText('5 / 8')).toBeInTheDocument();
 
-    // One LowStockBadge per row (the badge renders the literal 'Lågt lager').
-    expect(screen.getAllByText('Lågt lager')).toHaveLength(3);
+    // One LowStockBadge per row (icon-only; exposed via aria-label 'Lågt lager').
+    expect(screen.getAllByRole('img', { name: 'Lågt lager' })).toHaveLength(3);
 
     // Container is role="list" with three role="listitem" children.
     const list = screen.getByRole('list', { name: 'Läkemedel under tröskel' });

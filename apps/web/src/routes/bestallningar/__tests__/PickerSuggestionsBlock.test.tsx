@@ -91,22 +91,16 @@ describe('PickerSuggestionsBlock', () => {
       <PickerSuggestionsBlock orderId="O1" onRowClick={onClick} />,
     );
 
-    // Section headers — use getAllByText since "Lågt lager" also appears as badge text
+    // Section headers — 'Lågt lager' appears as a section header (text)
     expect(screen.getByText('Mest beställda')).toBeInTheDocument();
-    const lagtLagerElements = screen.getAllByText('Lågt lager');
-    // One from the section header + one from the LowStockBadge on Amoxicillin
-    expect(lagtLagerElements.length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('Lågt lager')).toBeInTheDocument();
 
     // Row names
     expect(screen.getByText('Paracetamol')).toBeInTheDocument();
     expect(screen.getByText('Amoxicillin')).toBeInTheDocument();
 
-    // Amoxicillin is below threshold → LowStockBadge renders
-    // Verify there's a badge span (vs. the section header div)
-    const badgeSpan = lagtLagerElements.find(
-      (el) => el.tagName.toLowerCase() === 'span',
-    );
-    expect(badgeSpan).toBeDefined();
+    // Amoxicillin is below threshold → LowStockBadge renders (icon-only, aria-label).
+    expect(screen.getByRole('img', { name: 'Lågt lager' })).toBeInTheDocument();
   });
 
   it('Test 2 (click fires onRowClick): clicking a suggestion row calls onRowClick with its careUnitMedicationId', () => {
