@@ -18,6 +18,13 @@ import { hashPassword } from '../src/auth/password.js';
  * Phase 2 extension — 43 538 NPL Medication rows + matching CareUnitMedication
  * rows for the seeded vårdenhet with deterministic stock/threshold (D-23..D-25).
  *
+ * Demo scale-down: the seeded vårdenhet's inventory is a deterministic ~10%
+ * slice of the NPL catalog (CUM_SELECTION_RATE), so the demo lists a few
+ * thousand rows instead of all 43k. Within that slice, ~1% are forced to
+ * `currentStock = 0` (CUM_OUT_OF_STOCK_RATE) to guarantee visible out-of-stock
+ * cases on screen. Both decisions are keyed on `fnv1a(nplId + suffix) % 100`
+ * so re-runs select the exact same rows.
+ *
  * Idempotency: every write uses `upsert` (CareUnit, User) or `createMany` with
  * `skipDuplicates: true` (Medication, CareUnitMedication) keyed by unique
  * constraints. Running `pnpm db:seed` twice against the same DB exits 0 both
@@ -47,6 +54,13 @@ import { hashPassword } from '../src/auth/password.js';
 const CARE_UNIT_ID = 'careunit-karolinska-01';
 const CARE_UNIT_NAME = 'Avdelning 4, Karolinska';
 const SHARED_PASSWORD = 'demo1234';
+
+// Demo scale-down for the seeded vårdenhet inventory. Both are deterministic
+// (keyed on nplId) so re-runs select the same rows. Out-of-stock is a strict
+// subset of the selected pool, evaluated independently — the two suffixes
+// keep the decisions orthogonal.
+const CUM_SELECTION_RATE = 10; // percent of NPL meds added to the vårdenhet inventory
+const CUM_OUT_OF_STOCK_RATE = 1; // percent of the selected pool forced to currentStock = 0
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -232,15 +246,29 @@ async function seedMedications(prisma: PrismaClient): Promise<number> {
  * Second pass: load all npl Medication ids + forms, derive stock/threshold,
  * batch-insert CareUnitMedication rows for the seeded vårdenhet.
  * skipDuplicates handles idempotency via @@unique([careUnitId, medicationId]).
+ *
+ * Demo scale-down: only a deterministic ~CUM_SELECTION_RATE% slice of NPL
+ * meds become CUMs for the seeded vårdenhet, and ~CUM_OUT_OF_STOCK_RATE% of
+ * that slice is forced to currentStock = 0. Both decisions are keyed on
+ * `fnv1a(nplId + suffix) % 100` so re-runs pick the same rows. Suffixes
+ * keep the two decisions orthogonal to each other and to the existing
+ * stock/threshold derivation in `derive()`.
  */
-async function seedCareUnitMedications(prisma: PrismaClient): Promise<{ total: number; belowThreshold: number }> {
+async function seedCareUnitMedications(prisma: PrismaClient): Promise<{
+  totalNpl: number;
+  selected: number;
+  outOfStock: number;
+  belowThreshold: number;
+}> {
   // Fetch only what we need: id, nplId (for PRNG seed), form (for threshold tier).
   const meds = await prisma.medication.findMany({
     where: { source: 'npl' },
     select: { id: true, nplId: true, form: true },
   });
 
-  let total = 0;
+  const totalNpl = meds.length;
+  let selected = 0;
+  let outOfStock = 0;
   let belowThreshold = 0;
   let chunk: Parameters<typeof prisma.careUnitMedication.createMany>[0]['data'] = [];
 
@@ -255,22 +283,37 @@ async function seedCareUnitMedications(prisma: PrismaClient): Promise<{ total: n
 
   for (const med of meds) {
     if (!med.nplId) continue; // safety guard (npl rows always have nplId)
+
+    // Deterministic ~CUM_SELECTION_RATE% slice — keyed on the nplId so re-runs
+    // pick the same medications. The non-selected rows still exist in the
+    // Medication table (search works), they just aren't part of the
+    // vårdenhet's inventory.
+    if (fnv1a(`${med.nplId}:select`) % 100 >= CUM_SELECTION_RATE) continue;
+
+    // Deterministic ~CUM_OUT_OF_STOCK_RATE% of the selected pool: force
+    // currentStock = 0. Independent suffix so this decision doesn't shift
+    // when CUM_SELECTION_RATE changes.
+    const forceOutOfStock = fnv1a(`${med.nplId}:oos`) % 100 < CUM_OUT_OF_STOCK_RATE;
+
     const { currentStock, lowStockThreshold } = derive(med.nplId, med.form);
+    const finalStock = forceOutOfStock ? 0 : currentStock;
+
     chunk.push({
       careUnitId: CARE_UNIT_ID,
       medicationId: med.id,
-      currentStock,
+      currentStock: finalStock,
       lowStockThreshold,
     });
-    total++;
-    if (currentStock < lowStockThreshold) belowThreshold++;
+    selected++;
+    if (forceOutOfStock) outOfStock++;
+    if (finalStock < lowStockThreshold) belowThreshold++;
     if (chunk.length >= CHUNK_SIZE) {
       await flushChunk();
     }
   }
   await flushChunk();
 
-  return { total, belowThreshold };
+  return { totalNpl, selected, outOfStock, belowThreshold };
 }
 
 // ---------------------------------------------------------------------------
@@ -323,13 +366,20 @@ async function main() {
   console.log(`[seed] Medications processed from CSV: ${medCount}`);
 
   // Phase 2: seed CareUnitMedication rows for the seeded vårdenhet (D-25).
-  // eslint-disable-next-line no-console
-  console.log(`[seed] Seeding CareUnitMedication rows for ${CARE_UNIT_ID}…`);
-  const { total: cumTotal, belowThreshold } = await seedCareUnitMedications(prisma);
-  const pct = ((belowThreshold / cumTotal) * 100).toFixed(1);
+  // Scaled down to ~CUM_SELECTION_RATE% of NPL meds for a snappier demo.
   // eslint-disable-next-line no-console
   console.log(
-    `[seed] CareUnitMedications inserted for ${CARE_UNIT_ID}: ${cumTotal} (~${pct}% below threshold)`,
+    `[seed] Seeding CareUnitMedication rows for ${CARE_UNIT_ID} (~${CUM_SELECTION_RATE}% of NPL)…`,
+  );
+  const { totalNpl, selected, outOfStock, belowThreshold } =
+    await seedCareUnitMedications(prisma);
+  const selPct = ((selected / Math.max(1, totalNpl)) * 100).toFixed(1);
+  const lowPct = ((belowThreshold / Math.max(1, selected)) * 100).toFixed(1);
+  const oosPct = ((outOfStock / Math.max(1, selected)) * 100).toFixed(1);
+  // eslint-disable-next-line no-console
+  console.log(
+    `[seed] CareUnitMedications inserted for ${CARE_UNIT_ID}: ${selected}/${totalNpl} ` +
+      `(~${selPct}% of NPL; ~${lowPct}% below threshold, ~${oosPct}% out of stock)`,
   );
 
   // Phase 4 D-85: seed one demo order per status (Utkast, Skickad, Bekräftad, Levererad).
