@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, ClipboardList, Clock, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft, ClipboardList, Clock, CheckCircle2, Loader2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { EmptyStateCard } from '@/components/EmptyStateCard';
@@ -224,6 +224,31 @@ export function ComposeOrderPage() {
               </p>
             </div>
 
+            {/* Top-of-order deliver button — duplicates the sticky footer's
+                action so the apotekare doesn't have to scroll past a long
+                line list to find it. Same handler + dialog. */}
+            {canDeliver && (
+              <Can action="order:deliver">
+                <div className="flex justify-end">
+                  <Button
+                    onClick={() => setDeliverDialogOpen(true)}
+                    disabled={deliverMutation.isPending}
+                    aria-busy={deliverMutation.isPending}
+                    className="min-h-[44px] w-full md:w-auto"
+                  >
+                    {deliverMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                        Levererar…
+                      </>
+                    ) : (
+                      'Markera som levererad'
+                    )}
+                  </Button>
+                </div>
+              </Can>
+            )}
+
             {readOnlyLines}
 
             {/* Mode D action: Markera som levererad (apotekare/admin only) */}
@@ -337,6 +362,32 @@ export function ComposeOrderPage() {
             orderNumber={order.orderNumber}
             justSubmitted={submitMutation.isSuccess}
           />
+
+          {/* Top-of-order confirm button — duplicates the bottom action so
+              the apotekare doesn't have to scroll past a long line list to
+              confirm. Same handler as the bottom button; useConfirmOrder
+              handles every error code via toast + invalidate. */}
+          {isSkickad && canConfirm && (
+            <Can action="order:confirm">
+              <div className="flex justify-end">
+                <Button
+                  onClick={() => void confirmMutation.mutateAsync({ orderId: order.id })}
+                  disabled={confirmMutation.isPending}
+                  aria-busy={confirmMutation.isPending}
+                  className="min-h-[44px] w-full md:w-auto"
+                >
+                  {confirmMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                      Bekräftar…
+                    </>
+                  ) : (
+                    'Bekräfta beställning'
+                  )}
+                </Button>
+              </div>
+            </Can>
+          )}
 
           {/* Read-only line list (isLocked=true: no trash, QuantityStepper shows static span) */}
           {readOnlyLines}

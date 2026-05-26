@@ -16,6 +16,8 @@ import type {
   PickerOption,
   PickerSuggestion,
   PickerSuggestionsResponse,
+  RestockPreviewResponse,
+  RestockLowStockRequest,
 } from '@meditrack/shared';
 import { formatOrderNumber } from '@meditrack/shared';
 import { listLowStockForUnit } from './dashboard.service.js';
@@ -1085,6 +1087,198 @@ async function mintOrderNumber(
               END AS "counter"
   `;
   return inserted[0]!;
+}
+
+// ---------------------------------------------------------------------------
+// Restock low-stock — preview + create
+// ---------------------------------------------------------------------------
+
+/**
+ * Preview for the "Beställ påfyllning" modal: every under-threshold
+ * CareUnitMedication in the caller's vårdenhet, enriched with the
+ * aggregated quantity already on non-`levererad` orders so the user can
+ * spot potential double-orders before confirming. Reuses
+ * `listLowStockForUnit` to keep the urgency-sort logic single-sourced
+ * (D-138 pattern).
+ *
+ * The in-flight aggregation is NOT transactional with the subsequent
+ * create — see WR-06 in dashboard.service.ts for the same eventually-
+ * consistent posture across dashboard reads.
+ */
+export async function getRestockPreview(
+  careUnitId: string,
+): Promise<RestockPreviewResponse> {
+  const lowStock = await listLowStockForUnit(careUnitId);
+  if (lowStock.rows.length === 0) return { rows: [] };
+
+  const lowStockIds = lowStock.rows.map((r) => r.careUnitMedicationId);
+
+  const inFlightLines = await prisma.orderLine.findMany({
+    where: {
+      careUnitMedicationId: { in: lowStockIds },
+      order: {
+        careUnitId,
+        status: { in: ['utkast', 'skickad', 'bekraftad'] },
+        deletedAt: null,
+      },
+    },
+    select: {
+      careUnitMedicationId: true,
+      quantity: true,
+      order: {
+        select: {
+          id: true,
+          status: true,
+          orderNumberYear: true,
+          orderNumberCounter: true,
+        },
+      },
+    },
+  });
+
+  // Group lines by careUnitMedicationId for O(1) row lookup below.
+  const byCum = new Map<
+    string,
+    { totalQuantity: number; orders: RestockPreviewResponse['rows'][number]['inFlightOrders'] }
+  >();
+  for (const line of inFlightLines) {
+    const entry = byCum.get(line.careUnitMedicationId) ?? {
+      totalQuantity: 0,
+      orders: [],
+    };
+    entry.totalQuantity += line.quantity;
+    entry.orders.push({
+      orderId: line.order.id,
+      orderNumber: formatOrderNumber({
+        year: line.order.orderNumberYear,
+        counter: line.order.orderNumberCounter,
+      }),
+      status: line.order.status as 'utkast' | 'skickad' | 'bekraftad',
+      quantity: line.quantity,
+    });
+    byCum.set(line.careUnitMedicationId, entry);
+  }
+
+  const rows = lowStock.rows.map((r) => {
+    const inFlight = byCum.get(r.careUnitMedicationId);
+    return {
+      careUnitMedicationId: r.careUnitMedicationId,
+      name: r.name,
+      atcCode: r.atcCode,
+      form: r.form,
+      strength: r.strength,
+      currentStock: r.currentStock,
+      lowStockThreshold: r.lowStockThreshold,
+      inFlightQuantity: inFlight?.totalQuantity ?? 0,
+      inFlightOrders: inFlight?.orders ?? [],
+    };
+  });
+
+  return { rows };
+}
+
+/**
+ * Creates a draft Order with one line per still-low-stock CareUnitMedication
+ * from the request's id list. Per-line quantity is
+ * `max(1, lowStockThreshold − currentStock + buffer)` — the floor guards
+ * the DB-level positive-int CHECK constraint (WR-01).
+ *
+ * Items that recovered, were soft-deleted, or belong to a different
+ * vårdenhet between preview and confirm are silently dropped (D-81
+ * precedent from deliverOrder). If every requested item drops out we
+ * throw 422 `no_items_to_restock` instead of creating an empty draft.
+ *
+ * The whole flow lives in one `prisma.$transaction`. No `FOR UPDATE`
+ * lock on CUMs — only `deliverOrder` mutates `currentStock`, so a
+ * stock-recovery race between our re-read and the insert is harmless
+ * (the worst case is we insert a line for an item that just recovered;
+ * the line is still valid because the user explicitly opted into the
+ * draft). The `mintOrderNumber` helper provides its own row-level lock
+ * on OrderNumberCounter (D-160).
+ *
+ * Audit: `order.create` audit row comes from the Prisma extension
+ * unmodified (default action). Per-line `orderLine.create` audit rows
+ * fire for each `tx.orderLine.create` — using `createMany` here would
+ * skip those (auditExtension.ts: createMany is NOT intercepted), so we
+ * issue one statement per line.
+ */
+export async function createRestockOrder(
+  careUnitId: string,
+  createdByUserId: string,
+  body: RestockLowStockRequest,
+): Promise<OrderResponse> {
+  const { buffer, careUnitMedicationIds } = body;
+
+  const order = await prisma.$transaction(async (tx) => {
+    // Re-verify each requested CUM is still under-threshold, in this
+    // vårdenhet, and not soft-deleted. The cross-column predicate
+    // `currentStock < lowStockThreshold` cannot be expressed in Prisma's
+    // typed query builder — $queryRaw matches dashboard.service.ts.
+    const eligible = await tx.$queryRaw<
+      Array<{ id: string; currentStock: number; lowStockThreshold: number }>
+    >`
+      SELECT cum."id" AS "id",
+             cum."currentStock",
+             cum."lowStockThreshold"
+      FROM "CareUnitMedication" cum
+      WHERE cum."id" = ANY(${careUnitMedicationIds}::text[])
+        AND cum."careUnitId" = ${careUnitId}
+        AND cum."deletedAt" IS NULL
+        AND cum."currentStock" < cum."lowStockThreshold"
+    `;
+
+    if (eligible.length === 0) {
+      throw new ValidationFailedError(
+        'Inga läkemedel under tröskel kvar att beställa.',
+        { reason: 'no_items_to_restock' },
+      );
+    }
+
+    const { year, counter } = await mintOrderNumber(tx, careUnitId);
+
+    const draft = await tx.order.create({
+      data: {
+        careUnitId,
+        createdByUserId,
+        status: 'utkast',
+        orderNumberCounter: counter,
+        orderNumberYear: year,
+      },
+    });
+
+    // One create per line so each row gets its own `orderLine.create`
+    // audit entry (createMany is not intercepted by the audit extension).
+    for (const cum of eligible) {
+      const quantity = Math.max(
+        1,
+        cum.lowStockThreshold - cum.currentStock + buffer,
+      );
+      await tx.orderLine.create({
+        data: {
+          orderId: draft.id,
+          careUnitMedicationId: cum.id,
+          quantity,
+        },
+      });
+    }
+
+    return tx.order.findUnique({
+      where: { id: draft.id },
+      include: {
+        lines: {
+          include: {
+            careUnitMedication: { include: { medication: true } },
+          },
+        },
+        createdBy: { select: { id: true, name: true } },
+        submittedBy: { select: { id: true, name: true } },
+        confirmedBy: { select: { id: true, name: true } },
+        deliveredBy: { select: { id: true, name: true } },
+      },
+    });
+  });
+
+  return toOrderResponse(order!);
 }
 
 // ---------------------------------------------------------------------------

@@ -186,11 +186,13 @@ Den här rundturen tar fem minuter och täcker varje brief-§2.1-krav i en samma
 
 2. **Lägg en multi-radsbeställning** — på `/bestallningar/ny` (eller via `Ny beställning` från `/bestallningar`). Öppna `MedicationPickerSheet` med `Lägg till läkemedel`; välj 2–3 läkemedel; ändra kvantiteter via `QuantityStepper` (44 px touch-targets, optimistisk uppdatering med debounce). Klicka `Skicka` — statusen skiftar `Utkast → Skickad` med en bekräftelsebanner på toppen (ORD-01 + ORD-02 + ORD-03).
 
+   *Genväg:* klicka istället `Beställ påfyllning` (på `/dashboard`-låg-lagerkortet eller bredvid `Ny beställning`) för att skapa ett utkast som redan är förfyllt med en rad per under-tröskel-läkemedel — se [§ Beställ påfyllning](#beställ-påfyllning-bulk-restock-från-låg-lagerlistan) nedan.
+
 3. **Försök redigera den skickade beställningen** — observera att raderna är immutable och att API:t returnerar `HTTP 409 order_locked`. Detta är ORD-06 och Phase 3:s D-54 atomic compare-and-swap-precondition i praktiken.
 
 4. **Logga ut och logga in som apotekare** — `apotekare@example.test` / `demo1234`. Navigera till `/bestallningar` och se den nyss skickade beställningen i tabben `Skickad`.
 
-5. **Bekräfta och leverera beställningen** — klicka in på beställningen, tryck `Bekräfta` (status `Skickad → Bekräftad`), sedan `Leverera` som öppnar `DeliverConfirmDialog`. Bekräfta i dialogen — statusen skiftar till `Levererad` (ORD-04 + ORD-05), och samma transaktion ökar lagersaldot på alla berörda läkemedel (STK-01 + STK-02 + D-79 CUM-batch lock). `OrderActorTrail` visar vem som gjort vilken transition och när.
+5. **Bekräfta och leverera beställningen** — klicka in på beställningen, tryck `Bekräfta` (status `Skickad → Bekräftad`), sedan `Leverera` som öppnar `DeliverConfirmDialog`. Bekräfta i dialogen — statusen skiftar till `Levererad` (ORD-04 + ORD-05), och samma transaktion ökar lagersaldot på alla berörda läkemedel (STK-01 + STK-02 + D-79 CUM-batch lock). `OrderActorTrail` visar vem som gjort vilken transition och när. Bägge knapparna (`Bekräfta beställning` och `Markera som levererad`) finns både ovanför radlistan och i sidans botten via `ApotekareActionFooter` — duplicerat för att en lång påfyllningsbeställning ska kunna bekräftas/levereras utan en scroll-till-botten.
 
 6. **Se lagret uppdateras** — navigera till `/lakemedel` och hitta ett av de levererade läkemedlen; lagersaldot är nu inkrementerat. Navigera till `/dashboard` — `DashboardLowStockCard` visar de under-tröskel-läkemedel som fortfarande är kritiska (NTF-01 + NTF-02). Om ett läkemedel precis steg över sin tröskel har det försvunnit från bannern (refetchad vid mutation-invalidation per D-119).
 
@@ -993,6 +995,128 @@ Endpointen är bara `requireSession` — alla tre roller ser
 dashboarden. Scope är careUnit-first per D-16: service-signaturen är
 `listLowStockForUnit(careUnitId)` och WHERE-klausulen filtrerar efter
 `CareUnitMedication.careUnitId` först.
+
+---
+
+### Beställ påfyllning (bulk-restock från låg-lagerlistan)
+
+`Beställ påfyllning` är en utility-affordans ovanpå standard-beställnings-
+flödet: ett klick på en knapp i `DashboardLowStockCard` eller bredvid
+`Ny beställning` öppnar en modal som listar alla under-tröskel-läkemedel
+i vårdenheten, beräknar en föreslagen rad-kvantitet som
+`max(1, lowStockThreshold − currentStock + X)` per item där X är ett
+användarvalt buffert-tal (default 10), och skapar ett utkast med en rad
+per markerat item. Detta är inte ett brief-§2.1-mandatkrav — det är en
+optional polish som vänder en pekare som hela `/dashboard`-bannern
+redan riktar mot (de under-tröskel-läkemedel som behöver beställas) till
+en ett-klicks-handling.
+
+> Framtida idéer för detta område är listade under [§ Med mer tid](#med-mer-tid).
+
+#### Flöde
+
+1. Knappen `Beställ påfyllning` visas i `DashboardLowStockCard`-headern
+   (data-grenen) och bredvid `Ny beställning` på `/bestallningar`. På
+   `/bestallningar` är knappen disabled med tooltip `Inga läkemedel under
+   tröskel.` när `useLowStockQuery().data.total === 0`. Bägge platser
+   `Can`-gate:as på `order:create` (samma RBAC-grind som `Ny beställning`).
+2. Klick öppnar `RestockLowStockDialog` som hämtar
+   `GET /api/orders/restock-preview` (preHandlers
+   `[requireSession, requirePermission('order:create')]`). Endpointen
+   återanvänder `listLowStockForUnit` för rader och kompletterar varje
+   rad med en aggregerad `inFlightQuantity` plus en `inFlightOrders[]`
+   med `{orderId, orderNumber, status, quantity}` över alla
+   `utkast / skickad / bekraftad`-beställningar (alla icke-`levererad`)
+   i vårdenheten. Egen cachenyckel `['orders', 'restock-preview']` —
+   delar inte med `['dashboard', 'low-stock']` eftersom (a)
+   dashboard-bannern har ingen permission-grind och skulle läcka
+   "vad som är på väg att beställas" till roller som inte kan beställa,
+   och (b) cachen invalideras på olika events.
+3. Modalen partitionerar listan: items med `inFlightQuantity > 0`
+   renderas FÖRST under en amber-sub-header `Redan beställda (ej
+   processade)`, sedan resten under `Övriga under tröskel`. Anledning:
+   när låg-lagerlistan är lång riskerar items som redan är beställda
+   att gå förlorade i ruset; det här är just det fall som leder till
+   dubbel-beställning och oavsiktlig överlagring. Per rad: namn,
+   `Lager N / tröskel M → beställ Q st` (Q recomputeas live när X ändras),
+   en checkbox (default på), och en `Redan beställd: N st i ORD-…`-chip
+   när relevant (med tooltip som listar alla berörda ordernummer).
+4. Användare justerar X (0..10000), bockar av items hen INTE vill ha med,
+   klickar `Skapa beställning`. FE:n postar
+   `{buffer, careUnitMedicationIds}` till
+   `POST /api/orders/restock-low-stock` (samma permission-grind +
+   `.strict()`-body per T-03-02 mass-assignment-mitigation).
+5. Servicen re-verifierar varje id mot vårdenhetens CUMs inuti en
+   `prisma.$transaction` — items som steg över tröskel mellan preview
+   och submit, eller som soft-deletades, eller som tillhör en annan
+   vårdenhet (request-tampering) droppas tyst (D-81-mönster från
+   `deliverOrder` step 5). Om alla items återhämtat sig kastas
+   `422 validation_failed reason='no_items_to_restock'` istället för att
+   skapa ett tomt utkast — FE:n toastar `Alla läkemedel återhämtade
+   sig — inget att beställa.` och invaliderar preview-cachen.
+6. Servicen mintar nästa order-nummer (samma `mintOrderNumber`-helper
+   som `createDraftOrder`, D-160), skapar utkast-ordern och en
+   `OrderLine` per item via individuella `tx.orderLine.create`-anrop
+   (INTE `createMany`). Anledning: Phase 5:s audit-mellanhand fångar inte
+   `createMany` per `auditExtension.ts` D-93 — varje rad får sin egen
+   `orderLine.create`-audit-rad genom att vi issuear N enstaka
+   `create`-statements. För en typisk ~20-rads-påfyllning är trafiken
+   trivial; audit-fullständigheten är inte.
+7. FE:n navigerar till `/bestallningar/<id>?from=utkast` — samma
+   destination som `Ny beställning`-flödet, så användaren landar på en
+   fullt redigerbar utkast-sida där rader fortfarande kan justeras eller
+   raderas innan submit.
+
+#### Samtidighet (vs §6 "två sjuksköterskor")
+
+Preview-aggregeringen är **inte** transaktionell med utkast-skapandet.
+Två sjuksköterskor som klickar `Beställ påfyllning` samtidigt på samma
+vårdenhet får varsin utkast; den andra sjuksköterskans modal, vid
+nästa öppning, visar dock den första sjuksköterskans utkast-rader som
+`Redan beställda (ej processade)` så snart `['orders', 'restock-preview']`
+invaliderats (Phase 6 D-119-mönster). Detta är samma eventually-consistent
+posture som `dashboard.service.ts` WR-06 dokumenterar för dashboard-
+counts — en avsiktlig trade-off, inte en bugg. Den autoritativa staten är
+fortfarande beställningens egen rad i `/bestallningar/:id`; och
+`mintOrderNumber` serialiseras via samma radlås på `OrderNumberCounter`
+som det vanliga create-flödet (D-160), så order-nummer-kollision är
+fysiskt omöjligt även när två påfyllningar landar på samma millisekund.
+
+#### Edge cases
+
+- **Kvantitets-golv.** Formeln `max(1, threshold − currentStock + X)`
+  garanterar att DB-CHECK-constraint:en `OrderLine_quantity_positive_check`
+  (WR-01) aldrig kan kastas. Golvet avfyras bara när `X = 0` OCH
+  `currentStock = threshold − 1` — fortfarande ett legitimt under-tröskel-
+  item, fortfarande en giltig rad.
+- **Alla items återhämtade sig mellan preview och confirm.**
+  `422 validation_failed reason='no_items_to_restock'` istället för en
+  tom utkast. Toast + preview-refetch så modalen rerendrer med den färska
+  (möjligen tomma) listan.
+- **CUM tillhör en annan vårdenhet (request-tampering).** Tenant-guarden
+  i re-läsningen filtrerar bort den (`careUnitId = $1` + `deletedAt IS
+  NULL`) — kan inte hända via legitim UI-stig, men T-06-mönstret stänger
+  möjligheten på service-laget.
+- **Buffer = 0.** Giltigt val — kvantitet blir `max(1, threshold − currentStock)`,
+  vilket återställer varje item exakt till sin tröskel (eller till 1 vid
+  edge-fallet ovan). Modalens label `Enheter över tröskel (X)` gör 0 till
+  ett tydligt "no buffer"-val.
+
+---
+
+### Top-of-order action buttons (UX polish)
+
+Knapparna `Bekräfta beställning` (Mode C, Skickad-ordrar) och
+`Markera som levererad` (Mode D, Bekräftad-ordrar) i `ComposeOrderPage`
+finns BÅDE ovanför radlistan OCH i sidans botten via `ApotekareActionFooter`.
+Anledningen är direkt motiverad av påfyllnads-flödet: en bulk-restock-
+beställning med ~20 rader betyder att en apotekare som öppnar ordern måste
+scrolla förbi hela listan för att hitta bekräfta/leverera-knappen i botten —
+en onödig friktion när hen redan har granskat raderna en gång under
+sammanställningen. Top-knappen sitter precis under status-bannern (Mode C:s
+`SubmitConfirmationBanner` eller Mode D:s "väntar på leverans"-banner) och
+delar samma `useMutation`-state som bottom-knappen, så `isPending`-spinnern
+synkroniseras automatiskt mellan bägge — inget tillstånd att hålla i synk.
 
 ---
 

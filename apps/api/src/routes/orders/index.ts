@@ -9,6 +9,8 @@ import { deliverOrderRoute } from './deliver.js';
 import { deleteOrderRoute } from './delete.js';
 import { pickerOptionsRoute } from './pickerOptions.js';
 import { pickerSuggestionsRoute } from './pickerSuggestions.js';
+import { restockPreviewRoute } from './restockPreview.js';
+import { restockCreateRoute } from './restockCreate.js';
 
 /**
  * Order routes barrel — registers all Phase 3 order sub-routes.
@@ -33,6 +35,10 @@ export async function orderRoutes(app: FastifyInstance) {
   // getOrderRoute — both picker* routes must precede :id routes to avoid
   // Fastify parsing 'picker-suggestions' or 'picker-options' as an :id value.
   await app.register(pickerSuggestionsRoute);
+  // D-65: restock routes also precede getOrderRoute so 'restock-preview' and
+  // 'restock-low-stock' don't get parsed as :id values.
+  await app.register(restockPreviewRoute);
+  await app.register(restockCreateRoute);
   await app.register(createOrderRoute);
   await app.register(listOrdersRoute);
   await app.register(getOrderRoute);

@@ -29,9 +29,34 @@ vi.mock('@/features/orders/useOrderQueries', () => ({
   useOrdersByStatusQuery: vi.fn(),
 }));
 
-// Mock order mutations
+// Mock order mutations — includes useRestockLowStock so RestockLowStockDialog,
+// which BestallningarPage renders unconditionally, can resolve its hook.
 vi.mock('@/features/orders/useOrderMutations', () => ({
   useCreateDraftOrder: vi.fn(),
+  useRestockLowStock: vi.fn(() => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  })),
+}));
+
+// Restock preview is only fetched when the dialog is open; the mock returns
+// a benign empty state so the dialog can render in tests that never open it.
+vi.mock('@/features/orders/useRestockPreviewQuery', () => ({
+  useRestockPreviewQuery: vi.fn(() => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+  })),
+}));
+
+// Low-stock query drives the "Beställ påfyllning" disabled+tooltip path; default
+// to a non-empty fixture so the button renders enabled in unrelated tests.
+vi.mock('@/features/dashboard/useLowStockQuery', () => ({
+  useLowStockQuery: vi.fn(() => ({
+    data: { rows: [], total: 1 },
+    isLoading: false,
+    isError: false,
+  })),
 }));
 
 // Mock react-router-dom navigate

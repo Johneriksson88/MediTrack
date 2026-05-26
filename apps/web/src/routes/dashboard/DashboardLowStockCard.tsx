@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 
 import { useLowStockQuery } from '@/features/dashboard/useLowStockQuery';
@@ -11,6 +12,9 @@ import {
 } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
+import { Can } from '@/auth/Can';
+import { RestockLowStockDialog } from '@/routes/bestallningar/RestockLowStockDialog';
 
 /**
  * Phase 6 D-117 / D-118 / D-119 / D-120 / NTF-01 — dashboard low-stock card.
@@ -77,6 +81,7 @@ import { Skeleton } from '@/components/ui/skeleton';
  */
 export function DashboardLowStockCard() {
   const { data, isLoading, isError } = useLowStockQuery();
+  const [restockOpen, setRestockOpen] = useState(false);
 
   if (isLoading) {
     return (
@@ -148,10 +153,23 @@ export function DashboardLowStockCard() {
       className="w-full max-w-2xl h-full max-h-[calc(100vh-12rem)] flex flex-col"
       data-testid="dashboard-low-stock-card-data"
     >
-      <CardHeader>
-        <CardTitle>Läkemedel under tröskel</CardTitle>
-        <CardDescription>totalt {total} under tröskel</CardDescription>
+      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+        <div className="space-y-1.5">
+          <CardTitle>Läkemedel under tröskel</CardTitle>
+          <CardDescription>totalt {total} under tröskel</CardDescription>
+        </div>
+        <Can action="order:create">
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0"
+            onClick={() => setRestockOpen(true)}
+          >
+            Beställ påfyllning
+          </Button>
+        </Can>
       </CardHeader>
+      <RestockLowStockDialog open={restockOpen} onOpenChange={setRestockOpen} />
       <CardContent
         className="flex-1 overflow-y-auto"
         role="list"

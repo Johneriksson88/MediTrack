@@ -267,3 +267,66 @@ export const pickerSuggestionsResponse = z.object({
   lowStock: z.array(pickerSuggestion),
 });
 export type PickerSuggestionsResponse = z.infer<typeof pickerSuggestionsResponse>;
+
+// ---------------------------------------------------------------------------
+// Restock low-stock — preview + create
+// ---------------------------------------------------------------------------
+
+/**
+ * One non-`levererad` order that already references a given low-stock
+ * CareUnitMedication. Surfaced in the preview modal as a warning chip so
+ * the user can avoid double-ordering items that are already in flight.
+ */
+export const restockPreviewInFlightOrder = z.object({
+  orderId: z.string(),
+  orderNumber: z.string(),
+  status: orderStatusEnum, // service filters to utkast|skickad|bekraftad
+  quantity: z.number().int().positive(),
+});
+export type RestockPreviewInFlightOrder = z.infer<typeof restockPreviewInFlightOrder>;
+
+/**
+ * One row in the restock-preview list. Mirrors LowStockItem's medication
+ * fields plus aggregated in-flight quantity across all non-`levererad`
+ * orders in the caller's vårdenhet.
+ */
+export const restockPreviewRow = z.object({
+  careUnitMedicationId: z.string(),
+  name: z.string(),
+  atcCode: z.string(),
+  form: z.string(),
+  strength: z.string().nullable(),
+  currentStock: z.number().int().nonnegative(),
+  lowStockThreshold: z.number().int().positive(),
+  inFlightQuantity: z.number().int().nonnegative(),
+  inFlightOrders: z.array(restockPreviewInFlightOrder),
+});
+export type RestockPreviewRow = z.infer<typeof restockPreviewRow>;
+
+/**
+ * Response envelope for GET /api/orders/restock-preview. Rows are sorted
+ * by urgency ratio (same order as listLowStockForUnit).
+ */
+export const restockPreviewResponse = z.object({
+  rows: z.array(restockPreviewRow),
+});
+export type RestockPreviewResponse = z.infer<typeof restockPreviewResponse>;
+
+/**
+ * POST /api/orders/restock-low-stock body.
+ *
+ * `buffer` is the number of units to order *above* each item's threshold
+ * (quantity = max(1, lowStockThreshold − currentStock + buffer) per line).
+ * `careUnitMedicationIds` lists the items the user selected after seeing
+ * the in-flight warnings — the server re-checks each one is still
+ * low-stock and silently drops those that have recovered.
+ *
+ * .strict() mirrors createOrderRequest (T-03-02 mass-assignment mitigation).
+ */
+export const restockLowStockRequest = z
+  .object({
+    buffer: z.number().int().min(0).max(10000),
+    careUnitMedicationIds: z.array(z.string().min(1)).min(1),
+  })
+  .strict();
+export type RestockLowStockRequest = z.infer<typeof restockLowStockRequest>;

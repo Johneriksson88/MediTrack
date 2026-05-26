@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import type {
   OrderResponse,
   OrderStatus,
+  RestockLowStockRequest,
 } from '@meditrack/shared';
 import { ORDER_STATUS_LABELS } from '@meditrack/shared';
 import { fetchJson, type ApiError } from '@/lib/api';
@@ -60,6 +61,51 @@ export function useCreateDraftOrder() {
       void queryClient.invalidateQueries({ queryKey: ['dashboard', 'orders'] });
     },
     onError: () => {
+      toast.error('Kunde inte spara — försök igen.');
+    },
+  });
+}
+
+/**
+ * Creates a draft Order pre-filled with one line per still-low-stock item
+ * the user selected in the "Beställ påfyllning" modal. Pessimistic — the
+ * caller awaits mutateAsync, gets the new order's id, and navigates to
+ * /bestallningar/{id}?from=utkast just like useCreateDraftOrder.
+ *
+ * Invalidations match useCreateDraftOrder + the dashboard low-stock banner
+ * (its `inFlightOrders` aggregation changes the moment a draft lands) and
+ * the preview itself (so reopening the modal shows the new draft as
+ * in-flight overlap).
+ *
+ * 422 `no_items_to_restock`: every item recovered between preview and
+ * confirm. Toast + preview refetch — the modal will rerender with the
+ * fresh (possibly empty) list.
+ */
+export function useRestockLowStock() {
+  const queryClient = useQueryClient();
+
+  return useMutation<OrderResponse, ApiError, RestockLowStockRequest>({
+    mutationFn: (body) =>
+      fetchJson<OrderResponse>('/api/orders/restock-low-stock', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['orders', { status: 'utkast' }] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'orders'] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'low-stock'] });
+      void queryClient.invalidateQueries({ queryKey: ['orders', 'restock-preview'] });
+    },
+    onError: (err) => {
+      if (
+        err.envelope.error.code === 'validation_failed' &&
+        (err.envelope.error.details as { reason?: string } | undefined)?.reason ===
+          'no_items_to_restock'
+      ) {
+        toast.error('Alla läkemedel återhämtade sig — inget att beställa.');
+        void queryClient.invalidateQueries({ queryKey: ['orders', 'restock-preview'] });
+        return;
+      }
       toast.error('Kunde inte spara — försök igen.');
     },
   });

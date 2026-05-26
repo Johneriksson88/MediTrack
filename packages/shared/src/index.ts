@@ -81,6 +81,14 @@ export {
   type PickerSuggestion,
   pickerSuggestionsResponse,
   type PickerSuggestionsResponse,
+  restockPreviewInFlightOrder,
+  type RestockPreviewInFlightOrder,
+  restockPreviewRow,
+  type RestockPreviewRow,
+  restockPreviewResponse,
+  type RestockPreviewResponse,
+  restockLowStockRequest,
+  type RestockLowStockRequest,
 } from './contracts/order.js';
 // Audit contracts — Phase 5 D-08 / D-97 / D-103 / D-105 (FE↔BE audit log read API)
 export {

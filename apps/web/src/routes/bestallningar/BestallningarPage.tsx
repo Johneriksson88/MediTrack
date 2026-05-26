@@ -1,16 +1,25 @@
+import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ClipboardList, Loader2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Can } from '@/auth/Can';
 import { useDraftsQuery, useOrdersByStatusQuery } from '@/features/orders/useOrderQueries';
 import { useCreateDraftOrder } from '@/features/orders/useOrderMutations';
+import { useLowStockQuery } from '@/features/dashboard/useLowStockQuery';
 import { useDocumentTitle } from '@/lib/useDocumentTitle';
 import { DraftsTable } from './DraftsTable';
 import { DraftsCardList } from './DraftsCardList';
 import { OrdersTable } from './OrdersTable';
 import { OrdersCardList } from './OrdersCardList';
+import { RestockLowStockDialog } from './RestockLowStockDialog';
 
 /**
  * Phase 4 ORD-07 / D-82 — Beställningar history with status-tab filter.
@@ -69,6 +78,9 @@ export function BestallningarPage() {
   const activeQuery = status === 'utkast' ? draftsQuery : ordersQuery;
 
   const createMutation = useCreateDraftOrder();
+  const lowStockQuery = useLowStockQuery();
+  const [restockOpen, setRestockOpen] = useState(false);
+  const noLowStock = lowStockQuery.data?.total === 0;
 
   useDocumentTitle('Beställningar — MediTrack');
 
@@ -117,16 +129,51 @@ export function BestallningarPage() {
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold leading-tight">Beställningar</h1>
         <Can action="order:create">
-          <Button
-            onClick={handleNyBestallning}
-            disabled={isCreating}
-            className="shrink-0"
-          >
-            {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
-            Ny beställning
-          </Button>
+          <div className="flex items-center gap-2">
+            {noLowStock ? (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    {/*
+                     * span wrapper because a disabled button does not fire
+                     * pointer events that Radix Tooltip listens to.
+                     */}
+                    <span tabIndex={0} aria-disabled="true">
+                      <Button
+                        variant="outline"
+                        disabled
+                        className="shrink-0 pointer-events-none"
+                      >
+                        Beställ påfyllning
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>Inga läkemedel under tröskel.</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={() => setRestockOpen(true)}
+                disabled={lowStockQuery.isLoading}
+                className="shrink-0"
+              >
+                Beställ påfyllning
+              </Button>
+            )}
+            <Button
+              onClick={handleNyBestallning}
+              disabled={isCreating}
+              className="shrink-0"
+            >
+              {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
+              Ny beställning
+            </Button>
+          </div>
         </Can>
       </div>
+
+      <RestockLowStockDialog open={restockOpen} onOpenChange={setRestockOpen} />
 
       {/* Status-tab filter (ORD-07 D-82) */}
       <Tabs value={status} onValueChange={handleTabChange}>
