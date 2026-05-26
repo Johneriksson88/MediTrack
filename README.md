@@ -6,14 +6,14 @@
 - [Arkitekturval (motivera dina val)](#arkitekturval-motivera-dina-val)
 - [Snabbstart med Docker Compose](#snabbstart-med-docker-compose)
 - [Demo-konton](#demo-konton)
-- [Demo-rundtur (5 minuter)](#demo-rundtur-5-minuter)
 - [Lokal utveckling utan Docker](#lokal-utveckling-utan-docker)
 - [Tester](#tester)
-- [Mobil-först verifiering](#mobil-först-verifiering)
+- [Appens delar](#appens-delar)
+- [Mobil-först](#mobil-först)
 - [Kända luckor](#kända-luckor)
 - [Med mer tid](#med-mer-tid)
-- [§6-svar (intervjudiskussion)](#6-svar-intervjudiskussion)
 - [Vad ligger var?](#vad-ligger-var)
+- [AI-Categorization](#ai-categorization)
 
 ---
 
@@ -202,114 +202,136 @@ Hela sviten (lint + typecheck + test + build):
 pnpm verify
 ```
 
-Förväntad körtid: 5–6 minuter. Playwright-layoutverifiering ingår **inte** — den kräver en körande `docker compose up`. Kommando och resultat finns i [§ Mobil-först verifiering](#mobil-först-verifiering).
+Förväntad körtid: 5–6 minuter. Playwright-layoutverifiering ingår **inte** — den kräver en körande `docker compose up`.
 
 ## Appens delar
 
-#Top nav
+### Top nav
 
 - Hem-länk på logon
 - Visar användarnamn, roll, vårdenhet samt en Logga ut-knapp
 
-#Side nav
-Rollbaserade länkar till appens olika delar
-- Sjuksköteskor ser: Dashboard, läkemedel, beställningar, konto
-- Apotekare ser: Dashboard, läkemedel, beställningar, sortiment, konto
-- Admin ser: Dashboard, läkemedel, beställningar, sortiment, konto, användare, granskning
+### Side nav
 
-#Dashboard
+Rollbaserade länkar till appens olika delar:
+
+- **Sjuksköterskor** ser: Dashboard, läkemedel, beställningar, konto
+- **Apotekare** ser: Dashboard, läkemedel, beställningar, sortiment, konto
+- **Admin** ser: Dashboard, läkemedel, beställningar, sortiment, konto, användare, granskning
+
+### Dashboard
 
 Två sektioner:
 
-Lågt lager-varningar
-Visar läkemedel som är under deras tröskelnivå. Button "Beställ påfyllning" skapar en order i Utkast (under beställningar) för alla läkemedel under tröskelnivå.
+#### Lågt lager-varningar
 
-Att göra
+Visar läkemedel som är under deras tröskelnivå. Knappen **Beställ påfyllning** skapar en order i Utkast (under beställningar) för alla läkemedel under tröskelnivå.
+
+#### Att göra
+
 Visar ordrar som behöver hanteras för den relevanta användarrollen enligt följande:
-- För admin och apotekare visas beställningar som behöver bekräftas och markeras som levererade
-- För sjuksköterskor visas ordrar i utkast som behöver skickas (ej skickade ordrar)
 
-#Läkemedel
+- För **admin** och **apotekare** visas beställningar som behöver bekräftas och markeras som levererade
+- För **sjuksköterskor** visas ordrar i utkast som behöver skickas (ej skickade ordrar)
+
+### Läkemedel
+
 Visar vårdenhetens läkemedel med urval från vårdenhetens sortiment.
+
 - Sökruta för att söka på läkemedelsnamn
 - Filter för klass, ATC-kod och former
-- "Visa endast under tröskel" visar läkemedel vars lagersaldo är under dess angivna tröskelvärde
+- **Visa endast under tröskel** visar läkemedel vars lagersaldo är under dess angivna tröskelvärde
 
-Klicka på ett läkemedel för att se/redigera dess information och lagersaldo baserat på roll
-- Sjuksköterska kan endast se läkemedlets information
-- Apotekare och admin kan redigera lagersaldo, tröskel, terapeutisk klass (inklusive [AI-förslag](#AI-Categorization)), samt ta bort läkemedel (tas endast bort ur vårdenhetens sortiment)
+Klicka på ett läkemedel för att se/redigera dess information och lagersaldo baserat på roll:
 
-"Lägg till läkemedel"
-- Endast tillgänglig för apotekare och admin-roller. Lägger till läkemedel i vårdenhetens sortiment utifrån de läkemedel som finns i NPL (Nationellt produktregister för läkemedel) och EJ finns i vårdenhetens sortiment. Tanken är att en vårdenhet inte behöver hela NPL:s katalog, utan det är upp till administratör och/eller apotekare att bestämma vilket urval vårdenheten kan beställa från.
+- **Sjuksköterska** kan endast se läkemedlets information
+- **Apotekare** och **admin** kan redigera lagersaldo, tröskel, terapeutisk klass (inklusive [§ AI-kategorisering](#ai-categorization)), samt ta bort läkemedel (tas endast bort ur vårdenhetens sortiment)
 
-#Beställningar
+#### Lägg till läkemedel
+
+Endast tillgänglig för apotekare och admin-roller. Lägger till läkemedel i vårdenhetens sortiment utifrån de läkemedel som finns i NPL (Nationellt produktregister för läkemedel) och EJ finns i vårdenhetens sortiment. Tanken är att en vårdenhet inte behöver hela NPL:s katalog, utan det är upp till administratör och/eller apotekare att bestämma vilket urval vårdenheten kan beställa från.
+
+### Beställningar
+
 Listar vårdenhetens beställningar med flikar för varje status: Utkast, Skickade, Bekräftade, Levererade och Alla. Vald flik finns i URL:en så att man kan dela en länk eller gå bakåt i webbläsaren utan att tappa läget.
 
-- "Ny beställning" skapar ett tomt utkast och öppnar beställningssidan direkt
-- "Beställ påfyllning" skapar ett utkast förfyllt med en rad per läkemedel som är under tröskel (samma genväg som på dashboarden). Inaktiverad när inget är under tröskel.
+- **Ny beställning** skapar ett tomt utkast och öppnar beställningssidan direkt
+- **Beställ påfyllning** skapar ett utkast förfyllt med en rad per läkemedel som är under tröskel (samma genväg som på dashboarden). Inaktiverad när inget är under tröskel.
 
 Klicka på en rad för att öppna beställningen.
 
-Vem ser och gör vad:
+#### Vem ser och gör vad
+
 - Sjuksköterskor, apotekare och admin ser samma lista
 - Endast inloggad användare på vårdenheten ser vårdenhetens beställningar
-- "Ny beställning" och "Beställ påfyllning" är tillgängliga för alla roller som får skapa beställningar (sjuksköterska, apotekare, admin)
+- **Ny beställning** och **Beställ påfyllning** är tillgängliga för alla roller som får skapa beställningar (sjuksköterska, apotekare, admin)
 
-#Beställningsdetalj (en enskild beställning)
+### Beställningsdetalj (en enskild beställning)
+
 Visar beställningens rader, status och historik (vem som skapat, skickat, bekräftat, levererat och när).
 
 Innehåll och åtgärder växlar med status:
 
-- **Utkast** — radlistan är redigerbar. "Lägg till läkemedel" öppnar en väljare där man söker bland vårdenhetens sortiment och lägger till en eller flera rader. Kvantitet justeras med stora plus/minus-knappar (anpassade för touch). "Skicka" skickar iväg beställningen, "Kasta" tar bort utkastet efter bekräftelse.
-- **Skickad / Bekräftad / Levererad** — raderna är låsta och kan inte ändras. En banner visar vad som hänt senast. Apotekare och admin ser "Bekräfta"- och "Leverera"-knappar (både högst upp och längst ned på sidan, så långa beställningar inte kräver att man scrollar tillbaka). "Leverera" öppnar en bekräftelsedialog — vid bekräftelse ökas lagersaldot för samtliga rader i en och samma transaktion.
+- **Utkast** — radlistan är redigerbar. **Lägg till läkemedel** öppnar en väljare där man söker bland vårdenhetens sortiment och lägger till en eller flera rader. Kvantitet justeras med stora plus/minus-knappar (anpassade för touch). **Skicka** skickar iväg beställningen, **Kasta** tar bort utkastet efter bekräftelse.
+- **Skickad / Bekräftad / Levererad** — raderna är låsta och kan inte ändras. En banner visar vad som hänt senast. Apotekare och admin ser **Bekräfta**- och **Leverera**-knappar (både högst upp och längst ned på sidan, så långa beställningar inte kräver att man scrollar tillbaka). **Leverera** öppnar en bekräftelsedialog — vid bekräftelse ökas lagersaldot för samtliga rader i en och samma transaktion.
 
-Vem ser och gör vad:
-- Sjuksköterska kan skapa utkast, lägga till/ta bort rader, ändra kvantitet, skicka och kasta egna utkast
-- Apotekare och admin kan dessutom bekräfta skickade beställningar och markera bekräftade som levererade
+#### Vem ser och gör vad
 
-#Sortiment
+- **Sjuksköterska** kan skapa utkast, lägga till/ta bort rader, ändra kvantitet, skicka och kasta egna utkast
+- **Apotekare** och **admin** kan dessutom bekräfta skickade beställningar och markera bekräftade som levererade
+
+### Sortiment
+
 Hantering av vilka läkemedel vårdenheten har att beställa från. Två flikar:
 
-- **I sortimentet** — läkemedel som redan ingår. Markera en eller flera rader och tryck "Ta bort" för att massradera ur sortimentet (befintliga lagersaldon påverkas inte direkt — läkemedlet försvinner ur listan men datan finns kvar för historik).
-- **Lägg till** — läkemedel ur NPL som ännu inte finns i sortimentet. Markera flera, tryck "Lägg till i sortimentet", sätt en gemensam tröskelnivå (eller justera per rad) och bekräfta.
+- **I sortimentet** — läkemedel som redan ingår. Markera en eller flera rader och tryck **Ta bort** för att massradera ur sortimentet (befintliga lagersaldon påverkas inte direkt — läkemedlet försvinner ur listan men datan finns kvar för historik).
+- **Lägg till** — läkemedel ur NPL som ännu inte finns i sortimentet. Markera flera, tryck **Lägg till i sortimentet**, sätt en gemensam tröskelnivå (eller justera per rad) och bekräfta.
 
 Sökruta och filter (namn, klass, ATC-kod, form) gäller båda flikarna så man kan t.ex. filtrera på en klass och massåtgärda hela urvalet på en gång.
 
-Vem ser och gör vad:
+#### Vem ser och gör vad
+
 - Endast apotekare och admin har åtkomst till sortimentet
 - Sjuksköterskor ser inte länken i menyn
 
-#Användare
+### Användare
+
 Adminens vy för att hantera konton i den egna vårdenheten. Sorterbar lista med namn, e-post, roll och skapat-datum.
 
-- "Skapa konto" öppnar ett formulär för att lägga till en ny användare (namn, e-post, roll, lösenord)
-- "Redigera" per rad uppdaterar namn, e-post eller roll
-- "Ta bort" raderar kontot efter bekräftelse. Den inloggade adminens egen rad är markerad "(du)" och borttagningen är spärrad — man kan inte radera sig själv
+- **Skapa konto** öppnar ett formulär för att lägga till en ny användare (namn, e-post, roll, lösenord)
+- **Redigera** per rad uppdaterar namn, e-post eller roll
+- **Ta bort** raderar kontot efter bekräftelse. Den inloggade adminens egen rad är markerad "(du)" och borttagningen är spärrad — man kan inte radera sig själv
 
-Vem ser och gör vad:
+#### Vem ser och gör vad
+
 - Endast admin har åtkomst
 - Apotekare och sjuksköterskor ser varken länken eller sidan
 
-#Granskning
+### Granskning
+
 Adminens forensik-vy över allt som hänt i systemet — varje skapad, ändrad eller borttagen rad, samt inloggningsförsök. Listan är reverskronologisk och oföränderlig (ingen kan redigera eller radera poster, inte ens admin).
 
 - Filtrera på användare, entitetstyp (läkemedel, beställning, konto, session m.m.), åtgärd eller request-id (för att hitta alla händelser som hör till samma anrop)
 - Klicka på en rad för att fälla ut en diff-panel som visar fält, värde före och efter ändringen
-- "Kopiera permalink" ger en URL med aktuella filter så man kan dela en specifik vy
-- Listan laddar 50 rader i taget — "Läs in fler" hämtar nästa sida
+- **Kopiera permalink** ger en URL med aktuella filter så man kan dela en specifik vy
+- Listan laddar 50 rader i taget — **Läs in fler** hämtar nästa sida
 
-Vem ser och gör vad:
+#### Vem ser och gör vad
+
 - Endast admin har åtkomst
 - Loggen omfattar alla roller och alla vårdenheter (admin ser även händelser från andra vårdenheter — medvetet, så man kan utreda över hela systemet)
 
-#Konto
-Användarens egen sida. Visar namn, roll och vårdenhet, samt en "Logga ut"-knapp.
+### Konto
 
-Vem ser och gör vad:
+Användarens egen sida. Visar namn, roll och vårdenhet, samt en **Logga ut**-knapp.
+
+#### Vem ser och gör vad
+
 - Alla inloggade användare ser sin egen konto-sida
-- Admin ser även en "Admin ping"-knapp som verifierar att den admin-skyddade backend-rutten fungerar (diagnostik/röktest)
+- Admin ser även en **Admin ping**-knapp som verifierar att den admin-skyddade backend-rutten fungerar (diagnostik/röktest)
 
-#Inloggning
+### Inloggning
+
 Startsidan för utloggade besökare. E-post + lösenord; vid lyckad inloggning landar man på dashboarden.
 
 - Skydd mot lösenordsgissning: efter för många försök från samma användare eller samma IP-adress under en minut blockeras nya försök en kort stund
@@ -322,9 +344,9 @@ Appen är utvecklad för att vara användbar på alla skärmstorlekar, från mob
 
 ## Kända luckor
 
-- `pnpm verify` är inte wired till CI — ingen GitHub Actions-workflow finns. Push-triggered CI är naturlig nästa åtgärd men prioriterades bort till förmån för applikationsdjup (se [§ Drift & skalning](#drift--skalning)).
+- `pnpm verify` är inte wired till CI — ingen GitHub Actions-workflow finns. Push-triggered CI är naturlig nästa åtgärd men prioriterades bort till förmån för applikationsdjup.
 - 43 538 NPL-läkemedel saknar `therapeuticClass` på fresh seed. Medveten avvägning: bulk-AI-klassificering kostar ~$4 per `docker compose up` och lägger 30+ sekunder på första-boot. Fältet är ifyllbart via `Hämta AI-förslag` per rad (se [§ AI Categorization](#ai-categorization)).
-- `$queryRaw`-skrivvägar avlyssnas inte av audit-middleware — `$extends` sitter vid modell-metod-gränsen, inte raw SQL. Inga `$executeRaw`-skrivningar i produktionskod idag; CI-grep assertar det. En framtida raw-skrivning måste explicit in i allowlisten (se [§ Känd lucka — audit-gap](#känd-lucka--audit-gap)).
+- `$queryRaw`-skrivvägar avlyssnas inte av audit-middleware — `$extends` sitter vid modell-metod-gränsen, inte raw SQL. Inga `$executeRaw`-skrivningar i produktionskod idag; CI-grep assertar det. En framtida raw-skrivning måste explicit in i allowlisten.
 - Demo-lösenord `demo1234` är hårdkodat i seed-skriptet. Ingen per-användare rotation vid första inlogg — demo-mönster, inte produktionsmönster.
 - Ingen funktionell E2E-svit: Playwright används endast för layoutverifiering. Integrationstester mot Fastify `app.inject` täcker API-ytan; UI-logik täcks av Vitest + Testing Library.
 
