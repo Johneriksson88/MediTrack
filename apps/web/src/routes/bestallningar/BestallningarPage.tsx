@@ -125,11 +125,12 @@ export function BestallningarPage() {
 
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6 lg:p-8">
-      {/* Page heading row */}
-      <div className="flex items-center justify-between gap-4">
+      {/* Page heading row — stacks on mobile so the action buttons don't
+          overflow the viewport on ~400px phones. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <h1 className="text-2xl font-semibold leading-tight">Beställningar</h1>
         <Can action="order:create">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {noLowStock ? (
               <TooltipProvider>
                 <Tooltip>
