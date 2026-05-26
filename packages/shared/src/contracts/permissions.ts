@@ -40,6 +40,10 @@ export const ACTION_KEYS = [
   'audit:read',
   // Phase 6 D-15 — AI categorization; apotekare + admin can fetch suggestions.
   'ai:suggest',
+  // Sortiment — bulk catalog management (apotekare + admin). Separate key
+  // from medication:create/update/delete so the admin Sortiment page can be
+  // gated independently from the per-row Läkemedel page actions.
+  'medication:bulk_manage',
 ] as const;
 export type ActionKey = (typeof ACTION_KEYS)[number];
 

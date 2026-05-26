@@ -242,6 +242,133 @@ export type MedicationCreateRequest = z.infer<typeof medicationCreateRequest>;
  * past Zod's boundary. `.refine(...)` requires at least one field to be present
  * so an empty PATCH body returns 400 validation_failed instead of a no-op 200.
  */
+// ---------------------------------------------------------------------------
+// Bulk catalog management — Sortiment page (admin + apotekare)
+// ---------------------------------------------------------------------------
+
+/**
+ * Hard upper bound on a single bulk operation. Picked so that even at
+ * "all of class N" (the largest WHO ATC level-1 group in the seeded NPL data)
+ * the admin is forced to narrow the filter — keeps transactions tight and
+ * audit-row floods bounded.
+ */
+export const BULK_MEDICATION_LIMIT = 2000;
+
+/**
+ * GET /api/medications/bulk-add-candidates — paginated list of global
+ * Medication rows NOT currently active in the caller's vårdenhet sortiment.
+ *
+ * Same exclusion logic as /search (D-45) — already-active CareUnitMedication
+ * rows are filtered out — but with proper pagination, larger page size, and
+ * full filter set (q/atc-prefix/form/therapeuticClass) so the FE can resolve
+ * "add all in class X" → concrete medicationId list.
+ */
+export const bulkAddCandidatesQuery = z.object({
+  q: z.string().optional(),
+  atc: z.string().optional(),
+  form: z.string().optional(),
+  therapeuticClass: therapeuticClassEnum.optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+export type BulkAddCandidatesQuery = z.infer<typeof bulkAddCandidatesQuery>;
+
+export const bulkAddCandidate = z.object({
+  medicationId: z.string(),
+  name: z.string(),
+  atcCode: z.string(),
+  form: z.string(),
+  strength: z.string().nullable(),
+  source: z.enum(['npl', 'user']),
+  therapeuticClass: therapeuticClassEnum.nullable(),
+});
+export type BulkAddCandidate = z.infer<typeof bulkAddCandidate>;
+
+export const bulkAddCandidatesResponse = z.object({
+  rows: z.array(bulkAddCandidate),
+  total: z.number().int().nonnegative(),
+  page: z.number().int().positive(),
+  pageSize: z.number().int().positive(),
+});
+export type BulkAddCandidatesResponse = z.infer<typeof bulkAddCandidatesResponse>;
+
+/**
+ * POST /api/medications/bulk — add a batch of medications to the caller's
+ * sortiment. Each item carries its own threshold so the FE can apply a single
+ * default and let the admin override per-row before commit.
+ *
+ * Restore semantics: when a (careUnitId, medicationId) pair exists soft-deleted,
+ * the bulk path PRESERVES the row's existing currentStock (unlike the single
+ * create-from-NPL path which overwrites it). The threshold from the request
+ * is always applied. Brand-new rows start at stock=0.
+ *
+ * Active duplicates are silently skipped (idempotent — no 409). The response
+ * counts let the FE message "X tillagda, Y återställda, Z fanns redan".
+ */
+export const bulkAddMedicationsRequest = z
+  .object({
+    items: z
+      .array(
+        z.object({
+          medicationId: z.string().min(1),
+          lowStockThreshold: z.number().int().positive(),
+        }),
+      )
+      .min(1)
+      .max(BULK_MEDICATION_LIMIT),
+  })
+  .strict();
+export type BulkAddMedicationsRequest = z.infer<typeof bulkAddMedicationsRequest>;
+
+export const bulkAddMedicationsResponse = z.object({
+  added: z.number().int().nonnegative(),
+  restored: z.number().int().nonnegative(),
+  skipped: z.number().int().nonnegative(),
+});
+export type BulkAddMedicationsResponse = z.infer<typeof bulkAddMedicationsResponse>;
+
+/**
+ * DELETE /api/medications/bulk — soft-delete a batch of CareUnitMedication
+ * rows. Already-deleted / cross-tenant / missing IDs are silently skipped
+ * (idempotent; existence-probing is collapsed per D-19 / T-02-17). The
+ * response `deleted` count reflects rows actually transitioned.
+ */
+export const bulkRemoveMedicationsRequest = z
+  .object({
+    careUnitMedicationIds: z
+      .array(z.string().min(1))
+      .min(1)
+      .max(BULK_MEDICATION_LIMIT),
+  })
+  .strict();
+export type BulkRemoveMedicationsRequest = z.infer<typeof bulkRemoveMedicationsRequest>;
+
+export const bulkRemoveMedicationsResponse = z.object({
+  deleted: z.number().int().nonnegative(),
+});
+export type BulkRemoveMedicationsResponse = z.infer<typeof bulkRemoveMedicationsResponse>;
+
+/**
+ * POST /api/medications/bulk-remove-preview — pre-flight check for the
+ * confirm dialog: counts in-flight orders (status ≠ levererad/utkast that
+ * own a soft-delete-by-association?). Implementation counts non-levererad,
+ * non-soft-deleted Order rows that reference any of the selected CUMs via
+ * OrderLine, so the admin sees "N läkemedel har pågående beställningar"
+ * before committing.
+ *
+ * `withStockUnits` is the total currentStock across the selection — drives
+ * the "lagersaldot bevaras" warning copy without a second round-trip.
+ */
+export const bulkRemovePreviewRequest = bulkRemoveMedicationsRequest;
+export type BulkRemovePreviewRequest = z.infer<typeof bulkRemovePreviewRequest>;
+
+export const bulkRemovePreviewResponse = z.object({
+  inFlightOrderCount: z.number().int().nonnegative(),
+  withStockCount: z.number().int().nonnegative(),
+  withStockUnits: z.number().int().nonnegative(),
+});
+export type BulkRemovePreviewResponse = z.infer<typeof bulkRemovePreviewResponse>;
+
 export const medicationUpdateRequest = z
   .object({
     currentStock: z.number().int().min(0).optional(),

@@ -13,6 +13,14 @@ import type {
   MedicationSearchResult,
   MedicationCreateRequest,
   MedicationUpdateRequest,
+  BulkAddCandidatesQuery,
+  BulkAddCandidatesResponse,
+  BulkAddMedicationsRequest,
+  BulkAddMedicationsResponse,
+  BulkRemoveMedicationsRequest,
+  BulkRemoveMedicationsResponse,
+  BulkRemovePreviewRequest,
+  BulkRemovePreviewResponse,
 } from '@meditrack/shared';
 import { OVRIGA_FILTER_VALUE, TOP_MEDICATION_FORMS } from '@meditrack/shared';
 
@@ -618,4 +626,245 @@ export async function softDeleteCareUnitMedication(
       data: { deletedAt: new Date() },
     }),
   );
+}
+
+// ---------------------------------------------------------------------------
+// Bulk catalog management — Sortiment page (admin + apotekare)
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/medications/bulk-add-candidates — paginated list of global
+ * Medication rows NOT currently active in the caller's sortiment.
+ *
+ * Same exclusion semantics as `searchGlobalMedications` (D-45) but with
+ * proper pagination + full filter set (q/atc-prefix/form/therapeuticClass)
+ * so the FE can resolve "add all in class X" → a concrete medicationId list.
+ *
+ * D-16: careUnitId-first; exclusion filter scoped to this unit only.
+ */
+export async function listBulkAddCandidates(
+  careUnitId: string,
+  filters: BulkAddCandidatesQuery,
+): Promise<BulkAddCandidatesResponse> {
+  const { q, atc, form, therapeuticClass, page, pageSize } = filters;
+  const skip = (page - 1) * pageSize;
+
+  const where: Record<string, unknown> = {
+    careUnitMedications: {
+      none: { careUnitId, deletedAt: null },
+    },
+  };
+  if (q) where.name = { contains: q, mode: 'insensitive' };
+  if (atc) where.atcCode = { startsWith: atc, mode: 'insensitive' };
+  if (form === OVRIGA_FILTER_VALUE) {
+    where.form = { notIn: [...TOP_MEDICATION_FORMS] };
+  } else if (form) {
+    where.form = form;
+  }
+  if (therapeuticClass) where.therapeuticClass = therapeuticClass;
+
+  const [rows, total] = await Promise.all([
+    prisma.medication.findMany({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      where: where as any,
+      orderBy: [{ name: 'asc' }],
+      skip,
+      take: pageSize,
+      select: {
+        id: true,
+        name: true,
+        atcCode: true,
+        form: true,
+        strength: true,
+        source: true,
+        therapeuticClass: true,
+      },
+    }),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    prisma.medication.count({ where: where as any }),
+  ]);
+
+  return {
+    rows: rows.map((r) => ({
+      medicationId: r.id,
+      name: r.name,
+      atcCode: r.atcCode,
+      form: r.form,
+      strength: r.strength,
+      source: r.source as 'npl' | 'user',
+      therapeuticClass: r.therapeuticClass,
+    })),
+    total,
+    page,
+    pageSize,
+  };
+}
+
+/**
+ * POST /api/medications/bulk — add many medications to this unit's sortiment.
+ *
+ * Restore behavior diverges from the single create-from-NPL path: soft-deleted
+ * rows are restored with `currentStock` PRESERVED (only `lowStockThreshold` is
+ * overwritten from the request). The single-add path overwrites both — the
+ * UX justification there is that the user is typing a stock number; in bulk
+ * they aren't, so we keep what was last counted.
+ *
+ * All writes share one `prisma.$transaction` so the operation is all-or-nothing.
+ * Each individual create/update produces its own audit row; the actor ALS frame
+ * gives every row the same `requestId`, which lets the audit page group them.
+ * (createMany would skip the $extends interceptor — D-91 — and lose audit rows.)
+ *
+ * Active duplicates are silently skipped — bulk-add is idempotent, no 409.
+ */
+export async function bulkAddMedications(
+  careUnitId: string,
+  payload: BulkAddMedicationsRequest,
+): Promise<BulkAddMedicationsResponse> {
+  const { items } = payload;
+  const medicationIds = items.map((i) => i.medicationId);
+  const thresholdByMedicationId = new Map(
+    items.map((i) => [i.medicationId, i.lowStockThreshold]),
+  );
+
+  return prisma.$transaction(async (tx) => {
+    // Pre-load existing rows for the requested medicationIds (active or soft-deleted).
+    const existing = await tx.careUnitMedication.findMany({
+      where: { careUnitId, medicationId: { in: medicationIds } },
+      select: { id: true, medicationId: true, deletedAt: true, currentStock: true },
+    });
+    const existingByMedicationId = new Map(existing.map((r) => [r.medicationId, r]));
+
+    let added = 0;
+    let restored = 0;
+    let skipped = 0;
+
+    for (const item of items) {
+      const threshold = thresholdByMedicationId.get(item.medicationId)!;
+      const row = existingByMedicationId.get(item.medicationId);
+      if (row) {
+        if (row.deletedAt === null) {
+          skipped += 1;
+          continue;
+        }
+        // Soft-deleted — restore, preserve currentStock, apply new threshold.
+        await tx.careUnitMedication.update({
+          where: { id: row.id },
+          data: {
+            deletedAt: null,
+            currentStock: row.currentStock,
+            lowStockThreshold: threshold,
+          },
+        });
+        restored += 1;
+        continue;
+      }
+      await tx.careUnitMedication.create({
+        data: {
+          careUnitId,
+          medicationId: item.medicationId,
+          currentStock: 0,
+          lowStockThreshold: threshold,
+        },
+      });
+      added += 1;
+    }
+
+    return { added, restored, skipped };
+  });
+}
+
+/**
+ * DELETE /api/medications/bulk — soft-delete a batch of CareUnitMedication
+ * rows in this unit. Missing / cross-tenant / already-deleted IDs are
+ * silently skipped (existence-probing collapsed per D-19 / T-02-17).
+ *
+ * Each soft-delete runs inside `withActionOverride('medication.softDelete')`
+ * so audit rows carry the same action label as the single-row path. The
+ * shared request `requestId` lets the audit page treat the batch as one
+ * logical operation.
+ */
+export async function bulkRemoveMedications(
+  careUnitId: string,
+  payload: BulkRemoveMedicationsRequest,
+): Promise<BulkRemoveMedicationsResponse> {
+  const { careUnitMedicationIds } = payload;
+
+  return prisma.$transaction(async (tx) => {
+    // Scope check + existence filter in one query — drops cross-tenant and
+    // already-soft-deleted rows silently (T-02-17 existence-probing).
+    const eligible = await tx.careUnitMedication.findMany({
+      where: {
+        id: { in: careUnitMedicationIds },
+        careUnitId,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+
+    let deleted = 0;
+    const now = new Date();
+    for (const row of eligible) {
+      await withActionOverride('medication.softDelete', () =>
+        tx.careUnitMedication.update({
+          where: { id: row.id },
+          data: { deletedAt: now },
+        }),
+      );
+      deleted += 1;
+    }
+
+    return { deleted };
+  });
+}
+
+/**
+ * POST /api/medications/bulk-remove-preview — pre-flight aggregates for the
+ * bulk-remove confirm dialog. Returns:
+ *   - `inFlightOrderCount`: distinct non-levererad, non-soft-deleted Order
+ *     rows that include any of the selected CareUnitMedication ids in a line.
+ *   - `withStockCount` / `withStockUnits`: how many selected rows have
+ *     currentStock > 0, and the total unit count, to drive the
+ *     "lagersaldot bevaras" warning copy.
+ *
+ * Idempotent / safe — pure read. Same scope rules as bulkRemove (cross-tenant
+ * rows are filtered, not surfaced).
+ */
+export async function previewBulkRemoveImpact(
+  careUnitId: string,
+  payload: BulkRemovePreviewRequest,
+): Promise<BulkRemovePreviewResponse> {
+  const { careUnitMedicationIds } = payload;
+
+  const [stockAgg, inFlightOrders] = await Promise.all([
+    prisma.careUnitMedication.findMany({
+      where: {
+        id: { in: careUnitMedicationIds },
+        careUnitId,
+        deletedAt: null,
+        currentStock: { gt: 0 },
+      },
+      select: { currentStock: true },
+    }),
+    prisma.order.findMany({
+      where: {
+        careUnitId,
+        deletedAt: null,
+        status: { not: 'levererad' },
+        lines: {
+          some: {
+            careUnitMedicationId: { in: careUnitMedicationIds },
+          },
+        },
+      },
+      select: { id: true },
+    }),
+  ]);
+
+  const withStockUnits = stockAgg.reduce((sum, r) => sum + r.currentStock, 0);
+
+  return {
+    inFlightOrderCount: inFlightOrders.length,
+    withStockCount: stockAgg.length,
+    withStockUnits,
+  };
 }

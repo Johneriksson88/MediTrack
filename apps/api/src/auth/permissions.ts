@@ -41,6 +41,10 @@ export const PERMISSIONS: Record<ActionKey, Role[]> = {
   'audit:read': ['admin'],
   // Phase 6 D-15 — apotekare + admin can fetch AI suggestions.
   'ai:suggest': ['apotekare', 'admin'],
+  // Sortiment — bulk catalog management surface; apotekare + admin only.
+  // Separate from medication:create/update/delete so the Sortiment route can
+  // be gated independently from the per-row Läkemedel page.
+  'medication:bulk_manage': ['apotekare', 'admin'],
 };
 
 /**
