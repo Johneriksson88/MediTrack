@@ -3,6 +3,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AuthGate } from '@/auth/AuthGate';
 import { RoleRoute } from '@/auth/RoleRoute';
 import { AuditPage } from '@/routes/admin/AuditPage';
+import { UsersPage } from '@/routes/admin/users/UsersPage';
 import { BestallningarPage } from '@/routes/bestallningar/BestallningarPage';
 import { ComposeOrderPage } from '@/routes/bestallningar/ComposeOrderPage';
 import { DashboardPage } from '@/routes/dashboard/DashboardPage';
@@ -55,7 +56,10 @@ export const router = createBrowserRouter([
       },
       {
         element: <RoleRoute roles={['admin']} />,
-        children: [{ path: '/admin/audit', element: <AuditPage /> }],
+        children: [
+          { path: '/admin/audit', element: <AuditPage /> },
+          { path: '/admin/users', element: <UsersPage /> },
+        ],
       },
     ],
   },

@@ -120,7 +120,8 @@ describe('GET /api/me — permissions[] regression (D-18)', () => {
     // Phase 5 D-15: admin gains audit:read (cross-tenant audit log access)
     // Phase 6 D-15: admin gains ai:suggest (AI categorization)
     // Sortiment: admin gains medication:bulk_manage (bulk catalog ops)
-    expect(res.json().permissions).toEqual(['admin:ping', 'medication:read', 'medication:create', 'medication:update', 'medication:delete', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete', 'order:confirm', 'order:deliver', 'audit:read', 'ai:suggest', 'medication:bulk_manage']);
+    // Admin user management: admin gains user:manage (/admin/users CRUD)
+    expect(res.json().permissions).toEqual(['admin:ping', 'medication:read', 'medication:create', 'medication:update', 'medication:delete', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete', 'order:confirm', 'order:deliver', 'audit:read', 'ai:suggest', 'medication:bulk_manage', 'user:manage']);
   });
 
   it("returns medication:read + order:* permissions for a sjuksköterska session", async () => {

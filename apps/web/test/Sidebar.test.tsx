@@ -7,17 +7,15 @@ import { Sidebar } from '@/routes/shell/Sidebar';
 /**
  * AUTH-06 — Sidebar role-based nav filter (apps/web/src/routes/shell/Sidebar.tsx)
  *
- * NAV array (6 items): Dashboard, Läkemedel, Beställningar, Sortiment, Konto, Admin.
- * Sortiment is gated to ['apotekare', 'admin']; Admin is gated to ['admin'].
+ * NAV array (7 items): Dashboard, Läkemedel, Beställningar, Sortiment, Konto,
+ * Användare, Granskning. Sortiment is gated to ['apotekare', 'admin'];
+ * Användare + Granskning are gated to ['admin'].
  *
  * Expected counts:
- *   - admin:           6 (sees both Sortiment + Admin)
- *   - apotekare:       5 (sees Sortiment, not Admin)
- *   - sjukskoterska:   4 (neither)
+ *   - admin:           7 (sees Sortiment + both admin items)
+ *   - apotekare:       5 (sees Sortiment, no admin items)
+ *   - sjukskoterska:   4 (none of the gated items)
  *   - loading (null):  4 (gated items hidden until role resolves)
- *
- * Verbatim labels from UI-SPEC §Copy:
- *   Dashboard, Läkemedel, Beställningar, Sortiment, Konto, Admin
  */
 
 vi.mock('@/auth/useAuth', () => ({
@@ -54,17 +52,18 @@ describe('Sidebar admin nav filter', () => {
       });
     });
 
-    it('renders 6 nav links (all items including Sortiment + Admin)', () => {
+    it('renders 7 nav links (all items including Sortiment + admin entries)', () => {
       renderWithProviders(<Sidebar />);
       // Sidebar uses aria-label on each NavLink matching item.label
       const navLinks = screen.getAllByRole('link');
-      expect(navLinks).toHaveLength(6);
+      expect(navLinks).toHaveLength(7);
     });
 
-    it('includes both the "Sortiment" and "Admin" nav items', () => {
+    it('includes "Sortiment", "Användare" and "Granskning"', () => {
       renderWithProviders(<Sidebar />);
       expect(screen.getByRole('link', { name: 'Sortiment' })).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: 'Admin' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Användare' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Granskning' })).toBeInTheDocument();
     });
 
     it('includes all four open nav items', () => {
@@ -85,16 +84,17 @@ describe('Sidebar admin nav filter', () => {
       });
     });
 
-    it('renders 4 nav links (Sortiment + Admin filtered out)', () => {
+    it('renders 4 nav links (Sortiment + admin entries filtered out)', () => {
       renderWithProviders(<Sidebar />);
       const navLinks = screen.getAllByRole('link');
       expect(navLinks).toHaveLength(4);
     });
 
-    it('does NOT include "Sortiment" or "Admin"', () => {
+    it('does NOT include "Sortiment", "Användare" or "Granskning"', () => {
       renderWithProviders(<Sidebar />);
       expect(screen.queryByRole('link', { name: 'Sortiment' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Användare' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Granskning' })).not.toBeInTheDocument();
     });
 
     it('includes all four open nav items', () => {
@@ -115,16 +115,17 @@ describe('Sidebar admin nav filter', () => {
       });
     });
 
-    it('renders 5 nav links — sees Sortiment, not Admin', () => {
+    it('renders 5 nav links — sees Sortiment, no admin items', () => {
       renderWithProviders(<Sidebar />);
       const navLinks = screen.getAllByRole('link');
       expect(navLinks).toHaveLength(5);
     });
 
-    it('includes "Sortiment" but NOT "Admin"', () => {
+    it('includes "Sortiment" but neither admin item', () => {
       renderWithProviders(<Sidebar />);
       expect(screen.getByRole('link', { name: 'Sortiment' })).toBeInTheDocument();
-      expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Användare' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Granskning' })).not.toBeInTheDocument();
     });
   });
 

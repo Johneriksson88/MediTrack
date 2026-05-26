@@ -63,7 +63,8 @@ const ROLE_MATRIX = [
     // Phase 4 D-15: admin gains order:confirm + order:deliver.
     // Phase 5 D-15: admin gains audit:read (cross-tenant audit log access).
     // Phase 6 D-15: admin gains ai:suggest (AI categorization).
-    expectedPermissions: ['admin:ping', 'medication:read', 'medication:create', 'medication:update', 'medication:delete', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete', 'order:confirm', 'order:deliver', 'audit:read', 'ai:suggest', 'medication:bulk_manage'] as string[],
+    // Admin user management: admin gains user:manage (/admin/users CRUD).
+    expectedPermissions: ['admin:ping', 'medication:read', 'medication:create', 'medication:update', 'medication:delete', 'order:read', 'order:create', 'order:update', 'order:submit', 'order:delete', 'order:confirm', 'order:deliver', 'audit:read', 'ai:suggest', 'medication:bulk_manage', 'user:manage'] as string[],
     adminPingStatus: 200,
   },
 ] as const;

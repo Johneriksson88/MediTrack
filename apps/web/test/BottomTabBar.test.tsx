@@ -7,10 +7,11 @@ import { BottomTabBar } from '@/routes/shell/BottomTabBar';
 /**
  * AUTH-06 — BottomTabBar role-based nav filter (apps/web/src/routes/shell/BottomTabBar.tsx)
  *
- * NAV array (6 items): Dashboard, Läkemedel, Beställningar, Sortiment, Konto, Admin.
- * Sortiment is gated to ['apotekare', 'admin']; Admin is gated to ['admin'].
+ * NAV array (7 items): Dashboard, Läkemedel, Beställningar, Sortiment, Konto,
+ * Användare, Granskning. Sortiment gated to ['apotekare', 'admin'];
+ * Användare + Granskning gated to ['admin'].
  *
- * Expected counts: admin 6, apotekare 5, sjukskoterska 4, loading 4.
+ * Expected counts: admin 7, apotekare 5, sjukskoterska 4, loading 4.
  * Same filter logic as Sidebar — both consume visibleNav(role) from nav.ts.
  */
 
@@ -48,16 +49,17 @@ describe('BottomTabBar admin nav filter', () => {
       });
     });
 
-    it('renders 6 nav links (all items including Sortiment + Admin)', () => {
+    it('renders 7 nav links (all items including Sortiment + admin entries)', () => {
       renderWithProviders(<BottomTabBar />);
       const navLinks = screen.getAllByRole('link');
-      expect(navLinks).toHaveLength(6);
+      expect(navLinks).toHaveLength(7);
     });
 
-    it('includes both "Sortiment" and "Admin" tabs', () => {
+    it('includes "Sortiment", "Användare" and "Granskning" tabs', () => {
       renderWithProviders(<BottomTabBar />);
       expect(screen.getByRole('link', { name: 'Sortiment' })).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: 'Admin' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Användare' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Granskning' })).toBeInTheDocument();
     });
   });
 
@@ -70,16 +72,17 @@ describe('BottomTabBar admin nav filter', () => {
       });
     });
 
-    it('renders 4 nav links (Sortiment + Admin filtered out)', () => {
+    it('renders 4 nav links (Sortiment + admin entries filtered out)', () => {
       renderWithProviders(<BottomTabBar />);
       const navLinks = screen.getAllByRole('link');
       expect(navLinks).toHaveLength(4);
     });
 
-    it('does NOT include "Sortiment" or "Admin"', () => {
+    it('does NOT include "Sortiment", "Användare" or "Granskning"', () => {
       renderWithProviders(<BottomTabBar />);
       expect(screen.queryByRole('link', { name: 'Sortiment' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Användare' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Granskning' })).not.toBeInTheDocument();
     });
 
     it('shows all four open tabs with correct Swedish labels', () => {
@@ -100,16 +103,17 @@ describe('BottomTabBar admin nav filter', () => {
       });
     });
 
-    it('renders 5 nav links — sees Sortiment, not Admin', () => {
+    it('renders 5 nav links — sees Sortiment, no admin items', () => {
       renderWithProviders(<BottomTabBar />);
       const navLinks = screen.getAllByRole('link');
       expect(navLinks).toHaveLength(5);
     });
 
-    it('includes "Sortiment" but NOT "Admin"', () => {
+    it('includes "Sortiment" but neither admin item', () => {
       renderWithProviders(<BottomTabBar />);
       expect(screen.getByRole('link', { name: 'Sortiment' })).toBeInTheDocument();
-      expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Användare' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Granskning' })).not.toBeInTheDocument();
     });
   });
 

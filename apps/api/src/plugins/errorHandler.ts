@@ -131,6 +131,20 @@ export class OrderTransitionError extends Error {
 }
 
 /**
+ * Thrown when a User row cannot be hard-deleted (self-delete attempt or the
+ * row has Restrict-FK references like authored orders). Mapped to HTTP 409
+ * with code `user_delete_blocked`. The FE toasts `err.envelope.error.message`
+ * directly — message is the source of truth for the human-readable reason.
+ */
+export class UserDeleteBlockedError extends Error {
+  readonly code = 'user_delete_blocked' as const;
+  constructor(message: string) {
+    super(message);
+    this.name = 'UserDeleteBlockedError';
+  }
+}
+
+/**
  * Phase 6 D-107 / D-19 — thrown when an AI route is hit but
  * `env.ANTHROPIC_API_KEY` is unset / empty. Mapped to HTTP 503 with
  * code `ai_unavailable`. The FE conditional render via
@@ -265,6 +279,10 @@ export const errorHandlerPlugin = fp(async (app: FastifyInstance) => {
 
     if (err instanceof ConflictDuplicateMedicationError) {
       return send(reply, 409, envelope('conflict_duplicate_medication', err.message));
+    }
+
+    if (err instanceof UserDeleteBlockedError) {
+      return send(reply, 409, envelope('user_delete_blocked', err.message));
     }
 
     if (err instanceof ForbiddenScopeError) {

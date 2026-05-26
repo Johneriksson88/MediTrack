@@ -45,6 +45,8 @@ export const PERMISSIONS: Record<ActionKey, Role[]> = {
   // Separate from medication:create/update/delete so the Sortiment route can
   // be gated independently from the per-row Läkemedel page.
   'medication:bulk_manage': ['apotekare', 'admin'],
+  // Admin user management (/admin/users) — admin-only.
+  'user:manage': ['admin'],
 };
 
 /**

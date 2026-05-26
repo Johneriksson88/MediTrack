@@ -5,6 +5,7 @@ import {
   Pill,
   ShieldCheck,
   User,
+  Users,
   type LucideIcon,
 } from 'lucide-react';
 import type { Role } from '@meditrack/shared';
@@ -37,7 +38,8 @@ export const NAV: NavItem[] = [
   { to: '/bestallningar', label: 'Beställningar', icon: ClipboardList },
   { to: '/sortiment', label: 'Sortiment', icon: Library, roles: ['apotekare', 'admin'] },
   { to: '/konto', label: 'Konto', icon: User },
-  { to: '/admin/audit', label: 'Admin', icon: ShieldCheck, roles: ['admin'] },
+  { to: '/admin/users', label: 'Användare', icon: Users, roles: ['admin'] },
+  { to: '/admin/audit', label: 'Granskning', icon: ShieldCheck, roles: ['admin'] },
 ];
 
 /**

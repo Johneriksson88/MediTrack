@@ -44,6 +44,9 @@ export const ACTION_KEYS = [
   // from medication:create/update/delete so the admin Sortiment page can be
   // gated independently from the per-row Läkemedel page actions.
   'medication:bulk_manage',
+  // Admin user management — create/update/delete User rows from /admin/users.
+  // Admin-only; gates both the BE routes and the FE nav entry.
+  'user:manage',
 ] as const;
 export type ActionKey = (typeof ACTION_KEYS)[number];
 

@@ -11,6 +11,7 @@ import { requestContextPlugin } from './plugins/requestContext.js';
 import { authRoutes } from './routes/auth.js';
 import { meRoutes } from './routes/me.js';
 import { adminPingRoutes } from './routes/adminPing.js';
+import { adminUsersRoutes } from './routes/admin/users.js';
 import { healthzRoutes } from './routes/healthz.js';
 import { medicationRoutes } from './routes/medications/index.js';
 import { orderRoutes } from './routes/orders/index.js';
@@ -98,6 +99,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(authRoutes);
   await app.register(meRoutes);
   await app.register(adminPingRoutes);
+  // Admin user management (/api/admin/users) — admin-only CRUD.
+  await app.register(adminUsersRoutes);
   // Phase 2: medication catalog routes (list, search, create; update/delete in Plans 03/04).
   await app.register(medicationRoutes);
   // Phase 3: order flow routes (create, list, get, lines, submit, delete, picker-options).

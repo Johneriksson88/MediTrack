@@ -132,6 +132,18 @@ export {
   dashboardOrdersResponse,
   type DashboardOrdersResponse,
 } from './contracts/dashboard.js';
+// Admin user-management contracts — /api/admin/users (admin-only, user:manage).
+export {
+  userResponse,
+  type UserResponse,
+  userListResponse,
+  type UserListResponse,
+  userCreateRequest,
+  type UserCreateRequest,
+  userUpdateRequest,
+  type UserUpdateRequest,
+  USER_PASSWORD_MIN,
+} from './contracts/user.js';
 // AI categorization contracts — Phase 6 D-08 / D-106 / D-111 (FE↔BE AI suggestion API)
 export {
   aiSuggestionRequest,
