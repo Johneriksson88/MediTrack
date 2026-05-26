@@ -143,6 +143,10 @@ export function useAddOrderLine() {
     onSuccess: (response, vars) => {
       // D-57: cache hydration — response is the full updated Order.
       queryClient.setQueryData(['order', vars.orderId], response);
+      // Keep the drafts list + dashboard Egna utkast in sync — lineCount /
+      // totalQuantity change with every line edit.
+      void queryClient.invalidateQueries({ queryKey: ['orders', { status: 'utkast' }] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'orders'] });
       // Phase 8 D-138: a freshly-added line can shift the most-ordered ranking;
       // refetch on next picker open so the suggestions reflect the new line.
       void queryClient.invalidateQueries({ queryKey: ['order-picker-suggestions', vars.orderId] });
@@ -232,6 +236,10 @@ export function useUpdateOrderLineQuantity() {
     onSettled: (_data, _err, vars) => {
       // Always invalidate so server-authoritative value replaces the local estimate.
       void queryClient.invalidateQueries({ queryKey: ['order', vars.orderId] });
+      // Keep the drafts list + dashboard Egna utkast in sync — totalQuantity
+      // on the list rows tracks the same sum the stepper just changed.
+      void queryClient.invalidateQueries({ queryKey: ['orders', { status: 'utkast' }] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'orders'] });
     },
   });
 }
@@ -258,6 +266,10 @@ export function useRemoveOrderLine() {
     onSuccess: (response, vars) => {
       // D-57: cache hydration.
       queryClient.setQueryData(['order', vars.orderId], response);
+      // Keep the drafts list + dashboard Egna utkast in sync — removing a
+      // line drops lineCount and reduces totalQuantity.
+      void queryClient.invalidateQueries({ queryKey: ['orders', { status: 'utkast' }] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'orders'] });
       toast.success('Sparat');
     },
     onError: (err, vars) => {
