@@ -15,6 +15,7 @@ import { SortimentAddFilter } from './SortimentAddFilter';
 import { SortimentAddTable } from './SortimentAddTable';
 import { SortimentActionBar } from './SortimentActionBar';
 import { SortimentBulkAddDialog } from './SortimentBulkAddDialog';
+import { SortimentBulkRemoveDialog } from './SortimentBulkRemoveDialog';
 import { PaginationFooter } from '@/routes/lakemedel/PaginationFooter';
 
 /**
@@ -69,6 +70,7 @@ export function SortimentPage() {
   const [currentSelected, setCurrentSelected] = useState<Set<string>>(new Set());
   const [addSelected, setAddSelected] = useState<Set<string>>(new Set());
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
 
   // ─── "I sortimentet" data ───
   const currentQuery = useMedicationsQuery(
@@ -350,11 +352,9 @@ export function SortimentPage() {
       {tab === 'current' && (
         <SortimentActionBar
           selectedCount={currentSelected.size}
-          primaryLabel="Ta bort markerade"
+          primaryLabel={`Ta bort ${currentSelected.size} läkemedel`}
           primaryVariant="destructive"
-          onPrimary={() => {
-            // Wired in commit 4 — bulk-remove confirm dialog.
-          }}
+          onPrimary={() => setRemoveDialogOpen(true)}
           onClear={() => setCurrentSelected(new Set())}
         />
       )}
@@ -373,6 +373,12 @@ export function SortimentPage() {
         onOpenChange={setAddDialogOpen}
         candidates={selectedCandidates}
         onSuccess={() => setAddSelected(new Set())}
+      />
+      <SortimentBulkRemoveDialog
+        open={removeDialogOpen}
+        onOpenChange={setRemoveDialogOpen}
+        careUnitMedicationIds={Array.from(currentSelected)}
+        onSuccess={() => setCurrentSelected(new Set())}
       />
     </div>
   );
