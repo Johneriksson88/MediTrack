@@ -16,15 +16,17 @@ import { TherapeuticClassCombobox } from '@/components/TherapeuticClassCombobox'
 import { AtcCodeCombobox } from '@/components/AtcCodeCombobox';
 
 /**
- * Filter row for the Sortiment "Lägg till" tab. Same four controls as
+ * Filter row shared by both Sortiment tabs. Same four controls as
  * LakemedelFilter (search, therapeutic class, ATC, form) minus the
- * below-threshold chip (irrelevant here — these meds are not in sortiment).
+ * below-threshold chip. Same 200ms debounce on search; the page owns URL
+ * state and is the only place that decides what to write.
  *
- * Same 200ms debounce on search, same emit-on-change semantics — the
- * page owns URL state and is the only place that decides what to write.
+ * Filters apply symmetrically: "I sortimentet" narrows the current
+ * sortiment by the same criteria as "Lägg till" narrows the candidate
+ * set — admins can mass-remove by class/ATC the same way they mass-add.
  */
 
-export interface SortimentAddFilterProps {
+export interface SortimentFilterProps {
   q: string;
   atc: string;
   form: string;
@@ -38,13 +40,13 @@ export interface SortimentAddFilterProps {
   }) => void;
 }
 
-export function SortimentAddFilter({
+export function SortimentFilter({
   q,
   atc,
   form,
   therapeuticClass,
   onChange,
-}: SortimentAddFilterProps) {
+}: SortimentFilterProps) {
   const [localQ, setLocalQ] = useState(q);
   const isFirstRender = useRef(true);
 

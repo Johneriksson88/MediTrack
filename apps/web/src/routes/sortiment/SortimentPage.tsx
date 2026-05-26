@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { useMedicationsQuery } from '@/features/medications/useMedicationsQuery';
 import { useBulkAddCandidatesQuery } from '@/features/medications/useSortimentMutations';
 import { SortimentCurrentTable } from './SortimentCurrentTable';
-import { SortimentAddFilter } from './SortimentAddFilter';
+import { SortimentFilter } from './SortimentFilter';
 import { SortimentAddTable } from './SortimentAddTable';
 import { SortimentActionBar } from './SortimentActionBar';
 import { SortimentBulkAddDialog } from './SortimentBulkAddDialog';
@@ -47,8 +47,10 @@ export function SortimentPage() {
   const tab: Tab = searchParams.get('tab') === 'add' ? 'add' : 'current';
   const page = Number(searchParams.get('page') ?? '1');
 
-  // Filter state — only consumed in the "Lägg till" tab but URL-driven so
-  // navigation + browser-back works the same as Läkemedel.
+  // Filter state — consumed by BOTH tabs (symmetric: filters narrow either
+  // the current sortiment or the candidate set, depending on which tab is
+  // active). URL-driven so navigation + browser-back works the same as
+  // Läkemedel.
   const q = searchParams.get('q') ?? '';
   const atc = searchParams.get('atc') ?? '';
   const form = searchParams.get('form') ?? '';
@@ -72,18 +74,8 @@ export function SortimentPage() {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
 
-  // ─── "I sortimentet" data ───
-  const currentQuery = useMedicationsQuery(
-    { page, pageSize: DEFAULT_PAGE_SIZE },
-    // useMedicationsQuery doesn't accept enabled; we always fetch — switching
-    // tabs is cheap (response is small + cached by TanStack).
-  );
-  const currentRows = useMemo(() => currentQuery.data?.rows ?? [], [currentQuery.data]);
-  const currentTotal = currentQuery.data?.total ?? 0;
-  const currentTotalPages = Math.max(1, Math.ceil(currentTotal / DEFAULT_PAGE_SIZE));
-
-  // ─── "Lägg till" data ───
-  const addFilters = {
+  // Shared filter object — both queries consume the same shape.
+  const sharedFilters = {
     q: q || undefined,
     atc: atc || undefined,
     form: form || undefined,
@@ -91,7 +83,15 @@ export function SortimentPage() {
     page,
     pageSize: DEFAULT_PAGE_SIZE,
   };
-  const addQuery = useBulkAddCandidatesQuery(addFilters, tab === 'add');
+
+  // ─── "I sortimentet" data ───
+  const currentQuery = useMedicationsQuery(sharedFilters);
+  const currentRows = useMemo(() => currentQuery.data?.rows ?? [], [currentQuery.data]);
+  const currentTotal = currentQuery.data?.total ?? 0;
+  const currentTotalPages = Math.max(1, Math.ceil(currentTotal / DEFAULT_PAGE_SIZE));
+
+  // ─── "Lägg till" data ───
+  const addQuery = useBulkAddCandidatesQuery(sharedFilters, tab === 'add');
   const addRows = useMemo(() => addQuery.data?.rows ?? [], [addQuery.data]);
   const addTotal = addQuery.data?.total ?? 0;
   const addTotalPages = Math.max(1, Math.ceil(addTotal / DEFAULT_PAGE_SIZE));
@@ -136,16 +136,11 @@ export function SortimentPage() {
   function setTab(nextTab: Tab) {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
-      if (nextTab === 'current') {
-        params.delete('tab');
-        // Filters are "Lägg till"-only — drop them when leaving that tab.
-        params.delete('q');
-        params.delete('atc');
-        params.delete('form');
-        params.delete('class');
-      } else {
-        params.set('tab', nextTab);
-      }
+      if (nextTab === 'current') params.delete('tab');
+      else params.set('tab', nextTab);
+      // Reset page on tab switch (filtered counts differ between tabs);
+      // PRESERVE q/atc/form/class so a "find class N → mass-add → toggle to
+      // current → mass-remove" workflow doesn't require re-typing filters.
       params.delete('page');
       return params;
     });
@@ -232,7 +227,17 @@ export function SortimentPage() {
     [addRows, addSelected],
   );
 
-  const hasAddFiltersActive = !!q || !!atc || !!form || !!therapeuticClass;
+  const hasFiltersActive = !!q || !!atc || !!form || !!therapeuticClass;
+
+  function clearFilters() {
+    updateFilters({
+      q: '',
+      atc: '',
+      form: '',
+      therapeuticClass: undefined,
+      page: 1,
+    });
+  }
 
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6 lg:p-8">
@@ -242,6 +247,16 @@ export function SortimentPage() {
           Hantera vilka läkemedel din vårdenhet har i sortimentet.
         </p>
       </div>
+
+      {/* Shared filter row — applies to whichever tab is active. Mass-remove
+          by criteria mirrors the mass-add-by-criteria flow on the other tab. */}
+      <SortimentFilter
+        q={q}
+        atc={atc}
+        form={form}
+        therapeuticClass={therapeuticClass}
+        onChange={updateFilters}
+      />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
         <TabsList>
@@ -260,12 +275,31 @@ export function SortimentPage() {
 
           {!currentQuery.isLoading && currentRows.length === 0 && (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              Sortimentet är tomt. Växla till “Lägg till” för att lägga till läkemedel.
+              {hasFiltersActive ? (
+                <>
+                  Inga läkemedel i sortimentet matchade filtren.{' '}
+                  <Button
+                    variant="link"
+                    className="h-auto p-0"
+                    type="button"
+                    onClick={clearFilters}
+                  >
+                    Rensa filter
+                  </Button>
+                </>
+              ) : (
+                'Sortimentet är tomt. Växla till “Lägg till” för att lägga till läkemedel.'
+              )}
             </p>
           )}
 
           {!currentQuery.isLoading && currentRows.length > 0 && (
             <>
+              <p className="text-xs text-muted-foreground">
+                {hasFiltersActive
+                  ? `${currentTotal} matchande läkemedel i sortimentet.`
+                  : `${currentTotal} läkemedel i sortimentet.`}
+              </p>
               <SortimentCurrentTable
                 items={currentRows}
                 selectedIds={currentSelected}
@@ -284,14 +318,6 @@ export function SortimentPage() {
         </TabsContent>
 
         <TabsContent value="add" className="flex flex-col gap-4">
-          <SortimentAddFilter
-            q={q}
-            atc={atc}
-            form={form}
-            therapeuticClass={therapeuticClass}
-            onChange={updateFilters}
-          />
-
           {addQuery.isLoading && (
             <div className="flex flex-col gap-2">
               {Array.from({ length: 8 }).map((_, i) => (
@@ -302,23 +328,15 @@ export function SortimentPage() {
 
           {!addQuery.isLoading && addRows.length === 0 && (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              {hasAddFiltersActive
+              {hasFiltersActive
                 ? 'Inga läkemedel matchade filtren.'
                 : 'Alla läkemedel i NPL-registret är redan med i sortimentet.'}{' '}
-              {hasAddFiltersActive && (
+              {hasFiltersActive && (
                 <Button
                   variant="link"
                   className="h-auto p-0"
                   type="button"
-                  onClick={() => {
-                    updateFilters({
-                      q: '',
-                      atc: '',
-                      form: '',
-                      therapeuticClass: undefined,
-                      page: 1,
-                    });
-                  }}
+                  onClick={clearFilters}
                 >
                   Rensa filter
                 </Button>
