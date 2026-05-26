@@ -1,4 +1,4 @@
-import type { Order, OrderLine, CareUnitMedication, Medication, User } from '@prisma/client';
+import type { Order, OrderLine, CareUnitMedication, Medication, Prisma, User } from '@prisma/client';
 import { prisma } from '../db/client.js';
 import {
   NotFoundError,
@@ -249,6 +249,25 @@ export async function listOrdersForUnit(
   careUnitId: string,
   filters: OrderListQuery,
 ): Promise<OrderListResponse> {
+  // Sort by the timestamp that's most meaningful for the active tab so the
+  // user always sees the order they most recently touched at the top:
+  //   utkast    → createdAt   (drafts have no transition timestamps yet)
+  //   skickad   → submittedAt (most-recently-sent first)
+  //   bekraftad → confirmedAt (most-recently-confirmed first)
+  //   levererad → deliveredAt (most-recently-delivered first)
+  // Multi-status filters (e.g. 'alla' expanded to all four) mix lifecycle
+  // stages, so we fall back to updatedAt — the closest single-column proxy
+  // for "most recent activity overall".
+  const orderBy: Prisma.OrderOrderByWithRelationInput = Array.isArray(filters.status)
+    ? { updatedAt: 'desc' }
+    : filters.status === 'skickad'
+      ? { submittedAt: 'desc' }
+      : filters.status === 'bekraftad'
+        ? { confirmedAt: 'desc' }
+        : filters.status === 'levererad'
+          ? { deliveredAt: 'desc' }
+          : { createdAt: 'desc' };
+
   const rows = await prisma.order.findMany({
     where: {
       careUnitId,
@@ -264,7 +283,7 @@ export async function listOrdersForUnit(
       confirmedBy: { select: { id: true, name: true } },
       deliveredBy: { select: { id: true, name: true } },
     },
-    orderBy: { createdAt: 'desc' },
+    orderBy,
   });
 
   return {
